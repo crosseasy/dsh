@@ -25,6 +25,10 @@ The Cordis framework and its foundation libraries are source-vendored into this 
 | `@deepseek-ai/cordis-plugin-hmr` | `@cordisjs/plugin-hmr` | [github.com/deepseek-harness/cordis](https://github.com/deepseek-harness/cordis) | MIT |
 | `@deepseek-ai/cordis-plugin-logger-console` | `@cordisjs/plugin-logger-console` | [github.com/deepseek-harness/cordis](https://github.com/deepseek-harness/cordis) | MIT |
 
+## Copied preset sources
+
+The five-file system preset at [`apps/cli/config/agent-presets/liangshen/`](apps/cli/config/agent-presets/liangshen/) is copied byte-for-byte from the Apache-2.0-licensed `@linxin666/dsh-liangshen@0.2.2` package. It includes the package author's two-phase isolation extensions and retains portions from the MIT-licensed DeepSeek Harness Minimal and Standard presets and [`xiaobright/dsh-anchored-standard`](https://github.com/xiaobright/dsh-anchored-standard). The complete source terms are retained in [`licenses/`](apps/cli/config/agent-presets/liangshen/licenses/): [dsh-liangshen Apache-2.0](apps/cli/config/agent-presets/liangshen/licenses/dsh-liangshen-Apache-2.0.txt), [DeepSeek Harness MIT](apps/cli/config/agent-presets/liangshen/licenses/DeepSeek-Harness-MIT.txt), and [dsh-anchored-standard MIT](apps/cli/config/agent-presets/liangshen/licenses/dsh-anchored-standard-MIT.txt). The source [`NOTICE`](apps/cli/config/agent-presets/liangshen/NOTICE) identifies which preset files contain those portions.
+
 ## Runtime npm dependencies
 
 External packages that a workspace package resolves at runtime. The tier covers every plugin a user can mount from `cordis.yml` — not only what the `dsh` CLI, Web UI, and Python SDK runtime load by default.
@@ -38,6 +42,14 @@ External packages that a workspace package resolves at runtime. The tier covers 
 | [`@earendil-works/pi-ai`](https://github.com/earendil-works/pi) | MIT |
 | [`@joplin/turndown-plugin-gfm`](https://github.com/laurent22/joplin-turndown-plugin-gfm) | MIT |
 | [`@jridgewell/gen-mapping`](https://github.com/jridgewell/sourcemaps) | MIT |
+| [`@linxin666/dsh-client-ui-git-graph`](https://github.com/zhu1090093659/dsh-web-ui) | Apache-2.0 |
+| [`@linxin666/dsh-client-ui-skin-center`](https://github.com/zhu1090093659/dsh-web-ui) | Apache-2.0 |
+| [`@linxin666/dsh-client-ui-task-board`](https://github.com/zhu1090093659/dsh-web-ui) | Apache-2.0 |
+| [`@linxin666/dsh-client-ui-web-ui-settings`](https://github.com/zhu1090093659/dsh-web-ui) | Apache-2.0 |
+| [`@linxin666/dsh-pet`](https://github.com/zhu1090093659/dsh-web-ui) | Apache-2.0 |
+| [`@linxin666/dsh-remote-web-ui`](https://github.com/zhu1090093659/dsh-web-ui) | Apache-2.0 |
+| [`@linxin666/dsh-ssh`](https://github.com/zhu1090093659/dsh-web-ui) | Apache-2.0 |
+| [`@liustack/modlens`](https://github.com/liustack/modlens) | MIT |
 | [`@modelcontextprotocol/sdk`](https://github.com/modelcontextprotocol/typescript-sdk) | MIT |
 | [`@opentelemetry/api`](https://github.com/open-telemetry/opentelemetry-js) | Apache-2.0 |
 | [`@opentelemetry/api-logs`](https://github.com/open-telemetry/opentelemetry-js) | Apache-2.0 |
@@ -55,6 +67,7 @@ External packages that a workspace package resolves at runtime. The tier covers 
 | [`clsx`](https://github.com/lukeed/clsx) | MIT |
 | [`commander`](https://github.com/tj/commander.js) | MIT |
 | [`diff`](https://github.com/kpdecker/jsdiff) | BSD-3-Clause |
+| [`dsh-better-sidebar`](https://github.com/omdsh-dev/DSH-better-sidebar) | MIT |
 | [`e2b`](https://github.com/e2b-dev/e2b) | MIT |
 | [`eventsource-parser`](https://github.com/rexxars/eventsource-parser) | MIT |
 | [`fflate`](https://github.com/101arrowz/fflate) | MIT |

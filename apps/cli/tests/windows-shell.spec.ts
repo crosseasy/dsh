@@ -103,13 +103,18 @@ describe('the shipped shell composition (real bundle layers)', () => {
 describe('shipped agent presets gate both shell tools by platform', () => {
   const presetRoot = resolve(fileURLToPath(new URL('../package.json', import.meta.url)), '..', 'config', 'agent-presets')
 
-  it.each(['standard', 'code', 'cordis'])('preset %s gates its shell tool rows by platform', (preset) => {
+  it.each([
+    ['standard', 'tool-bash', 'tool-pwsh'],
+    ['code', 'tool-bash', 'tool-pwsh'],
+    ['cordis', 'tool-bash', 'tool-pwsh'],
+    ['liangshen', 'persistent-shell', 'custom-bash'],
+  ])('preset %s gates its shell tool rows by platform', (preset, posixId, windowsId) => {
     const entries: unknown = yaml.load(
       readFileSync(join(presetRoot, preset, 'agent.cordis.yml'), 'utf8'),
       { schema: entryListSchema },
     )
     if (!Array.isArray(entries)) throw new TypeError(`preset ${preset} must parse to an entry array`)
-    for (const [id, win32] of [['tool-bash', true], ['tool-pwsh', false]] as const) {
+    for (const [id, win32] of [[posixId, true], [windowsId, false]] as const) {
       const row = entries.find((entry): entry is Record<string, unknown> => (
         typeof entry === 'object' && entry !== null && (entry as Record<string, unknown>).id === id
       ))

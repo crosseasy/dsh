@@ -773,6 +773,19 @@
         "@deepseek-ai/.+"
       ]
     },
+    "packages/bundle/fusion": {
+      "ignoreDependencies": [
+        "@linxin666/dsh-client-ui-git-graph",
+        "@linxin666/dsh-client-ui-skin-center",
+        "@linxin666/dsh-client-ui-task-board",
+        "@linxin666/dsh-client-ui-web-ui-settings",
+        "@linxin666/dsh-pet",
+        "@linxin666/dsh-remote-web-ui",
+        "@linxin666/dsh-ssh",
+        "@liustack/modlens",
+        "dsh-better-sidebar"
+      ]
+    },
     "packages/bundle/headless": {
       "ignoreDependencies": [
         "@deepseek-ai/dsh-code-runtime-worker-thread"

@@ -20,6 +20,24 @@ import {
 const root = resolve(import.meta.dirname, '..')
 
 describe('THIRD_PARTY_NOTICES.md', () => {
+  it('discloses the copied Liangshen preset and all retained licenses', () => {
+    const generated = render()
+    const licenses = [
+      'DeepSeek-Harness-MIT.txt',
+      'dsh-anchored-standard-MIT.txt',
+      'dsh-liangshen-Apache-2.0.txt',
+    ]
+
+    expect(generated).toContain('apps/cli/config/agent-presets/liangshen/')
+    expect(generated).toContain('@linxin666/dsh-liangshen@0.2.2')
+    expect(generated).toContain('xiaobright/dsh-anchored-standard')
+    expect(readdirSync(resolve(root, 'apps/cli/config/agent-presets/liangshen/licenses')).sort())
+      .toEqual(licenses)
+    for (const license of licenses) {
+      expect(generated).toContain(`apps/cli/config/agent-presets/liangshen/licenses/${license}`)
+    }
+  })
+
   // Freshness lives here rather than in its own doc-sync gate: this spec file
   // already runs in the test lane, so the check costs no extra CI process.
   // Pre-commit regenerates the file whenever a manifest is staged, so reaching

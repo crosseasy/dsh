@@ -1,4 +1,4 @@
-import { randomUUID } from 'node:crypto'
+import { createHash, randomUUID } from 'node:crypto'
 import { mkdir, mkdtemp, readFile, stat, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { fileURLToPath } from 'node:url'
@@ -42,7 +42,7 @@ const MINIMAL_BASH_DESCRIPTION = `Run commands in a bash shell
 /**
  * Boot the shipped Web composition, minus the rows that would bind a port,
  * touch the network, or write outside the test. Everything that decides an
- * agent's capabilities is the real thing, including both shipped presets.
+ * agent's capabilities is the real thing, including every shipped preset.
  */
 async function bootWeb(
   settingsFile: string,
@@ -194,12 +194,76 @@ describe('the shipped Web composition', () => {
     }
   })
 
-  it('supplies both shipped presets, and only those, from the system root', async () => {
+  it('supplies every shipped preset, and only those, from the system root', async () => {
     const listed = await ctx.agentPresets.list()
 
-    expect(listed.map(preset => preset.id).sort()).toEqual(['code', 'cordis', 'minimal', 'standard'])
+    expect(listed.map(preset => preset.id).sort()).toEqual([
+      'code', 'cordis', 'liangshen', 'minimal', 'standard',
+    ])
     expect(listed.every(preset => preset.trust === 'system')).toBe(true)
     expect(ctx.agentPresets.defaultId).toBe('standard')
+  })
+
+  it('keeps the five Liangshen preset source files byte-exact', async () => {
+    const presetRoot = join(CONFIG_DIR, 'agent-presets', 'liangshen')
+    const expected = [
+      ['preset.yml', '03a57b11bdad52593fca23479a081f880ece0ba3c9747b21cad01fc8b8335e52'],
+      ['agent.cordis.yml', '871546e3862217e6c74ac80d34a5a5bc809f152802a4dcc5c6b77d79b92ff716'],
+      ['tool-bootstrap.mjs', '28803078155a66113c2e2a4a441e40b8e65c4a29e46301696ba5219ebcf46abc'],
+      ['custom-bash.mjs', '5acbbc69e287971e0a297e644f03e0901a540213233e502c2bbc04aa2b97953c'],
+      ['NOTICE', 'c70811e44b9404f234c993f17103ed67937682cd2dd45285b87c7e8ec518418f'],
+    ] as const
+
+    for (const [file, sha256] of expected) {
+      const path = join(presetRoot, file)
+      expect((await stat(path)).isFile(), file).toBe(true)
+      const bytes = await readFile(path)
+      expect(createHash('sha256').update(bytes).digest('hex'), file).toBe(sha256)
+    }
+  })
+
+  it('composes the initial two-tool surface from `liangshen`', async () => {
+    const handle = await ctx.agents.create({
+      sessionId: SessionId('preset-liangshen'),
+      setup: agentCtx => ctx.agentPresets.mount(agentCtx, 'liangshen').then(() => undefined),
+    })
+    try {
+      const assembly = await ctx.systemPrompt.assemble({ agent: handle.agent, scope: handle.agent })
+      expect(assembly.tools.map(tool => tool.name)).toEqual(['bash', 'str_replace_editor'])
+    } finally {
+      await handle.dispose()
+    }
+  })
+
+  it('prefers the system `liangshen` preset over a same-named user preset', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'dsh-preset-liangshen-precedence-'))
+    const userPreset = join(root, 'user-presets', 'liangshen')
+    const settingsFile = join(root, 'settings.yaml')
+    await mkdir(userPreset, { recursive: true })
+    await writeFile(settingsFile, '{}\n')
+    await writeFile(
+      join(userPreset, 'agent.cordis.yml'),
+      '- id: user-shadow-proof\n  name: \'@deepseek-ai/dsh-tool-todo\'\n',
+    )
+    const precedenceCtx = await bootWeb(settingsFile, [{
+      id: 'agent-presets',
+      config: {
+        default: 'standard',
+        roots: [
+          { path: join(CONFIG_DIR, 'agent-presets'), trust: 'system' },
+          { path: join(root, 'user-presets'), trust: 'user' },
+        ],
+        includeUserRoot: false,
+      },
+    }])
+    try {
+      expect(await precedenceCtx.agentPresets.resolve('liangshen')).toMatchObject({
+        trust: 'system',
+        path: join(CONFIG_DIR, 'agent-presets', 'liangshen', 'agent.cordis.yml'),
+      })
+    } finally {
+      await precedenceCtx.fiber.dispose()
+    }
   })
 
   it('composes the full agent from `standard`', async () => {

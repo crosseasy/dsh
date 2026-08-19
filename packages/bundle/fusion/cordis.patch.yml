@@ -1,0 +1,20 @@
+# The dsh-fusion bundle patch: curated external plugins over dsh-web-app.
+- insert:
+    - id: modlens
+      name: '@liustack/modlens'
+    - id: better-sidebar
+      name: dsh-better-sidebar
+    - id: ui-web-ui-settings
+      name: '@linxin666/dsh-client-ui-web-ui-settings'
+    - id: ui-task-board
+      name: '@linxin666/dsh-client-ui-task-board'
+    - id: ui-git-graph
+      name: '@linxin666/dsh-client-ui-git-graph'
+    - id: remote-web-ui
+      name: '@linxin666/dsh-remote-web-ui'
+    - id: ssh
+      name: '@linxin666/dsh-ssh'
+    - id: pet
+      name: '@linxin666/dsh-pet'
+    - id: ui-skin-center
+      name: '@linxin666/dsh-client-ui-skin-center'
