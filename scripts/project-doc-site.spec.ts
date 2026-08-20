@@ -287,6 +287,54 @@ describe('docsPages locale routes', () => {
     }
   })
 
+  it('publishes the fusion profile guide from its paired sources', () => {
+    const pages = docsPages.filter(page => page.route.endsWith('guide/fusion-profile.md'))
+    expect(pages).toEqual([
+      expect.objectContaining({
+        locale: 'root',
+        contentLocale: 'zh-CN',
+        source: 'docs/user/guide/fusion-profile.zh.md',
+        route: 'guide/fusion-profile.md',
+        sidebar: 'zh-guide',
+        section: '入门',
+        order: 3,
+      }),
+      expect.objectContaining({
+        locale: 'en',
+        contentLocale: 'en-US',
+        source: 'docs/user/guide/fusion-profile.md',
+        route: 'en/guide/fusion-profile.md',
+        sidebar: 'en-guide',
+        section: 'Guide',
+        order: 3,
+      }),
+    ])
+  })
+
+  it('publishes the desktop shell contract from its paired sources', () => {
+    const pages = docsPages.filter(page => page.route.endsWith('guide/desktop-shell-contract.md'))
+    expect(pages).toEqual([
+      expect.objectContaining({
+        locale: 'root',
+        contentLocale: 'zh-CN',
+        source: 'docs/user/guide/desktop-shell-contract.zh.md',
+        route: 'guide/desktop-shell-contract.md',
+        sidebar: 'zh-guide',
+        section: '入门',
+        order: 4,
+      }),
+      expect.objectContaining({
+        locale: 'en',
+        contentLocale: 'en-US',
+        source: 'docs/user/guide/desktop-shell-contract.md',
+        route: 'en/guide/desktop-shell-contract.md',
+        sidebar: 'en-guide',
+        section: 'Guide',
+        order: 4,
+      }),
+    ])
+  })
+
   it('indexes every subsystem page in both sides of the folder README', () => {
     const pages = globSync(join(repositoryRoot, 'docs/subsystems/*.md'))
       .map(page => basename(page))

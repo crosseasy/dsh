@@ -1,0 +1,22 @@
+# Curated external rows for a fusion profile. Their exact versions are recorded
+# in package.json under dsh.bundle.profileDependencies and must be installed by
+# the profile before boot.
+
+- insert:
+    - id: modlens
+      name: '@liustack/modlens'
+
+    - id: ui-task-board
+      name: '@linxin666/dsh-client-ui-task-board'
+
+    - id: ssh
+      name: '@linxin666/dsh-ssh'
+
+    - id: remote-web-ui
+      name: '@linxin666/dsh-remote-web-ui'
+
+    - id: pet
+      name: '@linxin666/dsh-pet'
+
+    - id: ui-skin-center
+      name: '@linxin666/dsh-client-ui-skin-center'

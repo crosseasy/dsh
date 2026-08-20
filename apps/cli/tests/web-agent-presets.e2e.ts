@@ -1,19 +1,22 @@
 import { randomUUID } from 'node:crypto'
 import { mkdir, mkdtemp, readFile, stat, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
-import { fileURLToPath } from 'node:url'
+import { fileURLToPath, pathToFileURL } from 'node:url'
 import { dirname, join } from 'node:path'
 import { Context } from '@deepseek-ai/cordis'
 import { boot, healProfilesModuleFallback, loadOverlayPatches } from '@deepseek-ai/dsh-app-boot'
 import { provideCmdline } from '@deepseek-ai/dsh-cmdline'
 import { SessionId } from '@deepseek-ai/dsh-session'
-import type { Agent } from '@deepseek-ai/dsh-agent'
+import { agentEvents, type Agent } from '@deepseek-ai/dsh-agent'
 import type { PatchOptions } from '@deepseek-ai/cordis-plugin-include'
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 import { settingsNamespace } from '@deepseek-ai/dsh-settings'
 import { resolveSessionPreset, SETTINGS_NAMESPACE } from '@deepseek-ai/dsh-agent-presets'
 import { applyChildComposition, childSessionMeta } from '@deepseek-ai/dsh-subagent'
-import { CallId } from '@deepseek-ai/dsh-llm'
+import { GoalId } from '@deepseek-ai/dsh-goal'
+import {
+  CallId, createAssistantMessage, createToolResultMessage, createUserMessage,
+} from '@deepseek-ai/dsh-llm'
 import type {} from '@deepseek-ai/dsh-compaction-basic'
 import type {} from '@deepseek-ai/dsh-skill'
 import type {} from '@deepseek-ai/dsh-tools'
@@ -128,6 +131,41 @@ async function bootWeb(
 const toolNames = (ctx: Context, agent?: Agent): string[] =>
   ctx.tools.schemas(agent).map(schema => schema.name).sort()
 
+function appendAnchoredToolStep(agent: Agent, turn: number): void {
+  const callId = CallId(`liangshen-anchor-${turn}`)
+  agent.session.append('turn/start', { turn })
+  agent.session.append('user/message', createUserMessage({
+    content: [{ type: 'text', text: 'Inspect the workspace.' }],
+    source: { kind: 'user' },
+  }), { surfaceOp: 'append' })
+  agent.session.append('step/start', { turn, step: 1 })
+  agent.session.append('assistant/message', {
+    turn,
+    step: 1,
+    message: createAssistantMessage({
+      content: [
+        { type: 'reasoning', text: 'We should inspect the workspace first.' },
+        { type: 'tool-call', id: callId, name: 'bash', arguments: '{"command":"pwd"}' },
+      ],
+      source: { provider: 'test', model: 'test' },
+    }),
+  }, { surfaceOp: 'append' })
+  agent.session.append('tool/call', {
+    turn, step: 1, callId, name: 'bash', arguments: '{"command":"pwd"}',
+  })
+  agent.session.append('tool/result', {
+    turn,
+    step: 1,
+    message: createToolResultMessage({
+      callId,
+      content: [{ type: 'text', text: '/workspace' }],
+      isError: false,
+    }),
+  }, { surfaceOp: 'append' })
+  agent.session.append('step/end', { turn, step: 1 })
+  agent.session.append('turn/end', { turn, reason: { kind: 'completed' } })
+}
+
 function enablePresetTool(composition: string, id: string): string {
   const row = `    - id: ${id}\n`
   const start = composition.indexOf(row)
@@ -184,10 +222,12 @@ describe('the shipped Web composition', () => {
     }
   })
 
-  it('supplies both shipped presets, and only those, from the system root', async () => {
+  it('supplies every shipped preset, and only those, from the system root', async () => {
     const listed = await ctx.agentPresets.list()
 
-    expect(listed.map(preset => preset.id).sort()).toEqual(['code', 'cordis', 'minimal', 'standard'])
+    expect(listed.map(preset => preset.id).sort()).toEqual([
+      'code', 'cordis', 'liangshen', 'minimal', 'standard',
+    ])
     expect(listed.every(preset => preset.trust === 'system')).toBe(true)
     expect(ctx.agentPresets.defaultId).toBe('standard')
   })
@@ -233,6 +273,124 @@ describe('the shipped Web composition', () => {
     } finally {
       await handle.dispose()
     }
+  })
+
+  it('anchors `liangshen`, promotes it to Code Mode, and re-anchors after compaction', async () => {
+    const liangshen = await ctx.agents.create({
+      sessionId: SessionId(`preset-liangshen-${randomUUID()}`),
+      setup: agentCtx => ctx.agentPresets.mount(agentCtx, 'liangshen').then(() => undefined),
+    })
+    const native = await ctx.agents.create({
+      sessionId: SessionId(`preset-liangshen-native-${randomUUID()}`),
+      setup: agentCtx => ctx.agentPresets.mount(agentCtx, 'standard').then(() => undefined),
+    })
+    try {
+      const phase1 = await ctx.systemPrompt.assemble({
+        scope: liangshen.agent,
+        agent: liangshen.agent,
+      })
+      expect(phase1.sections).toEqual([
+        { name: 'deployment:persona', text: MINIMAL_PROMPT },
+      ])
+      expect(phase1.tools.map(tool => tool.name)).toEqual(['bash', 'str_replace_editor'])
+      expect(toolNames(ctx, liangshen.agent).filter(name => name !== 'str_replace_editor'))
+        .toEqual(toolNames(ctx, native.agent))
+
+      const messages = [
+        createUserMessage({ content: [{ type: 'text', text: 'user' }], source: { kind: 'user' } }),
+        createUserMessage({
+          content: [{ type: 'text', text: 'plugin' }],
+          source: { kind: 'plugin', plugin: 'test' },
+        }),
+      ]
+      const decision = await agentEvents(ctx, liangshen.agent).waterfall(
+        'agent/pre-step',
+        { messages, turn: 0, step: 1, signal: new AbortController().signal },
+        () => Promise.resolve({ kind: 'enter' as const, messages }),
+      )
+      expect(decision.kind).toBe('enter')
+      if (decision.kind === 'enter') {
+        expect(decision.messages.map(message => message.source.kind)).toEqual(['user'])
+      }
+
+      appendAnchoredToolStep(liangshen.agent, 0)
+      const promoted = await ctx.systemPrompt.assemble({
+        scope: liangshen.agent,
+        agent: liangshen.agent,
+      })
+      expect(promoted.tools.map(tool => tool.name)).toEqual(['run_code'])
+      expect((await ctx.systemPrompt.assemble({ scope: native.agent })).tools.map(tool => tool.name))
+        .not.toContain('run_code')
+
+      ctx.emit('session/event', liangshen.agent.session, {
+        type: 'compaction/end',
+        seq: 100,
+        time: 0,
+        data: { compactionId: 'liangshen-compaction', turn: null },
+      } as never)
+      const controlled = await ctx.systemPrompt.assemble({
+        scope: liangshen.agent,
+        agent: liangshen.agent,
+      })
+      const controlledTools = controlled.tools.map(tool => tool.name)
+        .filter(name => name !== 'glob' && name !== 'grep')
+        .sort()
+      expect(controlledTools).toEqual([
+        'ask_user_question', 'bash', 'edit', 'read', 'str_replace_editor', 'todo_write', 'write',
+      ])
+      expect(controlledTools).not.toContain('run_code')
+
+      appendAnchoredToolStep(liangshen.agent, 1)
+      expect((await ctx.systemPrompt.assemble({
+        scope: liangshen.agent,
+        agent: liangshen.agent,
+      })).tools.map(tool => tool.name))
+        .toEqual(['run_code'])
+    } finally {
+      await native.dispose()
+      await liangshen.dispose()
+    }
+  })
+
+  it('admits a goal round through the shipped bootstrap filter', async () => {
+    const helperPath = join(CONFIG_DIR, 'agent-presets', 'liangshen', 'tool-bootstrap.mjs')
+    const bootstrap = await import(pathToFileURL(helperPath).href) as {
+      apply(ctx: Context, config: Record<string, unknown>): void
+    }
+    const filterCtx = new Context()
+    bootstrap.apply(filterCtx, {
+      shellTools: ['bash'],
+      commonTools: ['str_replace_editor'],
+      messageSources: ['user', 'goal'],
+      maxBootstrapSteps: 4,
+    })
+    const agent = { session: { events: [] } } as unknown as Agent
+    const messages = [
+      createUserMessage({
+        content: [{ type: 'text', text: 'goal' }],
+        source: {
+          kind: 'goal',
+          goalId: GoalId('liangshen-goal'),
+          revision: 1,
+          round: 1,
+        },
+      }),
+      createUserMessage({
+        content: [{ type: 'text', text: 'plugin' }],
+        source: { kind: 'plugin', plugin: 'test' },
+      }),
+    ]
+
+    const decision = await agentEvents(filterCtx, agent).waterfall(
+      'agent/pre-step',
+      { messages, turn: 0, step: 1, signal: new AbortController().signal },
+      () => Promise.resolve({ kind: 'enter' as const, messages }),
+    )
+
+    expect(decision).toMatchObject({
+      kind: 'enter',
+      messages: [{ source: { kind: 'goal' } }],
+    })
   })
 
   it('keeps two differently composed sessions independent', async () => {
