@@ -24,7 +24,8 @@ agent 可以读取和编辑工作区文件、运行命令、委派工作并维�
 
 ## 继续使用
 
-- [组装 Fusion Web profile](./fusion-profile.md)
+- [组装零行 Fusion Web profile](./fusion-profile.md)
+- [Fusion TUI 交付状态](./fusion-tui-profile.md)
 - [集成桌面壳](./desktop-shell-contract.md)
 - [配置模型](./providers.md)
 - [使用 Python SDK](./python-sdk.md)

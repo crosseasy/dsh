@@ -1,0 +1,6 @@
+# Bilingual-pair consistency record (docs/i18n/README.md): the git blob hash of each
+# side as of the last confirmed-consistent state. Both languages carry equal authority;
+# after editing either side, bring the other along and re-record with:
+#   pnpm run verify-translation-pairing --write docs/superpowers/plans/fusion-regression-report.md
+fusion-regression-report.md: 117863197ba17edfd358c3b5eb11d72c9a0574e7
+fusion-regression-report.zh.md: 5c4590cceb890167e4c71264a6e2dd29259c0e09

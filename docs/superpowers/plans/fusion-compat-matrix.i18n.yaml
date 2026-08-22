@@ -1,0 +1,6 @@
+# Bilingual-pair consistency record (docs/i18n/README.md): the git blob hash of each
+# side as of the last confirmed-consistent state. Both languages carry equal authority;
+# after editing either side, bring the other along and re-record with:
+#   pnpm run verify-translation-pairing --write docs/superpowers/plans/fusion-compat-matrix.md
+fusion-compat-matrix.md: 1207f3b43c33378619e759a057ef32377f7b99b0
+fusion-compat-matrix.zh.md: 45057d7e4c3231936db8c2f681290134e7a9992d

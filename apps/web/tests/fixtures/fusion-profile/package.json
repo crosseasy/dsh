@@ -1,0 +1,15 @@
+{
+  "name": "dsh-fusion-acceptance-profile",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "dsh": {
+    "profile": {
+      "bundles": [
+        "@deepseek-ai/dsh-base",
+        "@deepseek-ai/dsh-web-app",
+        "@deepseek-ai/dsh-fusion"
+      ]
+    }
+  }
+}

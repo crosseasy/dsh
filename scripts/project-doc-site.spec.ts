@@ -295,6 +295,7 @@ describe('docsPages locale routes', () => {
         contentLocale: 'zh-CN',
         source: 'docs/user/guide/fusion-profile.zh.md',
         route: 'guide/fusion-profile.md',
+        label: 'Fusion Web 零行配置',
         sidebar: 'zh-guide',
         section: '入门',
         order: 3,
@@ -304,9 +305,36 @@ describe('docsPages locale routes', () => {
         contentLocale: 'en-US',
         source: 'docs/user/guide/fusion-profile.md',
         route: 'en/guide/fusion-profile.md',
+        label: 'Zero-row Fusion Web profile',
         sidebar: 'en-guide',
         section: 'Guide',
         order: 3,
+      }),
+    ])
+  })
+
+  it('publishes the Fusion TUI profile guide from its paired sources', () => {
+    const pages = docsPages.filter(page => page.route.endsWith('guide/fusion-tui-profile.md'))
+    expect(pages).toEqual([
+      expect.objectContaining({
+        locale: 'root',
+        contentLocale: 'zh-CN',
+        source: 'docs/user/guide/fusion-tui-profile.zh.md',
+        route: 'guide/fusion-tui-profile.md',
+        label: 'Fusion TUI 交付状态',
+        sidebar: 'zh-guide',
+        section: '入门',
+        order: 4,
+      }),
+      expect.objectContaining({
+        locale: 'en',
+        contentLocale: 'en-US',
+        source: 'docs/user/guide/fusion-tui-profile.md',
+        route: 'en/guide/fusion-tui-profile.md',
+        label: 'Fusion TUI delivery status',
+        sidebar: 'en-guide',
+        section: 'Guide',
+        order: 4,
       }),
     ])
   })
@@ -321,7 +349,7 @@ describe('docsPages locale routes', () => {
         route: 'guide/desktop-shell-contract.md',
         sidebar: 'zh-guide',
         section: '入门',
-        order: 4,
+        order: 5,
       }),
       expect.objectContaining({
         locale: 'en',
@@ -330,7 +358,7 @@ describe('docsPages locale routes', () => {
         route: 'en/guide/desktop-shell-contract.md',
         sidebar: 'en-guide',
         section: 'Guide',
-        order: 4,
+        order: 5,
       }),
     ])
   })

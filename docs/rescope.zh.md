@@ -2,7 +2,7 @@
 
 [English](rescope.md) | 中文
 
-Cordis 框架及其基础库以源码形式 vendored 在 [`vendor/`](../vendor/README.md) 下，并以 `@deepseek-ai` scope 发布：每个 harness 包都把框架声明为 peer dependency，发布 harness 就会连带发布这一层，用上游名发布等于在 registry 上占用别人的名字。本页是名字映射表；决策与影响见 [改名 Agent Note](../.agents/notes/implemented/process/2026-08-10-vendor-package-rescope.md)，上游 commit 见 [`vendor/README.md`](../vendor/README.md)。
+Cordis 框架及其基础库以源码形式 vendored 在 [`vendor/`](../vendor/README.md) 下，并以 `@deepseek-ai` scope 发布：每个 harness 包都把框架声明为 peer dependency，发布 harness 就会连带发布这一层，用上游名发布等于在注册表上占用别人的名字。本页是名字映射表；决策与影响见 [改名 Agent Note](../.agents/notes/implemented/process/2026-08-10-vendor-package-rescope.md)，上游 commit 见 [`vendor/README.md`](../vendor/README.md)。
 
 ## 名字映射
 
@@ -27,8 +27,9 @@ Cordis 框架及其基础库以源码形式 vendored 在 [`vendor/`](../vendor/R
 - **Loader 的 `cordis:` 内建前缀。** `cordis:include`、`cordis:group` 是协议前缀，不是包名。
 - **`cordis.yml` 配置文件家族**，包括 `*.cordis.yml`、`*.cordis.snapshot.yml`、`cordis.patch.yml`。
 - **名字里带这个词的 harness 包**，例如 `@deepseek-ai/dsh-tool-cordis`。
+- **运行时、locale 与 data id。** 带引号的 `cordis/<suffix>` token 只有位于模块说明符语法时才会改写。`cordis/request-run` 等运行时事件以及 locale 和 data id 默认保持不变；它们是标识符，不是包子路径。
 - **上游运行时标识符**，例如 Schemastery 的 `Symbol.for('schemastery')` 及其 `vendor:` 元数据字段。
-- **`docs/` 之外的散文。** `vendor/*/README.md`、各包 README 与 Agent Note 保留写作当时的名字；那里的裸 `cordis` 也可能是 Python SDK 的选项名或某个 agent-preset 的 id。`docs/` 之内，散文与所有 Markdown 围栏都跟着改。
+- **普通散文与 JSON 值。** 带引号的类包名文本与普通 JSON 值保持不变。`docs/` 下只有显式模块语法和有效 JSON/JSONC Markdown 围栏中的包元数据会跟着改；格式错误的 JSON/JSONC 围栏与通用 YAML 围栏逐字节保持不变。
 
 ## 你的代码要改什么
 
@@ -37,7 +38,9 @@ Cordis 框架及其基础库以源码形式 vendored 在 [`vendor/`](../vendor/R
 | 模块 import | `import { Context } from 'cordis'` | `import { Context } from '@deepseek-ai/cordis'` |
 | 类型事件声明合并 | `declare module 'cordis'` | `declare module '@deepseek-ai/cordis'` |
 | `package.json` 依赖键 | `"@cordisjs/plugin-hmr": "^1.0.15"` | `"@deepseek-ai/cordis-plugin-hmr": "^1.0.15"` |
-| `cordis.yml` 插件条目 | `name: '@cordisjs/plugin-include'` | `name: '@deepseek-ai/cordis-plugin-include'` |
+| 仓库识别的 Loader YAML 插件条目 | `name: '@cordisjs/plugin-include'` | `name: '@deepseek-ai/cordis-plugin-include'` |
+
+YAML 包名改写仅适用于仓库识别的 Loader 输入：`*cordis*.yml` 与 `*cordis*.yaml`。在这些文件的顶层 entry 或 patch 列表中，脚本处理 entry 名、带 `id` 的 patch `name` guard、`insert` entry、group 子项和 include 的 `config.patches`；`cordis:group` 与 `cordis:include` 自身保持不变，但用于识别这些嵌套 Loader entry。任意嵌套的 `config.name` 都属于数据。已有引号和注释保持不变。普通标量改成以 `@` 开头的 scoped 包名时会加双引号，因此 reverse 模式恢复相同的解析值，但保留新增的引号。
 
 ## 施加、核验与回退
 

@@ -35,7 +35,7 @@ function bundleDependencyErrors(
     }
   ).bundleManifestDependencyErrors
   expect(helper).toBeTypeOf('function')
-  return helper!(manifest, references, manifestPath)
+  return helper(manifest, references, manifestPath)
 }
 
 describe('verify-cordis-config metadata expressions', () => {

@@ -6,16 +6,14 @@
  * ([rationale](../.agents/notes/implemented/process/2026-08-10-vendor-package-rescope.md),
  * [name mapping](../docs/rescope.md)).
  *
- * The generic pass rewrites ONLY delimited, complete package-name tokens:
- * `'old'` / `"old"` / `` `old` `` / `'old/subpath'`, plus a YAML `name: old`
- * scalar. A match needs a quote (or `name: `) immediately left and the matching
- * quote — optionally after a `/subpath` — immediately right, which excludes
- * `cordis.yml`, the Loader's `cordis:` builtin prefix, `cordis-config-entry`,
- * `@deepseek-ai/dsh-tool-cordis`, and `cordiverse/cordis`, and makes the
- * rewrite idempotent because the scoped name's `cordis` is preceded by `/`.
- * Markdown follows the rename inside every fence, and in `docs/` prose too:
- * a tutorial that teaches an unresolvable name is wrong, while prose elsewhere
- * records what was true when it was written.
+ * The generic pass rewrites complete package-name tokens only when syntax or
+ * package metadata identifies a module reference, plus `name: old` scalars on
+ * YAML Loader entries and patches. Runtime, locale, data, and ordinary prose
+ * values remain unchanged.
+ * Markdown fences use their declared language, and `docs/` prose recognizes
+ * explicit module calls without treating quoted package-like text as a module
+ * reference. The scoped names do not match their upstream token patterns, so
+ * applying the rewrite again is a no-op.
  *
  * Sites the token rule cannot express (dot-notation access, unquoted object
  * keys, regex literals, the vendored-manifest table) are listed in
@@ -30,10 +28,72 @@
 
 import { execFileSync } from 'node:child_process'
 import { existsSync, readFileSync, realpathSync, writeFileSync } from 'node:fs'
+import { createRequire } from 'node:module'
 import { resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
+import type * as JsYaml from 'js-yaml'
+import type * as TypeScript from 'typescript'
+import type * as Yaml from 'yaml'
+import { isCordisConfigFile } from './cordis-config-files.ts'
 
 const root = resolve(import.meta.dirname, '..')
+
+function loadTypeScript(): typeof TypeScript {
+  try {
+    return createRequire(import.meta.url)('typescript') as typeof TypeScript
+  } catch (error) {
+    if (!(error instanceof Error) || !('code' in error) || error.code !== 'MODULE_NOT_FOUND') throw error
+    return createRequire(resolve(process.cwd(), 'package.json'))('typescript') as typeof TypeScript
+  }
+}
+
+const ts = loadTypeScript()
+
+function loadJsYaml(): typeof JsYaml {
+  try {
+    return createRequire(import.meta.url)('js-yaml') as typeof JsYaml
+  } catch (error) {
+    if (!(error instanceof Error) || !('code' in error) || error.code !== 'MODULE_NOT_FOUND') throw error
+    return createRequire(resolve(process.cwd(), 'package.json'))('js-yaml') as typeof JsYaml
+  }
+}
+
+const jsYaml = loadJsYaml()
+
+function loadYaml(): typeof Yaml {
+  try {
+    return createRequire(import.meta.url)('yaml') as typeof Yaml
+  } catch (error) {
+    if (!(error instanceof Error) || !('code' in error) || error.code !== 'MODULE_NOT_FOUND') throw error
+    return createRequire(resolve(process.cwd(), 'package.json'))('yaml') as typeof Yaml
+  }
+}
+
+const {
+  isAlias,
+  isMap,
+  isNode,
+  isScalar,
+  isSeq,
+  parseDocument,
+} = loadYaml()
+
+type YamlNode = Yaml.Node
+
+const YAML_JS_EXPRESSION_TAG = 'tag:yaml.org,2002:js'
+
+const YAML_JS_EXPRESSION = new jsYaml.Type(YAML_JS_EXPRESSION_TAG, {
+  kind: 'scalar',
+  resolve: value => typeof value === 'string',
+  construct: value => ({ __jsExpr: String(value) }),
+})
+
+const YAML_LOADER_SCHEMA = jsYaml.JSON_SCHEMA.extend(YAML_JS_EXPRESSION)
+
+const YAML_CST_JS_EXPRESSION: Yaml.ScalarTag = {
+  tag: YAML_JS_EXPRESSION_TAG,
+  resolve: value => value,
+}
 
 /** One vendored package's directory, upstream npm name, and rescoped name. */
 interface Rename {
@@ -101,6 +161,8 @@ const GENERIC_SKIPS: readonly GenericSkip[] = [
   { file: 'apps/cli/config/agent-presets/cordis/agent.cordis.yml', upstream: ['cordis'] },
   // The preset-roster loop names the `cordis` preset id, not a package.
   { file: 'apps/cli/tests/windows-shell.spec.ts', upstream: ['cordis'] },
+  // Unit fixtures intentionally keep pre-rescope tokens as sample input.
+  { file: 'scripts/rescope-vendor.spec.ts', upstream: ['cordis'] },
   // GROUP_ORDER holds `packages/<group>/` directory names, not package names.
   { file: 'scripts/gen-module-graph.ts', upstream: ['cordis'] },
   { file: 'scripts/gen-doc-graphs.ts', upstream: ['cordis'] },
@@ -108,10 +170,19 @@ const GENERIC_SKIPS: readonly GenericSkip[] = [
 
 /** A string that must appear exactly `count` times once the rescope has run. */
 interface PostCondition {
-  readonly file: string
+  readonly file: string | null
   readonly text: string
   readonly count: number
 }
+
+const CORDIS_RUNTIME_EVENT_SUFFIXES = [
+  'request-run',
+  'request-run-resolved',
+  'dynamic-package',
+  'dynamic-retract',
+  'inspect-query',
+  'inspect-query-resolved',
+] as const
 
 const POSTCONDITIONS: readonly PostCondition[] = [
   { file: 'vendor/cordis/package.json', text: '"name": "@deepseek-ai/cordis"', count: 1 },
@@ -133,6 +204,25 @@ const POSTCONDITIONS: readonly PostCondition[] = [
   { file: 'apps/cli/config/agent-presets/cordis/agent.cordis.yml', text: 'The `cordis` agent preset', count: 1 },
   { file: 'apps/cli/config/agent-presets/cordis/agent.cordis.yml', text: 'corrupting the `cordis` preset', count: 1 },
   { file: 'packages/examples/acp-demo/tests/built-bin.e2e.ts', text: '\'cordis\', \'loader\', \'include\', \'timer\', \'hmr\', \'logger-console\',', count: 1 },
+  { file: 'packages/extensions/ui-cordis/src/client/locales.ts', text: 'export const NS = \'cordis\'', count: 1 },
+  { file: 'packages/extensions/ui-cordis/src/client/index.ts', text: 'name: \'cordis\',', count: 1 },
+  { file: 'packages/extensions/ui-cordis/src/client/CordisActionRow.tsx', text: 'PropsLocale<\'cordis\'>', count: 1 },
+  { file: 'packages/extensions/ui-cordis/src/client/CordisDefineRow.tsx', text: 'PropsLocale<\'cordis\'>', count: 1 },
+  { file: 'packages/extensions/ui-cordis/src/client/CordisPanel.tsx', text: 'PropsLocale<\'cordis\'>', count: 1 },
+  { file: 'packages/extensions/ui-cordis/src/client/CordisRunRow.tsx', text: 'PropsLocale<\'cordis\'>', count: 1 },
+  {
+    file: 'packages/client/ui-settings-plugin-inventory/src/client/PluginInventorySettingsTab.tsx',
+    text: 't(\'cordis\')',
+    count: 1,
+  },
+  ...CORDIS_RUNTIME_EVENT_SUFFIXES.flatMap(suffix => [
+    {
+      file: 'packages/extensions/cordis-host-runner/src/types.ts',
+      text: `'cordis/${suffix}'`,
+      count: 1,
+    },
+    { file: null, text: `@deepseek-ai/cordis/${suffix}`, count: 0 },
+  ]),
 ]
 
 /**
@@ -485,7 +575,6 @@ interface Pattern {
   readonly from: string
   readonly to: string
   readonly token: RegExp
-  readonly yamlName: RegExp
 }
 
 function patterns(reverse: boolean): Pattern[] {
@@ -495,11 +584,14 @@ function patterns(reverse: boolean): Pattern[] {
       from: reverse ? rename.scoped : rename.upstream,
       to: reverse ? rename.upstream : rename.scoped,
     }))
-    .sort((left, right) => right.from.length - left.from.length)
+    .sort((left, right) => {
+      if (left.upstream === 'cordis') return -1
+      if (right.upstream === 'cordis') return 1
+      return right.from.length - left.from.length
+    })
     .map(rename => ({
       ...rename,
       token: new RegExp(`(['"\`])${escapeRegExp(rename.from)}((?:/[^'"\`\\s]*)?)\\1`, 'g'),
-      yamlName: new RegExp(`^(\\s*(?:-\\s*)?name:[ \\t]+)${escapeRegExp(rename.from)}([ \\t]*(?:#.*)?)$`, 'gm'),
     }))
 }
 
@@ -507,45 +599,544 @@ function skipped(file: string, pattern: Pattern): boolean {
   return GENERIC_SKIPS.some(skip => skip.file === file && skip.upstream.includes(pattern.upstream))
 }
 
-function rewriteLine(line: string, file: string, all: readonly Pattern[]): string {
-  let out = line
+interface SourceRegion {
+  readonly kind: 'fence' | 'prose'
+  readonly info?: string
+  readonly start: number
+  readonly text: string
+}
+
+function markdownRegions(text: string): readonly SourceRegion[] {
+  const regions: SourceRegion[] = []
+  let cursor = 0
+  let regionStart = 0
+  let fence: { marker: string; length: number; bodyStart: number; info?: string } | undefined
+  while (cursor < text.length) {
+    const newline = text.indexOf('\n', cursor)
+    const next = newline < 0 ? text.length : newline + 1
+    const line = text.slice(cursor, newline < 0 ? text.length : newline).replace(/\r$/, '')
+    const marker = /^[ \t]*(`{3,}|~{3,})(.*)$/.exec(line)
+    if (fence === undefined && marker?.[1] !== undefined) {
+      if (regionStart < cursor) {
+        regions.push({ kind: 'prose', start: regionStart, text: text.slice(regionStart, cursor) })
+      }
+      const info = marker[2]?.trim()
+      fence = {
+        marker: marker[1][0] ?? '',
+        length: marker[1].length,
+        bodyStart: next,
+        ...(info === undefined || info === '' ? {} : { info }),
+      }
+    } else if (fence !== undefined
+      && marker?.[1] !== undefined
+      && marker[1][0] === fence.marker
+      && marker[1].length >= fence.length
+      && marker[2]?.trim() === '') {
+      regions.push({
+        kind: 'fence',
+        ...(fence.info === undefined ? {} : { info: fence.info }),
+        start: fence.bodyStart,
+        text: text.slice(fence.bodyStart, cursor),
+      })
+      fence = undefined
+      regionStart = next
+    }
+    cursor = next
+  }
+  if (fence !== undefined) {
+    regions.push({
+      kind: 'fence',
+      ...(fence.info === undefined ? {} : { info: fence.info }),
+      start: fence.bodyStart,
+      text: text.slice(fence.bodyStart),
+    })
+  } else if (regionStart < text.length) {
+    regions.push({ kind: 'prose', start: regionStart, text: text.slice(regionStart) })
+  }
+  return regions
+}
+
+function moduleCallToken(node: TypeScript.CallExpression): TypeScript.Node | undefined {
+  if (node.questionDotToken !== undefined) return undefined
+  const expression = node.expression
+  if (expression.kind === ts.SyntaxKind.ImportKeyword) return expression
+  if (ts.isIdentifier(expression)) return expression.text === 'require' ? expression : undefined
+  if (!ts.isPropertyAccessExpression(expression)
+    || expression.questionDotToken !== undefined) return undefined
+  if (expression.name.text === 'require'
+    && ts.isIdentifier(expression.expression)
+    && expression.expression.text === 'module') {
+    return expression.name
+  }
+  if (expression.name.text !== 'resolve') return undefined
+  if (ts.isIdentifier(expression.expression)) {
+    return expression.expression.text === 'require' ? expression.expression : undefined
+  }
+  if (ts.isMetaProperty(expression.expression)
+    && expression.expression.keywordToken === ts.SyntaxKind.ImportKeyword
+    && expression.expression.name.text === 'meta') {
+    return expression.expression
+  }
+  return undefined
+}
+
+function sourceScriptKind(file: string, region: SourceRegion): TypeScript.ScriptKind {
+  const language = region.info?.split(/\s+/, 1)[0]?.toLowerCase()
+  if (language === 'tsx' || file.endsWith('.tsx')) return ts.ScriptKind.TSX
+  if (language === 'jsx' || file.endsWith('.jsx')) return ts.ScriptKind.JSX
+  return ts.ScriptKind.TS
+}
+
+const PACKAGE_DEPENDENCY_FIELDS = new Set([
+  'dependencies',
+  'devDependencies',
+  'optionalDependencies',
+  'peerDependencies',
+  'peerDependenciesMeta',
+])
+
+function collectJsonPackageReferences(
+  offsets: Set<number>,
+  region: SourceRegion,
+  file: string,
+): void {
+  if (ts.parseConfigFileTextToJson('package-fence.json', region.text).error !== undefined) return
+  const source = ts.parseJsonText('package-fence.json', region.text)
+  const statement = source.statements[0]
+  if (statement === undefined
+    || !ts.isExpressionStatement(statement)
+    || !ts.isObjectLiteralExpression(statement.expression)) return
+  for (const owner of statement.expression.properties) {
+    if (!ts.isPropertyAssignment(owner)
+      || !ts.isStringLiteralLike(owner.name)) continue
+    if (file.endsWith('package.json')
+      && owner.name.text === 'name'
+      && ts.isStringLiteralLike(owner.initializer)) {
+      offsets.add(region.start + owner.initializer.getStart(source))
+    }
+    if (PACKAGE_DEPENDENCY_FIELDS.has(owner.name.text)
+      && ts.isObjectLiteralExpression(owner.initializer)) {
+      for (const dependency of owner.initializer.properties) {
+        if (ts.isPropertyAssignment(dependency) && ts.isStringLiteralLike(dependency.name)) {
+          offsets.add(region.start + dependency.name.getStart(source))
+        }
+      }
+    }
+    if (/^(?:.*\/)?tsconfig(?:\.[^/]*)?\.json$/.test(file)
+      && owner.name.text === 'compilerOptions'
+      && ts.isObjectLiteralExpression(owner.initializer)) {
+      const paths = owner.initializer.properties.find(property =>
+        ts.isPropertyAssignment(property)
+        && ts.isStringLiteralLike(property.name)
+        && property.name.text === 'paths',
+      )
+      if (paths !== undefined
+        && ts.isPropertyAssignment(paths)
+        && ts.isObjectLiteralExpression(paths.initializer)) {
+        for (const path of paths.initializer.properties) {
+          if (ts.isPropertyAssignment(path) && ts.isStringLiteralLike(path.name)) {
+            offsets.add(region.start + path.name.getStart(source))
+          }
+        }
+      }
+    }
+  }
+}
+
+interface TextEdit {
+  readonly start: number
+  readonly end: number
+  readonly replacement: string
+}
+
+function validRuntimeYaml(text: string): boolean {
+  try {
+    return Array.isArray(jsYaml.load(text, { schema: YAML_LOADER_SCHEMA }))
+  } catch (error) {
+    if (error instanceof jsYaml.YAMLException) return false
+    throw error
+  }
+}
+
+function yamlMapValue(node: unknown, key: string): YamlNode | null | undefined {
+  if (!isMap(node)) return undefined
+  for (const pair of node.items) {
+    if (!isScalar(pair.key) || pair.key.value !== key) continue
+    return pair.value === null || isNode(pair.value) ? pair.value : undefined
+  }
+  return undefined
+}
+
+function yamlString(node: YamlNode | null | undefined): string | undefined {
+  return isScalar(node) && node.tag === undefined && typeof node.value === 'string'
+    ? node.value
+    : undefined
+}
+
+function yamlNameEdit(
+  edits: TextEdit[],
+  node: YamlNode | null | undefined,
+  file: string,
+  all: readonly Pattern[],
+): void {
+  const value = yamlString(node)
+  if (value === undefined || !isScalar(node) || node.range === undefined || node.range === null) return
   for (const pattern of all) {
     if (skipped(file, pattern)) continue
-    out = out.replace(pattern.token, (_match, quote: string, subpath: string) => `${quote}${pattern.to}${subpath}${quote}`)
-    out = out.replace(pattern.yamlName, (_match, prefix: string, suffix: string) => `${prefix}${pattern.to}${suffix}`)
+    if (value !== pattern.from && !value.startsWith(`${pattern.from}/`)) continue
+    const target = `${pattern.to}${value.slice(pattern.from.length)}`
+    const replacement = node.type === 'QUOTE_SINGLE'
+      ? `'${target}'`
+      : node.type === 'QUOTE_DOUBLE' || target.startsWith('@')
+        ? JSON.stringify(target)
+        : target
+    edits.push({ start: node.range[0], end: node.range[1], replacement })
+    return
   }
-  return out
+}
+
+const INCLUDE_PLUGIN_NAMES = new Set([
+  'cordis:include',
+  '@cordisjs/plugin-include',
+  '@deepseek-ai/cordis-plugin-include',
+])
+
+const GROUP_PLUGIN_NAMES = new Set([
+  'cordis:group',
+  '@cordisjs/plugin-group',
+  '@deepseek-ai/cordis-plugin-group',
+])
+
+function collectYamlEntryReferences(
+  edits: TextEdit[],
+  node: unknown,
+  file: string,
+  all: readonly Pattern[],
+): void {
+  if (!isMap(node)) return
+  const id = yamlMapValue(node, 'id')
+  const name = yamlMapValue(node, 'name')
+  if (yamlString(id) !== undefined && yamlString(name) !== undefined) {
+    yamlNameEdit(edits, name, file, all)
+  }
+
+  const group = yamlMapValue(node, 'group')
+  const config = yamlMapValue(node, 'config')
+  if (((isScalar(group) && group.value === true)
+    || GROUP_PLUGIN_NAMES.has(yamlString(name) ?? ''))
+    && isSeq(config)) {
+    for (const entry of config.items) {
+      collectYamlEntryReferences(edits, entry, file, all)
+    }
+  }
+
+  const insert = yamlMapValue(node, 'insert')
+  if (isSeq(insert)) {
+    for (const entry of insert.items) {
+      collectYamlEntryReferences(edits, entry, file, all)
+    }
+  }
+
+  if (!INCLUDE_PLUGIN_NAMES.has(yamlString(name) ?? '') || !isMap(config)) return
+  const patches = yamlMapValue(config, 'patches')
+  if (!isSeq(patches)) return
+  for (const patch of patches.items) {
+    collectYamlEntryReferences(edits, patch, file, all)
+  }
+}
+
+function unsupportedYamlNode(node: unknown): boolean {
+  if (!isNode(node)) return false
+  if (isAlias(node)
+    || ('anchor' in node && typeof node.anchor === 'string')
+    || (node.tag !== undefined && node.tag !== YAML_JS_EXPRESSION_TAG)) return true
+  if (isMap(node)) {
+    return node.items.some(pair =>
+      unsupportedYamlNode(pair.key) || unsupportedYamlNode(pair.value),
+    )
+  }
+  return isSeq(node) && node.items.some(unsupportedYamlNode)
+}
+
+function rewriteYaml(text: string, file: string, all: readonly Pattern[]): { text: string; lines: number } {
+  if (!validRuntimeYaml(text)) return { text, lines: 0 }
+  const document = parseDocument(text, {
+    customTags: [YAML_CST_JS_EXPRESSION],
+    keepSourceTokens: true,
+  })
+  if (document.errors.length > 0 || !isSeq(document.contents)) return { text, lines: 0 }
+  if (unsupportedYamlNode(document.contents)) return { text, lines: 0 }
+
+  const edits: TextEdit[] = []
+  for (const item of document.contents.items) {
+    collectYamlEntryReferences(edits, item, file, all)
+  }
+  if (edits.length === 0) return { text, lines: 0 }
+
+  const changedLines = new Set(edits.map(edit =>
+    text.slice(0, edit.start).split('\n').length,
+  ))
+  const rewritten = edits
+    .sort((left, right) => right.start - left.start)
+    .reduce(
+      (output, edit) =>
+        `${output.slice(0, edit.start)}${edit.replacement}${output.slice(edit.end)}`,
+      text,
+    )
+  return validRuntimeYaml(rewritten)
+    ? { text: rewritten, lines: changedLines.size }
+    : { text, lines: 0 }
+}
+
+function collectCordisPackageReference(
+  offsets: Set<number>,
+  node: TypeScript.Node,
+  source: TypeScript.SourceFile,
+  region: SourceRegion,
+  file: string,
+): void {
+  if (file === 'packages/client/web/src/seed.ts'
+    && ts.isPropertyAssignment(node)
+    && ts.isStringLiteralLike(node.name)
+    && ts.isIdentifier(node.initializer)
+    && node.initializer.text === 'Cordis') {
+    offsets.add(region.start + node.name.getStart(source))
+    return
+  }
+  if (file !== 'scripts/verify-dsh-package-licenses.spec.ts'
+    || !ts.isPropertyAssignment(node)
+    || !ts.isIdentifier(node.name)
+    || node.name.text !== 'name'
+    || !ts.isStringLiteralLike(node.initializer)
+    || !ts.isObjectLiteralExpression(node.parent)
+    || !ts.isCallExpression(node.parent.parent)
+    || node.parent.parent.arguments[2] !== node.parent
+    || !ts.isIdentifier(node.parent.parent.expression)
+    || node.parent.parent.expression.text !== 'writeManifest') return
+  const manifestPath = node.parent.parent.arguments[1]
+  if (manifestPath !== undefined
+    && ts.isStringLiteralLike(manifestPath)
+    && manifestPath.text === 'vendor/cordis/package.json') {
+    offsets.add(region.start + node.initializer.getStart(source))
+  }
+}
+
+function collectAstModuleSpecifiers(
+  moduleSpecifierOffsets: Set<number>,
+  packageReferenceOffsets: Set<number>,
+  region: SourceRegion,
+  file: string,
+  markdownFence = false,
+): void {
+  const sourceText = markdownFence
+    ? region.text.replace(
+      /^[ \t]*(?:`{3,}|~{3,})[^\r\n]*(?=\r?$)/gm,
+      marker => ' '.repeat(marker.length),
+    )
+    : region.text
+  const source = ts.createSourceFile(
+    file,
+    sourceText,
+    ts.ScriptTarget.Latest,
+    true,
+    sourceScriptKind(file, region),
+  )
+  const add = (node: TypeScript.Node | undefined): void => {
+    if (node !== undefined && ts.isStringLiteralLike(node)) {
+      moduleSpecifierOffsets.add(region.start + node.getStart(source))
+    }
+  }
+  const visit = (node: TypeScript.Node): void => {
+    if (ts.isImportDeclaration(node) || ts.isExportDeclaration(node)) {
+      add(node.moduleSpecifier)
+    } else if (ts.isCallExpression(node) && moduleCallToken(node) !== undefined) {
+      add(node.arguments[0])
+    } else if (ts.isExternalModuleReference(node)) {
+      add(node.expression)
+    } else if (ts.isImportTypeNode(node) && ts.isLiteralTypeNode(node.argument)) {
+      add(node.argument.literal)
+    } else if (ts.isModuleDeclaration(node)
+      && ts.getModifiers(node)?.some(modifier => modifier.kind === ts.SyntaxKind.DeclareKeyword) === true) {
+      const newline = source.text.indexOf('\n', node.end)
+      const lineEnd = newline < 0 ? source.text.length : newline
+      if (node.body !== undefined
+        || /^[ \t]*(?:(?:\/\/|\/\*).*)?$/.test(source.text.slice(node.end, lineEnd))) add(node.name)
+    }
+    collectCordisPackageReference(packageReferenceOffsets, node, source, region, file)
+    ts.forEachChild(node, visit)
+  }
+  visit(source)
+}
+
+function docsProseModuleCallStart(node: TypeScript.CallExpression, source: TypeScript.SourceFile): number | undefined {
+  return moduleCallToken(node)?.getStart(source)
+}
+
+function collectDocsProseModuleSpecifiers(offsets: Set<number>, region: SourceRegion): void {
+  const scanner = ts.createScanner(ts.ScriptTarget.Latest, true, ts.LanguageVariant.Standard, region.text)
+  const candidates = new Set<number>()
+  for (let kind = scanner.scan(); kind !== ts.SyntaxKind.EndOfFileToken; kind = scanner.scan()) {
+    if (kind === ts.SyntaxKind.ImportKeyword || scanner.getTokenText() === 'require') {
+      candidates.add(scanner.getTokenStart())
+    }
+  }
+  const source = ts.createSourceFile('docs-prose.ts', region.text, ts.ScriptTarget.Latest, true, ts.ScriptKind.TS)
+  const visit = (node: TypeScript.Node): void => {
+    if (ts.isCallExpression(node)
+      && candidates.has(docsProseModuleCallStart(node, source) ?? -1)) {
+      const argument = node.arguments[0]
+      if (argument !== undefined && ts.isStringLiteralLike(argument)) {
+        offsets.add(region.start + argument.getStart(source))
+      }
+    }
+    ts.forEachChild(node, visit)
+  }
+  visit(source)
+}
+
+function rewriteLine(
+  line: string,
+  file: string,
+  all: readonly Pattern[],
+  lineOffset: number,
+  moduleSpecifierOffsets: ReadonlySet<number>,
+  packageReferenceOffsets: ReadonlySet<number>,
+  referencesOnly: boolean,
+): string {
+  const edits: { start: number; end: number; replacement: string }[] = []
+  for (const pattern of all) {
+    if (skipped(file, pattern)) continue
+    line.replace(pattern.token, (match, quote: string, subpath: string, offset: number) => {
+      const absoluteOffset = lineOffset + offset
+      const moduleSpecifier = moduleSpecifierOffsets.has(absoluteOffset)
+      if (referencesOnly
+        && !moduleSpecifier
+        && !packageReferenceOffsets.has(absoluteOffset)) return match
+      edits.push({
+        start: offset,
+        end: offset + match.length,
+        replacement: `${quote}${pattern.to}${subpath}${quote}`,
+      })
+      return match
+    })
+  }
+  return edits
+    .sort((left, right) => right.start - left.start)
+    .reduce(
+      (out, edit) => `${out.slice(0, edit.start)}${edit.replacement}${out.slice(edit.end)}`,
+      line,
+    )
 }
 
 /**
  * Rewrite a file's eligible lines.
  *
- * Markdown splits in two. Every fence is code a reader copies or a
- * configuration they mount, so every fence follows the rename regardless of its
- * info string. Prose follows it only under `docs/`, where a sentence quoting
- * `` `cordis` `` teaches a name this repository no longer resolves; elsewhere
- * prose is a record of what was true when it was written, and the same spelling
- * can mean something else entirely — the Python SDK's `cordis` option, or the
- * unvendored `@cordisjs/plugin-http`.
+ * Markdown splits in two. Fences use their declared language to identify
+ * package references. Prose under `docs/` recognizes explicit module calls;
+ * quoted prose remains unchanged. Markdown prose elsewhere records upstream
+ * names and is not eligible.
  */
 function rewrite(text: string, file: string, all: readonly Pattern[]): { text: string; lines: number } {
   const markdown = file.endsWith('.md')
   const prose = markdown && file.startsWith('docs/')
-  let insideFence = false
-  let lines = 0
-  const out = text.split('\n').map((line) => {
-    if (markdown) {
-      if (/^\s*```/.test(line)) {
-        insideFence = !insideFence
-        return line
+  const sourceCode = /\.(?:ts|tsx|js|mjs|cjs|tpl)$/.test(file)
+  const json = file.endsWith('.json')
+  const yamlSource = /\.(?:yml|yaml)$/.test(file)
+  if (yamlSource) {
+    return isCordisConfigFile(file)
+      ? rewriteYaml(text, file, all)
+      : { text, lines: 0 }
+  }
+  const regions = markdown ? markdownRegions(text) : []
+  const moduleSpecifierOffsets = new Set<number>()
+  const packageReferenceOffsets = new Set<number>()
+  if (sourceCode) {
+    collectAstModuleSpecifiers(
+      moduleSpecifierOffsets,
+      packageReferenceOffsets,
+      { kind: 'fence', start: 0, text },
+      file,
+    )
+  } else if (json) {
+    collectJsonPackageReferences(
+      packageReferenceOffsets,
+      { kind: 'fence', start: 0, text },
+      file,
+    )
+  } else {
+    for (const region of regions) {
+      if (region.kind === 'fence') {
+        const language = region.info?.split(/\s+/, 1)[0]?.toLowerCase()
+        if (language === 'json' || language === 'jsonc') {
+          collectJsonPackageReferences(packageReferenceOffsets, region, 'package-fence.json')
+        } else if (language !== 'yaml' && language !== 'yml' && language !== undefined) {
+          collectAstModuleSpecifiers(moduleSpecifierOffsets, packageReferenceOffsets, region, file, true)
+        }
       }
-      if (!insideFence && !prose) return line
+      else if (prose) collectDocsProseModuleSpecifiers(moduleSpecifierOffsets, region)
     }
-    const next = rewriteLine(line, file, all)
+  }
+  let regionIndex = 0
+  let lines = 0
+  let lineOffset = 0
+  const out = text.split('\n').map((line) => {
+    const currentOffset = lineOffset
+    lineOffset += line.length + 1
+    if (markdown) {
+      let region = regions[regionIndex]
+      while (region !== undefined && region.start + region.text.length <= currentOffset) {
+        regionIndex += 1
+        region = regions[regionIndex]
+      }
+      if (region === undefined
+        || currentOffset < region.start
+        || (region.kind === 'prose' && !prose)) return line
+    }
+    const next = rewriteLine(
+      line,
+      file,
+      all,
+      currentOffset,
+      moduleSpecifierOffsets,
+      packageReferenceOffsets,
+      sourceCode || json || markdown,
+    )
     if (next !== line) lines += 1
     return next
   })
   return { text: out.join('\n'), lines }
+}
+
+/**
+ * Rewrite source text in the normal post-rescope direction.
+ * @param text - Source text to rewrite.
+ * @param file - Repository-relative path used to select file-specific rescope policy.
+ * @param reverse - Whether to restore upstream package names instead.
+ * @returns The rewritten text and the number of source lines changed by rescoping.
+ */
+export function rewriteSourceText(
+  text: string,
+  file: string,
+  reverse = false,
+): { text: string; lines: number } {
+  return rewrite(text, file, patterns(reverse))
+}
+
+/**
+ * Report repository-wide postconditions violated by eligible tracked text.
+ * @param text - Eligible tracked file contents joined into one corpus.
+ * @returns One diagnostic for each forbidden token present in the corpus.
+ */
+export function repositoryPostconditionFailures(text: string): string[] {
+  const failures: string[] = []
+  for (const check of POSTCONDITIONS) {
+    if (check.file !== null) continue
+    const hits = text.split(check.text).length - 1
+    if (hits !== check.count) {
+      failures.push(`postcondition: tracked eligible files have ${String(hits)} occurrence(s) of ${JSON.stringify(check.text)}, expected ${String(check.count)}`)
+    }
+  }
+  return failures
 }
 
 function classify(file: string): string {
@@ -604,6 +1195,7 @@ function main(): void {
   const counts = new Map<string, { files: number; lines: number }>()
   const failures: string[] = []
   const outstanding: string[] = []
+  const repositoryText: string[] = []
 
   // Classify every exact edit before writing anything: a single invalid site
   // means the mapping and the tree disagree, and a half-applied tree is worse
@@ -643,6 +1235,7 @@ function main(): void {
     const path = resolve(root, file)
     const before = readFileSync(path, 'utf8')
     const { text: after, lines } = rewrite(before, file, all)
+    if (mode !== 'dry' && !reverse) repositoryText.push(after)
     if (after === before) continue
     outstanding.push(file)
     const kind = classify(file)
@@ -658,8 +1251,10 @@ function main(): void {
   }
 
   if (mode !== 'dry') {
+    if (!reverse) failures.push(...repositoryPostconditionFailures(repositoryText.join('\0')))
     for (const check of POSTCONDITIONS) {
       if (reverse) break
+      if (check.file === null) continue
       const path = resolve(root, check.file)
       const hits = existsSync(path) ? readFileSync(path, 'utf8').split(check.text).length - 1 : -1
       if (hits !== check.count) {

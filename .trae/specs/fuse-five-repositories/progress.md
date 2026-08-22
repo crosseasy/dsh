@@ -137,3 +137,85 @@
 - 运行时负控：`dsh-better-sidebar@0.14.0` 经 web-ui-all `0.2.4` 加载且 Chrome CDP console 干净，显式挂载的 `0.10.0` 也能加载；`dsh-tui@0.8.5` 在内层 PTY 中渲染顶栏、上下文与工具计数、模型状态和输入区，但先对 23 个 rc.5 包输出 rc.7 upstream-drift 警告。这些负控不能覆盖不满足的 peer 契约，均不构成兼容候选。
 - 恢复与决定：误用新建补丁覆盖兼容矩阵后，已从 Trae 本地历史恢复 Round 20 原文并以 SHA-256 `087b5b161e6e37d23ec7c97f27ff4ba8c3c89d5600f54a9ee209dddb1af166e1` 验证，再定向追加本轮记录。Task 0A 与 Tasks 1-9 继续 `BLOCKED`，不修改 `spec.md`、`tasks.md` 或 `checklist.md`，不启动实现。
 - 变更文件：`docs/superpowers/plans/fusion-compat-matrix.md`、`.trae/specs/fuse-five-repositories/progress.md`；实现文件、tracked tree 与 staged tree保持不变。
+
+## Round 22
+
+- 完成/证据：Task 9 完成；Agent Note 三联文件已新增或更新，并经 `dsh-archive-agent-notes` 范围审计与独立复审通过。最终仓库 gate 在 `.superpowers/sdd/v2-task-9-final-gates-complete/` 全部退出 0：focused Vitest、`verify-config-catalog`、命名 translation pairing、typecheck、build、hygiene、doc-sync、docs:check、lint、`git diff --check`、`verify-archived-agent-notes` 与 `git diff --cached --check`。README 事件合同修复后，`.superpowers/sdd/v2-task-9-post-review-doc-fix/` 中 translation pairing、doc-sync、docs:check、lint 与 staged/unstaged diff check 全部退出 0。真实 Web smoke 使用系统 Chrome CDP `9333` 跑通 `fusion` profile、better-sidebar Files/Editor/Terminal/Git 和 clean console；真实 TUI fresh/resume PTY 均退出 0。
+- 发现或修复：最终复审发现 `ui-cordis` locale id 被 rescope 成包名，导致 `t` 注入类型消失；已恢复 locale/source id 为 `cordis`，保留真实事件名 `@deepseek-ai/cordis/*`，并用行级 skip、exact edits 和 postcondition 固定 `rescope-vendor` 行为。复审还发现 Cordis runner/ui README 保留旧事件名和过期字段；已更新三组 README 双语对并重录 sidecar。安全复审未发现可利用问题。
+- 关键决定/理由：交付文件已暂存，`.trae/specs/**`、`docs/superpowers/**`、兼容矩阵与回归记录保持未暂存或未跟踪状态，满足执行记录不纳入 Git 的约束；未执行 commit、push、merge、rebase 或 reset。`packages/core/**` 无 staged 或 unstaged diff，fusion 仍由 patch bundle、profile-local dependencies 和共享 Liangshen preset 组合。
+- 变更文件：新增/更新 fusion bundle、Cordis event rescope、rescope-vendor gate、产品指南、生成目录文档、Agent Note 与相关测试；执行记录只更新 `.trae/specs/fuse-five-repositories/tasks.md`、`checklist.md`、`progress.md` 和 `docs/superpowers/**` 工作树文件。
+
+## Round 23
+
+- 完成/证据：Task 10 从零审查完成。`.superpowers/sdd/v2-task-10-review-package-staged.diff` 重新生成并显式列出 staged delivery、staged diff、`.trae/specs/**`、`docs/superpowers/**` 与 `.superpowers/**` 排除项；`.superpowers/sdd/v2-task-10-impl-docs-semantic-review.md` 与 `.superpowers/sdd/v2-task-10-security-review.md` 均为 `verdict: APPROVED`。plan/design 对齐初审发现范围冲突和审查包排除说明不足；修复后 `.superpowers/sdd/v2-task-10-plan-design-alignment-rereview.md` 为 `verdict: APPROVED`。
+- 发现或修复：将计划、设计、Ralph spec 与 checklist 的改动边界从笼统的 `packages/*` 零改动修正为 `packages/core/**`、agent-loop 与 session 格式零改动，并明确 Cordis vendored package rescope 可触达拥有事件/API 合同的 API、extension、catalog、README 与测试文件。审查包新增 `.superpowers/**` execution-record 排除证明。
+- 关键决定/理由：Task 10 没有修改 runtime-bearing staged delivery，因此不重跑 Web/TUI smoke；复用 Task 9 的最新 runtime 证据。Task 10 的最小必要 gate 在 `.superpowers/sdd/v2-task-10-plan-fix-gates/` 全部退出 0：plan/design translation pairing、doc-sync、`git diff --check` 与 `git diff --cached --check`。
+- 变更文件：`.trae/specs/fuse-five-repositories/tasks.md`、`.trae/specs/fuse-five-repositories/checklist.md`、`.trae/specs/fuse-five-repositories/progress.md`、`docs/superpowers/plans/2026-08-19-dsh-five-repo-fusion.md`、`docs/superpowers/plans/2026-08-19-dsh-five-repo-fusion.zh.md`、`docs/superpowers/plans/2026-08-19-dsh-five-repo-fusion.i18n.yaml`、`docs/superpowers/specs/2026-08-19-dsh-five-repo-fusion-design.md`、`docs/superpowers/specs/2026-08-19-dsh-five-repo-fusion-design.zh.md`、`docs/superpowers/specs/2026-08-19-dsh-five-repo-fusion-design.i18n.yaml`；staged delivery 文件未因 Task 10 改动。
+
+## Round 2
+
+- **结论**: PASS
+- **审查范围**: Broad；覆盖 five-repo fusion 的 staged delivery、`.trae/specs/fuse-five-repositories/{spec,tasks,checklist,progress}.md`、fusion bundle/profile metadata、Liangshen preset、Cordis rescope/API/extension 触达面、产品指南、Agent Note、Web CDP 和 TUI PTY smoke。
+- **验证结果**:
+  - 构建/运行时: PASS；`pnpm run typecheck`、`pnpm run build`、`pnpm run lint`、`pnpm run hygiene`、`pnpm run doc-sync`、`pnpm run docs:check`、`git diff --check`、`git diff --cached --check`、`pnpm run verify-archived-agent-notes` 均退出 0。真实 Web smoke 使用系统 Chrome CDP `9333` 重跑；首次因浏览器本地状态停在 Git tab 导致探针找不到 Files 搜索框，清理该 origin 的 local/session storage 后同一 probe 退出 0，验证 left sidebar + better-sidebar、Files、CodeMirror、terminal marker、Git、128 个 HTTP 200、0 console/log error、0 runtime exception。TUI fresh/resume PTY 驱动均退出 0。
+  - 测试/覆盖率: PASS；focused Vitest `scripts/rescope-vendor.spec.ts scripts/verify-cordis-config.spec.ts packages/bundle/fusion/tests/fusion.spec.ts` 为 3 files / 34 tests 通过；受影响 Cordis/API/UI 测试为 11 files / 123 tests 通过；adversarial probe 针对 profile dependency 缺项、多余项和非法类型的 7 个拒绝分支通过。未运行覆盖率全量门，原验收要求为 focused tests 而非 coverage。
+  - Checklist 审计: 30/30 passed，0 failed；`tasks.md` 顶层 11/11 已完成。`git diff --cached --name-only -- .trae docs/superpowers .superpowers` 为空，`.trae/specs/**` 与 `docs/superpowers/**` 保持 unstaged/untracked；`packages/core/**` staged/unstaged diff 均为空。
+- **风险和问题**: 无阻塞问题。保留风险为已文档化的外部 peer drift/React mismatch；Web smoke 对持久化浏览器状态敏感，本轮通过清理测试 origin 后重跑确认产品路径正常。
+
+## Round 24
+
+- 权威结论：旧尾部 `Round 2` 是 superseded historical 记录，不代表当前交付。最终 Fusion Web 为零外部配置行；ModLens、SSH、Remote Web UI、Task Board、Pet、Git Graph、Skin Center 与 Better Sidebar 八项均为有证据支持的外部 blocker，历史三行 1/1 与 174/174 继续只作为 superseded 证据保留。
+- 运行时证据：最终 zero-row REAL gate 通过 1/1，完整 oracle 通过 196/196，三项负控通过 3/3；compact 为 7 项/401 tokens，投影消息 token 为 448→155，完整服务重启后保持 155。独立零行证据／运行时复审结论为 `EVIDENCE PASS / RUNTIME PASS`。
+- 修复与静态门禁：rescope 使用 TypeScript AST 分类 static/dynamic import、`require`、`require.resolve`、import type、import-equals 与 declared module，保持六个 `cordis/*` event id 和 locale id 不变；focused Vitest 5 files/102 tests、命名 pairing 16/16、`verify-cordis-config` 123 files、rescope 4,464 files、build、typecheck、hygiene、lint、doc-sync 28/28、docs:check 46 tests/2,354 fragments 与 staged/unstaged diff checks 全部通过。
+- 交付状态：Task 12 与 Task 13 顶层任务及相关 checklist 均完成；最终整体代码与安全审查没有未解决的 Critical、Important 或规格阻塞项。Fusion TUI 的 41 包纯 rc.5 源码闭包运行时 PASS，但公开来源仍缺少 23 个所需 rc.5 包，因此公开交付保持阶段 2 `BLOCKED`。
+- 文件与 Git 范围：58 个产品交付文件已显式 staged，包括 rescope 修复、zero-row bundle/fixture/tests、产品文档及 sidecar、Agent Note、生成文档与 website 投影；`.trae/specs/**`、`docs/superpowers/**` 与 `.superpowers/**` 保持 unstaged/untracked。`packages/core/**`、agent-loop 与 session 格式无 diff；本轮未执行 commit、push、merge、rebase 或 reset。
+
+## Round 2
+
+- **Verdict**: FAIL
+- **Scope reviewed**: Broad; five-repository Fusion specification, staged delivery, zero-row Web composition, Fusion TUI source-validation runtime, Cordis rescope classifier, REAL process helper, product documentation, Agent Notes, and repository gates.
+- **Verification results**:
+  - Build/Runtime: FAIL; build, typecheck, lint, hygiene, doc-sync 28/28, docs:check 46/46 with 2,354 fragments, zero-row REAL Chrome CDP `9333` acceptance 1/1, retained-oracle recalculation 196/196, negative controls 3/3, and fresh TUI PTY fresh/resume all passed. A never-settling process probe remained pending 50 ms after a 1 ms command deadline, proving the REAL command timeout can hang before bounded cleanup.
+  - Tests/Coverage: FAIL; focused Vitest passed 5 files/102 tests, stderr and cross-chunk UTF-8 byte-tail probes passed at 65,536/65,535 bytes, but the rescope adversarial matrix passed only 4/7 cases. Same-line locale exceptions and multiline Markdown/template module references were not rewritten, and permanent stderr/cross-chunk and never-settling command coverage is missing. Full repository coverage was not run because the acceptance plan requires focused tests rather than the exhaustive CI coverage lane.
+  - Checklist audit: 44/50 passed, 6 failed; three new unchecked verification checkpoints were added.
+- **Risks and issues**: P1 - `runManagedCommand` can wait forever on `process.done` after timeout. P1 - `rescope-vendor` skips valid module references in locale-exception lines and multiline non-TypeScript sources, contrary to its documented module-reference rule. P2 - the checklist still claims every phase-1 external version passed admission although the final design rejects all eight candidates. P2 - planning prose says execution records are outside the Git index, while the audited files are tracked but unstaged.
+
+## Round 3 Final Convergence (2026-08-22)
+
+- **Verdict**: PASS. Task 14 repaired rescope classification, Task 15 bounded REAL command and process-tree settlement, Task 16 corrected acceptance records, and Task 17 closed every finding from task, cross-group, exact-staged code, and security review.
+- **Rescope evidence**: the classifier handles same-line locale/data ids and module references, multiline TypeScript/JavaScript/template/Markdown references, TSX/JSX fences, explicit `require.resolve`/`module.require`/`import.meta.resolve`, and package-manifest dependency keys in valid JSON/JSONC fences. Runtime, locale, and data ids remain unchanged; malformed JSON/JSONC fences remain byte-identical. The final focused suite passed 39/39, the five-file group passed 149/149, focused oxlint reported 0 warnings/errors, and `rescope-vendor:check` verified 4,464 tracked files with no residue and idempotence.
+- **Process and browser evidence**: stdout and stderr retain independent 64 KiB byte tails, readiness matching crosses chunk and UTF-8 boundaries, and command cleanup plus `stopTree()` share bounded tree/outcome settlement. The system Chrome `151.0.7922.172` CDP endpoint on port `9333` ran the zero-row REAL acceptance 1/1 with clean console, page, network, target, process-tree, port, link, and temporary-directory cleanup.
+- **Repository checks**: typecheck, full build, lint over 2,465 files, hygiene, `doc-sync` 28/28, `docs:check` 46/46 with 2,354 fragments, archived Agent Note verification over 426 artifacts, staged and working-tree whitespace checks, and the named plan/design translation pairs all passed.
+- **Review evidence**: the final exact-staged package contains 58 files, index tree `b05055ee7f67855658185b6ab8ad29ffc4c52a8a`, and SHA-256 `e089b7537575a7cb1ba1122fc14a52df5775d7beed14f0f43b27340612215059`. The final code review is APPROVED with `final_comments.json` equal to `[]`; the final security review found no exploitable issue.
+- **Delivery state**: the 58 product files remain staged. The eight tracked execution records remain unstaged, the eight untracked planning translation/sidecar files remain outside the index, and cached paths under `.trae/specs/**`, `docs/superpowers/**`, and `.superpowers/**` are empty. `packages/core/**`, agent-loop, and session format remain unchanged. Round 3 performed no commit, push, merge, rebase, or reset; the 2026-08-20 baseline commit/push predates this round.
+- **External status**: final Fusion Web remains a zero-external-row delivery with all eight external candidates documented as blockers. Fusion TUI source runtime remains PASS from the Task 13 fresh PTY run, while public TUI delivery remains phase 2 BLOCKED because no supported public rc.5 closure exists.
+- **Alignment review**: the final independent review approved the plan, design, specification, Tasks 14-17, all six Round 3 checklist items, bilingual semantics, staged identity, execution-record separation, progress pointer, and Round 3 Git-operation statement with no discrepancy.
+
+## Round 4
+
+- **裁决**: FAIL
+- **审查范围**: Broad；覆盖五仓 Fusion 规格与任务、58 个 staged 产品文件、零行 Web 组合、Fusion TUI 源码运行时、Cordis rescope、REAL process helper、产品文档、Agent Note、外部候选新鲜度与 Git 暂存边界。
+- **验证结果**:
+  - 构建/运行时: FAIL；`pnpm run typecheck`、`pnpm run build`、`pnpm run lint:contracts-ready`、`pnpm run hygiene`、`pnpm run doc-sync` 和 `pnpm run docs:check` 均退出 0；系统 Chrome `151.0.7922.172` 的 CDP `9333` 零行 REAL gate 为 1/1，完整 Web oracle 为 196/196，三项篡改负控为 3/3，compact 为 7 项/401 tokens、投影消息 token 为 448→155 且重启后保持 155；TUI fresh/resume 的 UI、消息与工具往返、持久恢复、受支持退出和无残留进程均通过。整体仍失败，因为兼容矩阵 `2026-08-21T02:11Z` 截止后已有新版本，尚无适用的安装、安全、许可证、生命周期和实际运行时准入证据。
+  - 测试/覆盖率: FAIL；受影响测试通过 17 files/348 tests，独立五文件复跑通过 5 files/149 tests，JSONC 一次性正反向／格式错误探针通过；但 `scripts/rescope-vendor.spec.ts` 没有永久覆盖 `jsonc` 分支，不能证明 Task 17 所称 JSON/JSONC TDD 已完整落地。未运行全仓覆盖率，规格要求的是 focused tests，完整覆盖率由 CI 持有。
+  - 清单审计: 59/62 passed，3 failed；新增三个未勾选检查点，分别覆盖新版本准入、中文术语和 JSONC 永久测试。
+- **风险和问题**: P1：ModLens `3.23.1`、Web UI `0.2.7` 系列、Better Sidebar `0.15.0`、dsh-TUI `0.8.8` 与 Liangshen `0.2.7` 均晚于已记录 cutoff，现有“全部候选已审计”结论已过期。P2：staged 中文指南、README 与 Agent Note 在正文中违反 `runtime`、`registry`、`session`、`manifest`、`dispose`、`fixture` 的强制术语规则。P2：JSONC 实现虽通过一次性探针，但缺少永久回归测试。非阻塞残余风险：原 TUI resume driver 连续两次在 UI 焦点就绪前发送 Ctrl+C 而超时，加入 1 秒稳定等待后通过。
+
+## Round 5 Final 64-File Alignment (2026-08-22)
+
+- **裁决**: PASS；Task 18 与 Task 21 的规格符合性、证据质量、产品文档、测试、最终控制器集成、补救验证及 plan/design/spec/checklist 对齐复审均已批准，无未解决 P0、P1 或 P2 finding。
+- **候选结论**: 截止后完整集合为 ModLens `3.22.2`／`3.23.0`／`3.23.1`、17 个 Web UI 身份各自的 `0.2.6`／`0.2.7`、Better Sidebar `0.15.0` 与 dsh-TUI `0.8.7`／`0.8.8`。Fusion Web 保持零外部行；TUI `0.7.1` 源码运行时 PASS，`0.8.7`／`0.8.8` 运行时 `NOT RUN`，公开交付保持阶段 2 BLOCKED。
+- **历史与当前证据**: 历史 23 包仅为公开安装直接查询子集；新的完整查询在历史源码验证闭包的 41 个包中找到 0 个精确 rc.5。历史三行、四行与六行 Web 结果继续作为被取代证据保留。
+- **Task 21**: vendored rescope 通过解析后的 JSON、Cordis Loader YAML 与文档模块语法识别模块或包元数据引用，保留 event、locale、data id、普通值与普通引用文本；Fusion 产品文档链接 staged owning Agent Note，不依赖 unstaged 兼容矩阵。
+- **验证与边界**: post-Task 21 全量验证、TUI 证据补救和 Chrome CDP 恢复后的权威 Fusion acceptance 均通过；64 个产品文件保持 staged，8 个 tracked 计划／执行文件保持 unstaged，8 个计划翻译／sidecar 文件保持 untracked，cached `.trae/specs/**`、`docs/superpowers/**` 与 `.superpowers/**` 路径为空，`packages/core/**`、agent-loop 与 session 格式无 diff。
+- **完成状态**: Task 18、Task 21、Round 4 候选 checklist 与 Round 5 Task 21 checklist 已勾选；Task 19、Task 20 保持完成。本轮未执行 commit、push、merge、rebase 或 reset。
+
+## Round 2
+
+- **裁决**: FAIL
+- **审查范围**: Broad；覆盖五仓 Fusion 规格、计划、设计、64 个 staged 产品文件、外部候选新鲜度、零行 Web REAL composition、fusion-tui `0.7.1` fresh/resume、Cordis rescope、REAL process helper、产品文档、Agent Note 与仓库门禁。
+- **验证结果**:
+  - 构建/运行时: FAIL；`pnpm run typecheck`、`pnpm run build`、`pnpm run lint`、`pnpm run hygiene`、`pnpm run doc-sync`、`pnpm run docs:check`、`pnpm run verify-archived-agent-notes`、工作树／staged diff check 与系统 Chrome CDP `9333` 零行 acceptance 1/1 均通过。TUI fresh 通过；resume 首次在 UI 与消息恢复完成后等待支持退出超时，原样重跑通过且两次均无残留进程。新鲜 npm registry 探测发现全部 17 个 Web UI 身份已发布未审计的 `0.2.8`，因此“截止后完整集合”和最高精确候选结论已过期。
+  - 测试/覆盖率: FAIL；受影响 Vitest 为 18 files/386 tests 全通过，未运行全仓 coverage，因为规格要求 focused tests。对抗探针证明已挂载且 `GET /git/branches` 返回 200 时，当前 acceptance 的 `POST` 探针仍返回预期 405 并通过，未证明外部路由为零。
+  - 清单审计: 63/66 passed，3 failed；已追加三个未勾选检查点，覆盖 Web UI `0.2.8` 完整准入、真实方法的零路由负控和 TUI resume 支持退出稳定性。
+- **风险和问题**: P1：17 个 `0.2.8` 候选发布于现有矩阵截止时间之后，当前兼容结论与 staged Agent Note 已失去完整候选证据。P1：REAL gate 的 Git Graph 路由断言存在已实证的假阴性。P2：fusion-tui resume 支持退出在两次相同运行中一次超时、一次通过，运行证据存在时序不稳定。

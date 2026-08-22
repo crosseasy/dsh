@@ -1,7 +1,7 @@
 /**
- * @deepseek-ai/dsh-fusion - the curated external-plugin patch layer for a
- * fusion profile. The profile composer resolves `cordis.patch.yml` through
- * the package manifest; this module carries no runtime API.
+ * @deepseek-ai/dsh-fusion - the external-integration release layer for a
+ * fusion profile. Its patch remains empty until an external package passes
+ * every admission criterion; this module carries no runtime API.
  * @module @deepseek-ai/dsh-fusion
  */
 

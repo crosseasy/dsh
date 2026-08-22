@@ -2,7 +2,7 @@
 
 English | [中文](fusion-profile.zh.md)
 
-The Fusion Web profile adds the curated modlens and Web UI plugins to the standard Web application. This procedure creates an isolated profile with three bundle layers: `@deepseek-ai/dsh-base`, `@deepseek-ai/dsh-web-app`, and `@deepseek-ai/dsh-fusion`.
+The Fusion Web profile preserves the external-integration release layer on top of the standard Web application. No external package currently satisfies every admission criterion, so the profile adds zero external rows while retaining three bundle layers: `@deepseek-ai/dsh-base`, `@deepseek-ai/dsh-web-app`, and `@deepseek-ai/dsh-fusion`.
 
 ## Prerequisites
 
@@ -34,48 +34,26 @@ NODE
 
 The `base` and `web-app` bundles resolve from the installed `dsh`; the profile dependency supplies `fusion`. The normalization makes their order explicit and prevents any other installed bundle declaration from becoming a profile layer.
 
-## Allow required package builds
+## Keep the profile external-free
 
-Write the build approvals to this profile, not to the repository or another profile:
+The current Fusion profile needs no external dependency or build approval. Keep its pnpm workspace settings minimal:
 
 ```sh
 cat > "$FUSION_PROFILE/pnpm-workspace.yaml" <<'YAML'
 packages:
   - .
-
-nodeLinker: hoisted
-autoInstallPeers: false
-
-allowBuilds:
-  cloudflared@0.7.3: true
-  cpu-features@0.0.10: true
-  ssh2@1.17.0: true
 YAML
 ```
 
-These are the complete build approvals for this profile. Do not add them to the repository root.
+Do not add ModLens, SSH, Remote Web UI, their React peers, or their transitive build approvals to this profile or the repository root.
 
-## Install the profile-owned packages
+## Confirm zero external dependencies
 
-Install the six packages recorded by [`dsh.bundle.profileDependencies`](../../../packages/bundle/fusion/package.json) and their React peer providers directly through the profile's pnpm installation root:
-
-```sh
-pnpm --dir "$FUSION_PROFILE" add --save-exact \
-  @liustack/modlens@3.22.0 \
-  @linxin666/dsh-client-ui-task-board@0.2.4 \
-  @linxin666/dsh-ssh@0.2.4 \
-  @linxin666/dsh-remote-web-ui@0.2.4 \
-  @linxin666/dsh-pet@0.2.4 \
-  @linxin666/dsh-client-ui-skin-center@0.2.4 \
-  react@18.3.1 \
-  react-dom@18.3.1
-```
-
-Using profile-local pnpm keeps these packages in `profiles/fusion/node_modules` without appending their own bundle declarations to `dsh.profile.bundles`. Preserve `package.json`, `pnpm-lock.yaml`, and `pnpm-workspace.yaml` together to reproduce the installation.
+The Fusion package's [`dsh.bundle.profileDependencies`](../../../packages/bundle/fusion/package.json) is `{}`, and its patch is empty. Do not install any external candidate until a published version passes the complete license, security, lifecycle, rc.5, and assembled-runtime criteria.
 
 ## Verify the profile manifest
 
-Check the exact bundle list and profile-owned dependency versions before boot:
+Check the exact bundle list and confirm that no blocked package is declared in the profile's `dependencies` before boot:
 
 ```sh
 node --input-type=module - "$FUSION_PROFILE/package.json" <<'NODE'
@@ -87,30 +65,29 @@ const expectedBundles = [
   '@deepseek-ai/dsh-web-app',
   '@deepseek-ai/dsh-fusion',
 ]
-const expectedDependencies = {
-  '@liustack/modlens': '3.22.0',
-  '@linxin666/dsh-client-ui-task-board': '0.2.4',
-  '@linxin666/dsh-ssh': '0.2.4',
-  '@linxin666/dsh-remote-web-ui': '0.2.4',
-  '@linxin666/dsh-pet': '0.2.4',
-  '@linxin666/dsh-client-ui-skin-center': '0.2.4',
-  react: '18.3.1',
-  'react-dom': '18.3.1',
-}
+const blockedPackages = [
+  '@liustack/modlens',
+  '@linxin666/dsh-ssh',
+  '@linxin666/dsh-remote-web-ui',
+  '@linxin666/dsh-web-ui-all',
+  '@linxin666/dsh-client-ui-task-board',
+  '@linxin666/dsh-pet',
+  '@linxin666/dsh-client-ui-git-graph',
+  '@linxin666/dsh-client-ui-skin-center',
+  'dsh-better-sidebar',
+]
 
 if (JSON.stringify(manifest.dsh?.profile?.bundles) !== JSON.stringify(expectedBundles)) {
   throw new Error('fusion profile bundle order does not match the documented recipe')
 }
-for (const [name, version] of Object.entries(expectedDependencies)) {
-  if (manifest.dependencies?.[name] !== version) {
-    throw new Error(`${name} must resolve from the profile at ${version}`)
-  }
+for (const name of blockedPackages) {
+  if (manifest.dependencies?.[name] !== undefined) throw new Error(`${name} is blocked`)
 }
 console.log('fusion profile manifest verified')
 NODE
 ```
 
-The command prints `fusion profile manifest verified`. A missing external package otherwise fails during normal plugin resolution when the profile boots.
+The command prints `fusion profile manifest verified`.
 
 ## Start the Web UI
 
@@ -120,4 +97,10 @@ Start the profile on an available port:
 dsh --profile fusion --port 3080
 ```
 
-Open the printed URL. The left session sidebar remains the standard `ui-sidebar`; the same page also exposes Task Board, Skin Center, the pet dock, mobile remote control, and the modlens image/settings entry. Open the agent preset picker for a new session and select **梁神模式**. The preset roster returned by the Web API uses the id `liangshen`.
+Open the printed URL. The page remains the stock Web interface, including its left `ui-sidebar`, Settings, and New Session entry. Open the agent preset picker for a new session and select **梁神模式**. The preset roster returned by the Web API uses the id `liangshen`; the preset is repository-owned and is not a Fusion external row.
+
+The checked-in browser acceptance boots this zero-row recipe through system Chrome CDP `9333`. It verifies that all eight blocked integrations have no Host row, browser entry, client resource, UI root, route, or tool, while the stock Web interface remains visible and diagnostics and cleanup are clean.
+
+## Known limitations
+
+- This profile has zero external rows, so image understanding, SSH, mobile remote UI, Task Board, Pet, Git Graph, Skin Center, and the right-side Files, editor, terminal, and Source Control workbench are unavailable. Do not install candidate packages or add profile rows to bypass admission. The owning [Agent Note](../../../.agents/notes/implemented/architecture/2026-08-19-fusion-profile-external-plugin-ownership.md) defines the zero-row decision, package-specific blockers, and revalidation requirements.

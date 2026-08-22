@@ -1,6 +1,6 @@
 /**
- * The fusion package must resolve its curated external rows through the same
- * profile and Loader path used by a real dsh launch.
+ * The fusion package must resolve its empty patch through the same profile and
+ * Loader path used by a real dsh launch.
  */
 
 import { mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, symlinkSync, writeFileSync } from 'node:fs'
@@ -16,21 +16,16 @@ import {
 import { afterEach, describe, expect, it } from 'vitest'
 
 const PACKAGE_NAME = '@deepseek-ai/dsh-fusion'
-const PROFILE_DEPENDENCIES = {
-  '@liustack/modlens': '3.22.0',
-  '@linxin666/dsh-client-ui-task-board': '0.2.4',
-  '@linxin666/dsh-ssh': '0.2.4',
-  '@linxin666/dsh-remote-web-ui': '0.2.4',
-  '@linxin666/dsh-pet': '0.2.4',
-  '@linxin666/dsh-client-ui-skin-center': '0.2.4',
-}
-const EXPECTED_ROWS = [
-  ['modlens', '@liustack/modlens'],
-  ['ui-task-board', '@linxin666/dsh-client-ui-task-board'],
-  ['ssh', '@linxin666/dsh-ssh'],
-  ['remote-web-ui', '@linxin666/dsh-remote-web-ui'],
-  ['pet', '@linxin666/dsh-pet'],
-  ['ui-skin-center', '@linxin666/dsh-client-ui-skin-center'],
+const PROFILE_DEPENDENCIES = {}
+const BLOCKED_PACKAGES = [
+  '@liustack/modlens',
+  '@linxin666/dsh-ssh',
+  '@linxin666/dsh-remote-web-ui',
+  '@linxin666/dsh-client-ui-task-board',
+  '@linxin666/dsh-pet',
+  '@linxin666/dsh-client-ui-git-graph',
+  '@linxin666/dsh-client-ui-skin-center',
+  'dsh-better-sidebar',
 ] as const
 const temporaryDirectories: string[] = []
 
@@ -41,7 +36,7 @@ afterEach(() => {
 })
 
 describe('dsh-fusion bundle', () => {
-  it('loads its curated rows through profile composition and the Loader', async () => {
+  it('loads its zero-row patch through profile composition and the Loader', async () => {
     const packageRoot = fileURLToPath(new URL('..', import.meta.url))
     const manifest = JSON.parse(
       readFileSync(resolve(packageRoot, 'package.json'), 'utf8'),
@@ -87,10 +82,7 @@ describe('dsh-fusion bundle', () => {
     mkdirSync(appDirectory, { recursive: true })
     writeFileSync(appManifest, '{"name":"fusion-test-app","private":true}\n')
     initProfile(profileDirectory, [PACKAGE_NAME])
-    writeFileSync(
-      join(profileDirectory, 'cordis.patch.yml'),
-      EXPECTED_ROWS.map(([id]) => `- id: ${id}\n  disabled: true\n`).join(''),
-    )
+    writeFileSync(join(profileDirectory, 'cordis.patch.yml'), '[]\n')
 
     const packageLink = join(profileDirectory, 'node_modules', PACKAGE_NAME)
     mkdirSync(dirname(packageLink), { recursive: true })
@@ -107,15 +99,19 @@ describe('dsh-fusion bundle', () => {
         ? (patch as { insert?: Array<{ id?: string; name?: string }> }).insert ?? []
         : [],
     )
-    expect(rows.map(row => [row.id, row.name])).toEqual(EXPECTED_ROWS)
-    expect(new Set(rows.map(row => row.name))).toEqual(new Set(Object.keys(PROFILE_DEPENDENCIES)))
+    expect(rows).toEqual([])
     const serializedRows = JSON.stringify(rows)
     for (const forbidden of [
+      ...BLOCKED_PACKAGES,
+      'ui-task-board',
+      'pet',
+      'ui-git-graph',
+      'skin-center',
+      'better-sidebar',
       'web-ui-all',
       'describe-image',
       'aionui',
       'liangshen',
-      'better-sidebar',
     ]) {
       expect(serializedRows).not.toContain(forbidden)
     }

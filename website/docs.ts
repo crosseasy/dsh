@@ -133,10 +133,18 @@ const homeAndGuide = pairedPages([
   {
     source: 'docs/user/guide/fusion-profile.md',
     route: 'guide/fusion-profile.md',
-    label: { root: 'Fusion Web profile', en: 'Fusion Web profile' },
+    label: { root: 'Fusion Web 零行配置', en: 'Zero-row Fusion Web profile' },
     sidebar: { root: 'zh-guide', en: 'en-guide' },
     section: { root: '入门', en: 'Guide' },
     order: 3,
+  },
+  {
+    source: 'docs/user/guide/fusion-tui-profile.md',
+    route: 'guide/fusion-tui-profile.md',
+    label: { root: 'Fusion TUI 交付状态', en: 'Fusion TUI delivery status' },
+    sidebar: { root: 'zh-guide', en: 'en-guide' },
+    section: { root: '入门', en: 'Guide' },
+    order: 4,
   },
   {
     source: 'docs/user/guide/desktop-shell-contract.md',
@@ -144,7 +152,7 @@ const homeAndGuide = pairedPages([
     label: { root: '桌面壳集成', en: 'Desktop shell integration' },
     sidebar: { root: 'zh-guide', en: 'en-guide' },
     section: { root: '入门', en: 'Guide' },
-    order: 4,
+    order: 5,
   },
   {
     source: 'docs/user/guide/python-sdk.md',

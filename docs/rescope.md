@@ -27,8 +27,9 @@ Subpath exports keep their path: `@cordisjs/plugin-loader/repository` becomes `@
 - **The Loader's `cordis:` builtin prefix.** `cordis:include` and `cordis:group` are a protocol prefix, not a package name.
 - **The `cordis.yml` configuration family**, including `*.cordis.yml`, `*.cordis.snapshot.yml`, and `cordis.patch.yml`.
 - **Harness packages whose own names contain the word**, such as `@deepseek-ai/dsh-tool-cordis`.
+- **Runtime, locale, and data ids.** A quoted `cordis/<suffix>` token changes only in module-specifier syntax. Runtime events such as `cordis/request-run`, plus locale and data ids, remain unchanged by default; they are identifiers, not package subpaths.
 - **Upstream runtime identifiers**, such as Schemastery's `Symbol.for('schemastery')` and its `vendor:` metadata field.
-- **Prose outside `docs/`.** `vendor/*/README.md`, package READMEs, and Agent Notes keep the names they were written with; a bare `cordis` there can also be the Python SDK's option name or an agent-preset id. Inside `docs/`, prose and every Markdown fence follow the rename.
+- **Ordinary prose and JSON values.** Quoted package-like text and ordinary JSON values remain unchanged. Under `docs/`, only explicit module syntax and package metadata inside valid JSON/JSONC Markdown fences follow the rename; malformed JSON/JSONC fences and generic YAML fences remain byte-identical.
 
 ## What your code has to change
 
@@ -37,7 +38,9 @@ Subpath exports keep their path: `@cordisjs/plugin-loader/repository` becomes `@
 | Module import | `import { Context } from 'cordis'` | `import { Context } from '@deepseek-ai/cordis'` |
 | Typed-event merge | `declare module 'cordis'` | `declare module '@deepseek-ai/cordis'` |
 | `package.json` dependency key | `"@cordisjs/plugin-hmr": "^1.0.15"` | `"@deepseek-ai/cordis-plugin-hmr": "^1.0.15"` |
-| `cordis.yml` plugin entry | `name: '@cordisjs/plugin-include'` | `name: '@deepseek-ai/cordis-plugin-include'` |
+| Recognized Loader YAML plugin entry | `name: '@cordisjs/plugin-include'` | `name: '@deepseek-ai/cordis-plugin-include'` |
+
+YAML package-name rewriting is limited to repository-recognized Loader inputs: `*cordis*.yml` and `*cordis*.yaml`. Within their top-level entry or patch lists, it follows entry names, id-targeted patch name guards, `insert` entries, group children, and include `config.patches`; `cordis:group` and `cordis:include` stay unchanged while identifying those nested Loader entries. Arbitrary nested `config.name` values are data. Existing quotes and comments stay intact. A plain name that becomes an `@`-scoped package is emitted with double quotes, so reverse mode restores the same parsed value but retains that added quoting.
 
 ## Applying, verifying, and reverting
 

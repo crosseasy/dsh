@@ -1,0 +1,6 @@
+# Bilingual-pair consistency record (docs/i18n/README.md): the git blob hash of each
+# side as of the last confirmed-consistent state. Both languages carry equal authority;
+# after editing either side, bring the other along and re-record with:
+#   pnpm run verify-translation-pairing --write docs/superpowers/specs/2026-08-19-dsh-five-repo-fusion-design.md
+2026-08-19-dsh-five-repo-fusion-design.md: 7c6d40c25d57f43551116e7fa515372e553c9c9b
+2026-08-19-dsh-five-repo-fusion-design.zh.md: 28c108b40f78d60396b4d86c781f8332ff7f5cbf

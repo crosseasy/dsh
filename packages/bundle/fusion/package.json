@@ -1,6 +1,6 @@
 {
   "name": "@deepseek-ai/dsh-fusion",
-  "description": "The curated external-plugin patch layer for a fusion profile, applied after dsh-base and dsh-web-app",
+  "description": "The empty external-integration patch layer for a fusion profile, applied after dsh-base and dsh-web-app",
   "version": "0.1.0-rc.5",
   "publishConfig": {
     "access": "public"
@@ -36,14 +36,7 @@
   "dsh": {
     "bundle": {
       "patch": "./cordis.patch.yml",
-      "profileDependencies": {
-        "@liustack/modlens": "3.22.0",
-        "@linxin666/dsh-client-ui-task-board": "0.2.4",
-        "@linxin666/dsh-ssh": "0.2.4",
-        "@linxin666/dsh-remote-web-ui": "0.2.4",
-        "@linxin666/dsh-pet": "0.2.4",
-        "@linxin666/dsh-client-ui-skin-center": "0.2.4"
-      }
+      "profileDependencies": {}
     }
   },
   "peerDependencies": {
