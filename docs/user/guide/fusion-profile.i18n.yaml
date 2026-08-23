@@ -2,5 +2,5 @@
 # side as of the last confirmed-consistent state. Both languages carry equal authority;
 # after editing either side, bring the other along and re-record with:
 #   pnpm run verify-translation-pairing --write docs/user/guide/fusion-profile.md
-fusion-profile.md: 74cffc0aba75e7325868e005d658aebe858a78db
-fusion-profile.zh.md: 5d78fafd7212b5e7f4dc8521c6b9cc782f2706b7
+fusion-profile.md: 4c633f256c5a33040575536c70756f22080d0b4b
+fusion-profile.zh.md: 5675427e5a0d94a92e84d8f3a0372cc61cd212ca

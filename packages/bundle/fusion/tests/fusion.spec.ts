@@ -1,9 +1,9 @@
 /**
- * The fusion package must resolve its empty patch through the same profile and
- * Loader path used by a real dsh launch.
+ * The fusion package must resolve its accepted external rows through the same
+ * profile and Loader path used by a real dsh launch.
  */
 
-import { mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, symlinkSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, symlinkSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { dirname, join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -16,14 +16,18 @@ import {
 import { afterEach, describe, expect, it } from 'vitest'
 
 const PACKAGE_NAME = '@deepseek-ai/dsh-fusion'
-const PROFILE_DEPENDENCIES = {}
+const PROFILE_DEPENDENCIES = {
+  '@linxin666/dsh-pet': '0.2.9',
+}
+const EXPECTED_ROWS = [
+  { id: 'pet', name: '@linxin666/dsh-pet' },
+]
 const BLOCKED_PACKAGES = [
   '@liustack/modlens',
+  '@linxin666/dsh-client-ui-git-graph',
   '@linxin666/dsh-ssh',
   '@linxin666/dsh-remote-web-ui',
   '@linxin666/dsh-client-ui-task-board',
-  '@linxin666/dsh-pet',
-  '@linxin666/dsh-client-ui-git-graph',
   '@linxin666/dsh-client-ui-skin-center',
   'dsh-better-sidebar',
 ] as const
@@ -36,7 +40,7 @@ afterEach(() => {
 })
 
 describe('dsh-fusion bundle', () => {
-  it('loads its zero-row patch through profile composition and the Loader', async () => {
+  it('loads its accepted rows through profile composition and the Loader', async () => {
     const packageRoot = fileURLToPath(new URL('..', import.meta.url))
     const manifest = JSON.parse(
       readFileSync(resolve(packageRoot, 'package.json'), 'utf8'),
@@ -87,6 +91,26 @@ describe('dsh-fusion bundle', () => {
     const packageLink = join(profileDirectory, 'node_modules', PACKAGE_NAME)
     mkdirSync(dirname(packageLink), { recursive: true })
     symlinkSync(packageRoot, packageLink, 'junction')
+    for (const packageName of Object.keys(PROFILE_DEPENDENCIES)) {
+      const externalRoot = join(profileDirectory, 'node_modules', ...packageName.split('/'))
+      mkdirSync(externalRoot, { recursive: true })
+      writeFileSync(
+        join(externalRoot, 'package.json'),
+        `${JSON.stringify({
+          name: packageName,
+          version: PROFILE_DEPENDENCIES[packageName as keyof typeof PROFILE_DEPENDENCIES],
+          type: 'module',
+          exports: './index.js',
+        })}\n`,
+      )
+      writeFileSync(join(externalRoot, 'index.js'), 'export function apply() {}\n')
+      expect(existsSync(join(
+        profileDirectory,
+        'node_modules',
+        ...packageName.split('/'),
+        'package.json',
+      ))).toBe(true)
+    }
 
     const profile = loadProfile('fusion-test', 'fusion-test', appManifest, home)
     expect(profile.layers).toHaveLength(1)
@@ -99,13 +123,12 @@ describe('dsh-fusion bundle', () => {
         ? (patch as { insert?: Array<{ id?: string; name?: string }> }).insert ?? []
         : [],
     )
-    expect(rows).toEqual([])
+    expect(rows).toEqual(EXPECTED_ROWS)
     const serializedRows = JSON.stringify(rows)
     for (const forbidden of [
       ...BLOCKED_PACKAGES,
+      'git-graph',
       'ui-task-board',
-      'pet',
-      'ui-git-graph',
       'skin-center',
       'better-sidebar',
       'web-ui-all',
@@ -116,7 +139,7 @@ describe('dsh-fusion bundle', () => {
       expect(serializedRows).not.toContain(forbidden)
     }
 
-    const rootConfig = join(temporaryRoot, 'cordis.yml')
+    const rootConfig = join(profileDirectory, 'cordis.yml')
     writeFileSync(rootConfig, '[]\n')
     const patches = [
       ...profile.layers.flatMap(layer => layer.patches),

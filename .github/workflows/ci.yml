@@ -256,6 +256,82 @@ jobs:
       - name: Run compatibility, snapshot, and artifact gates
         run: pnpm run check:ci:consumers
 
+  fusion-acceptance:
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    name: fusion / external-profile snapshot
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+
+      - uses: pnpm/action-setup@v4
+        with:
+          dest: ${{ runner.temp }}/setup-pnpm
+
+      - uses: actions/setup-node@v6
+        with:
+          node-version: ${{ env.PRIMARY_NODE_VERSION }}
+
+      - name: Install (immutable)
+        run: pnpm install --frozen-lockfile
+
+      - name: Build
+        run: pnpm run build
+
+      - name: Preflight system Chrome dependencies
+        run: |
+          command -v google-chrome
+          command -v setsid
+          command -v curl
+
+      - name: Run Fusion external-profile snapshot with system Google Chrome
+        env:
+          DSH_SNAPSHOT: replay
+        run: |
+          chrome_bin=$(command -v google-chrome)
+          chrome_profile=
+          chrome_pid=
+          cleanup() {
+            if [[ -n "$chrome_pid" ]]; then
+              kill -TERM -- "-$chrome_pid" 2>/dev/null || true
+              for _ in {1..20}; do
+                kill -0 "$chrome_pid" 2>/dev/null || break
+                sleep 0.25
+              done
+              kill -KILL -- "-$chrome_pid" 2>/dev/null || true
+              wait "$chrome_pid" 2>/dev/null || true
+            fi
+            if [[ -n "$chrome_profile" ]]; then
+              rm -rf "$chrome_profile"
+            fi
+          }
+          trap cleanup EXIT
+          chrome_profile=$(mktemp -d)
+          setsid "$chrome_bin" \
+            --headless=new \
+            --remote-debugging-address=127.0.0.1 \
+            --remote-debugging-port=9333 \
+            --user-data-dir="$chrome_profile" \
+            --no-first-run \
+            --no-default-browser-check \
+            about:blank >"$RUNNER_TEMP/fusion-chrome.log" 2>&1 &
+          chrome_pid=$!
+          ready=
+          for _ in {1..40}; do
+            if curl --silent --show-error --fail --max-time 1 \
+              http://127.0.0.1:9333/json/version >/dev/null; then
+              ready=1
+              break
+            fi
+            sleep 0.5
+          done
+          if [[ -z "$ready" ]]; then
+            cat "$RUNNER_TEMP/fusion-chrome.log"
+            exit 1
+          fi
+          pnpm run test:fusion:acceptance:built
 
   node-compat:
     if: github.event_name == 'pull_request'
@@ -925,7 +1001,7 @@ jobs:
           && github.event.pull_request.user.login != 'dependabot[bot]'
           && fromJSON('["self-hosted", "linux", "x64", "vm-backup"]')
           || 'ubuntu-latest' }}
-    needs: [node-24, node-24-coverage, node-24-consumers, node-compat, python-sdk, python-runtime, windows]
+    needs: [node-24, node-24-coverage, node-24-consumers, fusion-acceptance, node-compat, python-sdk, python-runtime, windows]
     if: always() && github.event_name == 'pull_request'
     steps:
       - name: Fail if any needed job did not succeed

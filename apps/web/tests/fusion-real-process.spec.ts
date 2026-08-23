@@ -1,5 +1,7 @@
 import { connect, createServer } from 'node:net'
 import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
+import { createServer as createHttpServer } from 'node:http'
+import { spawnSync } from 'node:child_process'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { PassThrough } from 'node:stream'
@@ -13,8 +15,16 @@ import type {
 } from '@deepseek-ai/dsh-subprocess'
 import {
   acceptanceEnvironment,
+  assertSameHttpResponse,
+  assertSameModelInput,
+  FUSION_ACCEPTANCE_CLEANUP_TIMEOUT_MS,
+  FUSION_ACCEPTANCE_FRAMEWORK_HEADROOM_MS,
+  FUSION_ACCEPTANCE_OPERATION_TIMEOUT_MS,
+  FUSION_ACCEPTANCE_TIMEOUT_MS,
   isServerPageTarget,
   parseSystemChromeVersion,
+  readHttpResponse,
+  runAcceptanceLifecycle,
   runManagedCommand,
   spawnSpec,
   startManagedProcess,
@@ -225,6 +235,598 @@ afterEach(async () => {
 })
 
 describe('Fusion REAL managed processes', () => {
+  it('reserves cleanup and framework headroom inside the Vitest timeout', () => {
+    expect(
+      FUSION_ACCEPTANCE_OPERATION_TIMEOUT_MS
+      + FUSION_ACCEPTANCE_CLEANUP_TIMEOUT_MS
+      + FUSION_ACCEPTANCE_FRAMEWORK_HEADROOM_MS,
+    ).toBe(FUSION_ACCEPTANCE_TIMEOUT_MS)
+    expect(FUSION_ACCEPTANCE_FRAMEWORK_HEADROOM_MS).toBeGreaterThan(0)
+  })
+
+  it('starts cleanup when Vitest cancellation interrupts a signal-independent await', async () => {
+    const test = new AbortController()
+    const waiting = Promise.withResolvers<undefined>()
+    const events: string[] = []
+    const reason = new Error('Vitest cancelled the acceptance')
+    const lifecycle = runAcceptanceLifecycle({
+      testSignal: test.signal,
+      operationTimeoutMs: 1_000,
+      cleanupTimeoutMs: 100,
+      operation: async () => {
+        events.push('operation:start')
+        await waiting.promise
+        events.push('operation:settled')
+      },
+      cleanup: async () => {
+        events.push('cleanup:start')
+        waiting.resolve(undefined)
+        await Promise.resolve()
+        events.push('cleanup:settled')
+      },
+    })
+
+    test.abort(reason)
+    await expect(settleWithin(lifecycle, 250)).rejects.toBe(reason)
+    expect(events).toEqual([
+      'operation:start',
+      'cleanup:start',
+      'operation:settled',
+      'cleanup:settled',
+    ])
+  })
+
+  it('starts cleanup when the internal operation deadline expires', async () => {
+    let cleanupStarted = false
+    let operationSignal: AbortSignal | undefined
+    const lifecycle = runAcceptanceLifecycle({
+      testSignal: new AbortController().signal,
+      operationTimeoutMs: 10,
+      cleanupTimeoutMs: 20,
+      operation: async (signal) => {
+        operationSignal = signal
+        await new Promise<never>(() => {})
+      },
+      cleanup: async () => {
+        cleanupStarted = true
+      },
+    })
+
+    const failure = await rejectionWithin(lifecycle, 250)
+
+    expect(operationSignal?.aborted).toBe(true)
+    expect(cleanupStarted).toBe(true)
+    expect(failure).toBeInstanceOf(AggregateError)
+    expect((failure as AggregateError).errors).toEqual([
+      expect.objectContaining({ name: 'TimeoutError' }),
+      expect.objectContaining({
+        message: 'acceptance operation did not settle before the 20ms cleanup deadline',
+      }),
+    ])
+  })
+
+  it('closes a resource acquired after cancellation before the lifecycle returns', async () => {
+    const test = new AbortController()
+    const reason = new Error('Vitest cancelled the acceptance')
+    const acquisition = Promise.withResolvers<{ closed: boolean }>()
+    const resource = { closed: false }
+    const lifecycle = runAcceptanceLifecycle({
+      testSignal: test.signal,
+      operationTimeoutMs: 1_000,
+      cleanupTimeoutMs: 100,
+      operation: async (_signal, resources) => {
+        await resources.acquire(
+          'late resource',
+          async () => await acquisition.promise,
+          async (owned) => { owned.closed = true },
+        )
+      },
+      cleanup: async () => {},
+    })
+
+    test.abort(reason)
+    await Promise.resolve()
+    acquisition.resolve(resource)
+    await expect(settleWithin(lifecycle, 250)).rejects.toBe(reason)
+    expect(resource).toEqual({ closed: true })
+  })
+
+  it('keeps an ordinary operation result when its cleanup crosses the operation deadline', async () => {
+    const result = await runAcceptanceLifecycle({
+      testSignal: new AbortController().signal,
+      operationTimeoutMs: 10,
+      cleanupTimeoutMs: 100,
+      operation: async () => 'ordinary-result',
+      cleanup: async () => {
+        await new Promise(resolve => setTimeout(resolve, 20))
+      },
+    })
+
+    expect(result).toBe('ordinary-result')
+  })
+
+  it('disposes resources serially in reverse order before returning', async () => {
+    const events: string[] = []
+    const result = await runAcceptanceLifecycle({
+      testSignal: new AbortController().signal,
+      operationTimeoutMs: 1_000,
+      cleanupTimeoutMs: 100,
+      operation: async (_signal, resources) => {
+        await resources.acquire(
+          'first resource',
+          async () => ({ name: 'first' }),
+          async () => {
+            events.push('first:start')
+            await Promise.resolve()
+            events.push('first:end')
+          },
+        )
+        await resources.acquire(
+          'second resource',
+          async () => ({ name: 'second' }),
+          async () => {
+            events.push('second:start')
+            await Promise.resolve()
+            events.push('second:end')
+          },
+        )
+        return 'operation result'
+      },
+      cleanup: async () => {
+        events.push('final cleanup')
+      },
+    })
+
+    expect(result).toBe('operation result')
+    expect(events).toEqual([
+      'second:start',
+      'second:end',
+      'first:start',
+      'first:end',
+      'final cleanup',
+    ])
+  })
+
+  it('bounds a never-settling operation by the cleanup deadline', async () => {
+    vi.useFakeTimers()
+    const test = new AbortController()
+    const cancellation = new Error('Vitest cancelled the acceptance')
+    const lifecycle = runAcceptanceLifecycle({
+      testSignal: test.signal,
+      operationTimeoutMs: 1_000,
+      cleanupTimeoutMs: 50,
+      operation: async () => await new Promise<never>(() => {}),
+      cleanup: async () => {},
+    })
+
+    test.abort(cancellation)
+    const failurePromise = rejectionWithin(lifecycle, 100)
+    await vi.advanceTimersByTimeAsync(100)
+    const failure = await failurePromise
+
+    expect(failure).toBeInstanceOf(AggregateError)
+    expect((failure as AggregateError).errors).toEqual([
+      cancellation,
+      expect.objectContaining({
+        message: 'acceptance operation did not settle before the 50ms cleanup deadline',
+      }),
+    ])
+  })
+
+  it('reports a pending acquisition when the cleanup deadline expires', async () => {
+    vi.useFakeTimers()
+    const test = new AbortController()
+    const cancellation = new Error('Vitest cancelled the acceptance')
+    const lifecycle = runAcceptanceLifecycle({
+      testSignal: test.signal,
+      operationTimeoutMs: 1_000,
+      cleanupTimeoutMs: 50,
+      operation: async (_signal, resources) => await resources.acquire(
+        'pending resource',
+        async () => await new Promise<never>(() => {}),
+        async () => {},
+      ),
+      cleanup: async () => {},
+    })
+
+    test.abort(cancellation)
+    const failurePromise = rejectionWithin(lifecycle, 100)
+    await vi.advanceTimersByTimeAsync(100)
+    const failure = await failurePromise
+
+    expect(failure).toBeInstanceOf(AggregateError)
+    expect((failure as AggregateError).errors).toEqual([
+      cancellation,
+      expect.objectContaining({
+        message: 'acceptance operation did not settle before the 50ms cleanup deadline',
+      }),
+      expect.objectContaining({
+        message: 'pending resource acquisition did not settle before the 50ms cleanup deadline',
+      }),
+    ])
+  })
+
+  it('bounds a disposer that ignores the cleanup signal', async () => {
+    vi.useFakeTimers()
+    const lifecycle = runAcceptanceLifecycle({
+      testSignal: new AbortController().signal,
+      operationTimeoutMs: 1_000,
+      cleanupTimeoutMs: 50,
+      operation: async (_signal, resources) => await resources.acquire(
+        'signal-ignoring resource',
+        async () => ({}),
+        async () => await new Promise<never>(() => {}),
+      ),
+      cleanup: async () => {},
+    })
+
+    const failurePromise = rejectionWithin(lifecycle, 100)
+    await vi.advanceTimersByTimeAsync(100)
+    const failure = await failurePromise
+
+    expect(failure).toMatchObject({
+      message: 'signal-ignoring resource disposer did not settle before the 50ms cleanup deadline',
+    })
+  })
+
+  it('starts outer cleanup after an inner disposer exhausts the shared deadline', async () => {
+    vi.useFakeTimers()
+    const outer = { cleaned: false }
+    let cleanupSignal: AbortSignal | undefined
+    const lifecycle = runAcceptanceLifecycle({
+      testSignal: new AbortController().signal,
+      operationTimeoutMs: 1_000,
+      cleanupTimeoutMs: 50,
+      operation: async (_signal, resources) => {
+        await resources.acquire(
+          'outer resource',
+          async () => outer,
+          async (resource, signal) => {
+            cleanupSignal = signal
+            resource.cleaned = true
+            await new Promise<never>(() => {})
+          },
+        )
+        await resources.acquire(
+          'inner resource',
+          async () => ({}),
+          async () => await new Promise<never>(() => {}),
+        )
+      },
+      cleanup: async () => {},
+    })
+
+    const failurePromise = rejectionWithin(lifecycle, 100)
+    await vi.advanceTimersByTimeAsync(100)
+    const failure = await failurePromise
+
+    expect(failure).toBeInstanceOf(AggregateError)
+    expect((failure as AggregateError).errors).toEqual([
+      expect.objectContaining({
+        message: 'inner resource disposer did not settle before the 50ms cleanup deadline',
+      }),
+      expect.objectContaining({
+        message: 'outer resource disposer did not settle before the 50ms cleanup deadline',
+      }),
+    ])
+    expect(cleanupSignal?.aborted).toBe(true)
+    expect(outer.cleaned).toBe(true)
+  })
+
+  it('does not report a released resource after another disposer exhausts cleanup', async () => {
+    vi.useFakeTimers()
+    const lifecycle = runAcceptanceLifecycle({
+      testSignal: new AbortController().signal,
+      operationTimeoutMs: 1_000,
+      cleanupTimeoutMs: 50,
+      operation: async (_signal, resources) => {
+        const released = await resources.acquire(
+          'released resource',
+          async () => ({}),
+          async () => {},
+        )
+        await resources.release(released)
+        await resources.acquire(
+          'stuck resource',
+          async () => ({}),
+          async () => await new Promise<never>(() => {}),
+        )
+      },
+      cleanup: async () => {},
+    })
+
+    const failurePromise = rejectionWithin(lifecycle, 100)
+    await vi.advanceTimersByTimeAsync(100)
+    const failure = await failurePromise
+
+    expect(failure).toMatchObject({
+      message: 'stuck resource disposer did not settle before the 50ms cleanup deadline',
+    })
+  })
+
+  it('shares one cleanup deadline across serial disposers', async () => {
+    vi.useFakeTimers()
+    const events: string[] = []
+    const secondFailure = new Error('second disposer failed')
+    const finalFailure = new Error('final cleanup failed')
+    const lifecycle = runAcceptanceLifecycle({
+      testSignal: new AbortController().signal,
+      operationTimeoutMs: 1_000,
+      cleanupTimeoutMs: 50,
+      operation: async (_signal, resources) => {
+        await resources.acquire(
+          'first resource',
+          async () => ({}),
+          async () => {
+            events.push('first:start')
+            await new Promise(resolve => setTimeout(resolve, 30))
+            events.push('first:end')
+          },
+        )
+        await resources.acquire(
+          'second resource',
+          async () => ({}),
+          async () => {
+            events.push('second:start')
+            await new Promise(resolve => setTimeout(resolve, 30))
+            events.push('second:end')
+            throw secondFailure
+          },
+        )
+      },
+      cleanup: async () => {
+        events.push('final cleanup')
+        throw finalFailure
+      },
+    })
+
+    const failurePromise = lifecycle.then(
+      () => ({
+        events: [...events],
+        failure: new Error('expected operation to reject'),
+      }),
+      (failure: unknown) => ({ events: [...events], failure }),
+    )
+    await vi.advanceTimersByTimeAsync(30)
+    await vi.advanceTimersByTimeAsync(70)
+    const outcome = await failurePromise
+
+    expect(outcome.failure).toBeInstanceOf(AggregateError)
+    expect((outcome.failure as AggregateError).errors).toEqual([
+      secondFailure,
+      expect.objectContaining({
+        message: 'first resource disposer did not settle before the 50ms cleanup deadline',
+      }),
+      finalFailure,
+    ])
+    expect(outcome.events).toEqual([
+      'second:start',
+      'second:end',
+      'first:start',
+      'final cleanup',
+    ])
+  })
+
+  it('bounds final cleanup that ignores its signal', async () => {
+    vi.useFakeTimers()
+    const lifecycle = runAcceptanceLifecycle({
+      testSignal: new AbortController().signal,
+      operationTimeoutMs: 1_000,
+      cleanupTimeoutMs: 50,
+      operation: async () => 'operation result',
+      cleanup: async () => await new Promise<never>(() => {}),
+    })
+
+    const failurePromise = rejectionWithin(lifecycle, 100)
+    await vi.advanceTimersByTimeAsync(100)
+    const failure = await failurePromise
+
+    expect(failure).toMatchObject({
+      message: 'acceptance final cleanup did not settle before the 50ms cleanup deadline',
+    })
+  })
+
+  it('preserves an undefined acquisition rejection', async () => {
+    const lifecycle = runAcceptanceLifecycle({
+      testSignal: new AbortController().signal,
+      operationTimeoutMs: 1_000,
+      cleanupTimeoutMs: 100,
+      operation: async (_signal, resources) => await resources.acquire(
+        'undefined acquisition rejection',
+        // oxlint-disable-next-line typescript/prefer-promise-reject-errors -- exercise legal undefined rejection
+        async () => await Promise.reject(undefined),
+        async () => {},
+      ),
+      cleanup: async () => {},
+    })
+
+    await expect(lifecycle).rejects.toBeUndefined()
+  })
+
+  it('preserves an undefined operation rejection', async () => {
+    const lifecycle = runAcceptanceLifecycle({
+      testSignal: new AbortController().signal,
+      operationTimeoutMs: 1_000,
+      cleanupTimeoutMs: 100,
+      // oxlint-disable-next-line typescript/prefer-promise-reject-errors -- exercise legal undefined rejection
+      operation: async () => await Promise.reject(undefined),
+      cleanup: async () => {},
+    })
+
+    await expect(lifecycle).rejects.toBeUndefined()
+  })
+
+  it('preserves an undefined cleanup rejection', async () => {
+    const lifecycle = runAcceptanceLifecycle({
+      testSignal: new AbortController().signal,
+      operationTimeoutMs: 1_000,
+      cleanupTimeoutMs: 100,
+      operation: async () => 'operation result',
+      cleanup: async () => {
+        // oxlint-disable-next-line typescript/prefer-promise-reject-errors -- exercise legal undefined rejection
+        await Promise.reject(undefined)
+      },
+    })
+
+    await expect(lifecycle).rejects.toBeUndefined()
+  })
+
+  it('reports owned resource and final cleanup failures', async () => {
+    const resourceFailure = new Error('resource disposer failed')
+    const cleanupFailure = new Error('final cleanup failed')
+    const lifecycle = runAcceptanceLifecycle({
+      testSignal: new AbortController().signal,
+      operationTimeoutMs: 1_000,
+      cleanupTimeoutMs: 100,
+      operation: async (_signal, resources) => await resources.acquire(
+        'failed resource',
+        async () => ({}),
+        async () => { throw resourceFailure },
+      ),
+      cleanup: async () => { throw cleanupFailure },
+    })
+
+    const failure = await rejectionWithin(lifecycle, 250)
+    expect(failure).toBeInstanceOf(AggregateError)
+    expect((failure as AggregateError).errors).toEqual([resourceFailure, cleanupFailure])
+  })
+
+  it('reports one late disposer failure shared by operation and cleanup', async () => {
+    const test = new AbortController()
+    const acquisition = Promise.withResolvers<object>()
+    const cancellation = new Error('Vitest cancelled the acceptance')
+    const disposerFailure = new Error('late disposer failed')
+    const lifecycle = runAcceptanceLifecycle({
+      testSignal: test.signal,
+      operationTimeoutMs: 1_000,
+      cleanupTimeoutMs: 100,
+      operation: async (_signal, resources) => await resources.acquire(
+        'late failed resource',
+        async () => await acquisition.promise,
+        async () => { throw disposerFailure },
+      ),
+      cleanup: async () => {},
+    })
+
+    test.abort(cancellation)
+    await Promise.resolve()
+    acquisition.resolve({})
+    const failure = await rejectionWithin(lifecycle, 250)
+
+    expect(failure).toBeInstanceOf(AggregateError)
+    expect((failure as AggregateError).errors).toEqual([cancellation, disposerFailure])
+  })
+
+  it('observes a disposer rejection that arrives after the cleanup deadline', () => {
+    const moduleUrl = new URL('./fusion-real-process.ts', import.meta.url).href
+    const probe = `
+const { runAcceptanceLifecycle } = await import(${JSON.stringify(moduleUrl)})
+const late = Promise.withResolvers()
+const lifecycle = runAcceptanceLifecycle({
+  testSignal: new AbortController().signal,
+  operationTimeoutMs: 1_000,
+  cleanupTimeoutMs: 5,
+  operation: async (_signal, resources) => {
+    await resources.acquire(
+      'outer resource',
+      async () => ({}),
+      async () => {
+        await late.promise
+        throw new Error('late outer disposer rejection')
+      },
+    )
+    await resources.acquire(
+      'inner resource',
+      async () => ({}),
+      async () => await new Promise(() => {}),
+    )
+  },
+  cleanup: async () => {},
+})
+const failure = await lifecycle.then(() => undefined, error => error)
+if (!(failure instanceof AggregateError)) throw new Error('expected aggregate cleanup failure')
+late.resolve()
+await new Promise(resolve => setTimeout(resolve, 25))
+`
+    const result = spawnSync(process.execPath, [
+      '--unhandled-rejections=strict',
+      '--import',
+      'tsx/esm',
+      '--input-type=module',
+      '--eval',
+      probe,
+    ], {
+      cwd: process.cwd(),
+      encoding: 'utf8',
+      timeout: 5_000,
+    })
+
+    expect(result.status, result.stderr).toBe(0)
+  })
+
+  it('reports cancellation and a later independent operation rejection', async () => {
+    const test = new AbortController()
+    const operation = Promise.withResolvers<never>()
+    const cancellation = new Error('Vitest cancelled the acceptance')
+    const independent = new Error('late independent failure')
+    const lifecycle = runAcceptanceLifecycle({
+      testSignal: test.signal,
+      operationTimeoutMs: 1_000,
+      cleanupTimeoutMs: 100,
+      operation: async () => await operation.promise,
+      cleanup: async () => {},
+    })
+
+    test.abort(cancellation)
+    await Promise.resolve()
+    operation.reject(independent)
+    const failure = await rejectionWithin(lifecycle, 250)
+
+    expect(failure).toBeInstanceOf(AggregateError)
+    expect((failure as AggregateError).errors).toEqual([cancellation, independent])
+  })
+
+  it('preserves equal primitive failures from independent occurrences', async () => {
+    const duplicate = 'same primitive failure'
+    const lifecycle = runAcceptanceLifecycle({
+      testSignal: new AbortController().signal,
+      operationTimeoutMs: 1_000,
+      cleanupTimeoutMs: 100,
+      operation: async () => {
+        // oxlint-disable-next-line typescript/prefer-promise-reject-errors -- exercise primitive occurrence preservation
+        await Promise.reject(duplicate)
+      },
+      cleanup: async () => {
+        // oxlint-disable-next-line typescript/prefer-promise-reject-errors -- exercise primitive occurrence preservation
+        await Promise.reject(duplicate)
+      },
+    })
+
+    const failure = await rejectionWithin(lifecycle, 250)
+
+    expect(failure).toBeInstanceOf(AggregateError)
+    expect((failure as AggregateError).errors).toEqual([duplicate, duplicate])
+  })
+
+  it('reports cancellation once when the operation rejects with the same object', async () => {
+    const test = new AbortController()
+    const operation = Promise.withResolvers<never>()
+    const cancellation = new Error('Vitest cancelled the acceptance')
+    const lifecycle = runAcceptanceLifecycle({
+      testSignal: test.signal,
+      operationTimeoutMs: 1_000,
+      cleanupTimeoutMs: 100,
+      operation: async () => await operation.promise,
+      cleanup: async () => {},
+    })
+
+    test.abort(cancellation)
+    await Promise.resolve()
+    operation.reject(cancellation)
+
+    await expect(lifecycle).rejects.toBe(cancellation)
+  })
+
   it('scrubs ambient secrets while adding only the explicit acceptance environment', async () => {
     process.env.FUSION_ACCEPTANCE_SECRET_TOKEN = 'must-not-leak'
     const root = await temporaryRoot()
@@ -627,6 +1229,60 @@ describe('Fusion REAL managed processes', () => {
     await expect(spawned!.done).resolves.toMatchObject({ signal: 'SIGTERM' })
   })
 
+  it('cancels a managed command and settles its process tree before rejecting', async () => {
+    const service = await runtime()
+    let spawned: SubprocessHandle | undefined
+    const spawn = service.spawn.bind(service)
+    service.spawn = (spec) => {
+      spawned = spawn(spec)
+      return spawned
+    }
+    const abort = new AbortController()
+    const reason = new Error('acceptance deadline elapsed')
+    const operation = runManagedCommand(
+      service,
+      spawnSpec([process.execPath, '-e', 'setInterval(() => {}, 1000)'], process.cwd(), {}, 50),
+      'cancelled command',
+      5_000,
+      abort.signal,
+    )
+    abort.abort(reason)
+    const failure = await rejectionWithin(operation, 500)
+    if (failure !== reason) spawned?.terminate()
+    await expect(spawned!.waitForExit(AbortSignal.timeout(2_000))).resolves.toBe(true)
+    await expect(spawned!.done).resolves.toMatchObject({ signal: 'SIGTERM' })
+    expect(failure).toBe(reason)
+  })
+
+  it('cancels readiness and settles its process tree before rejecting', async () => {
+    const service = await runtime()
+    let spawned: SubprocessHandle | undefined
+    const spawn = service.spawn.bind(service)
+    service.spawn = (spec) => {
+      spawned = spawn(spec)
+      return spawned
+    }
+    const abort = new AbortController()
+    const reason = new Error('acceptance deadline elapsed')
+    const operation = startManagedProcess(
+      service,
+      spawnSpec([process.execPath, '-e', 'setInterval(() => {}, 1000)'], process.cwd(), {}, 50),
+      {
+        label: 'cancelled readiness',
+        pattern: /never-ready/u,
+        timeoutMs: 5_000,
+        cleanupTimeoutMs: 2_000,
+        signal: abort.signal,
+      },
+    )
+    abort.abort(reason)
+    const failure = await rejectionWithin(operation, 500)
+    if (failure !== reason) spawned?.terminate()
+    await expect(spawned!.waitForExit(AbortSignal.timeout(2_000))).resolves.toBe(true)
+    await expect(spawned!.done).resolves.toMatchObject({ signal: 'SIGTERM' })
+    expect(failure).toBe(reason)
+  })
+
   it.skipIf(process.platform === 'win32')('stops a TERM-trapping descendant before returning', async () => {
     const root = await temporaryRoot()
     const pidFile = join(root, 'descendant.pid')
@@ -697,5 +1353,226 @@ describe('Fusion CDP page cleanup', () => {
     ['non-string URL', { type: 'page', url: undefined }],
   ])('ignores a target outside the server pages: %s', (_label, target) => {
     expect(isServerPageTarget(target, serverUrl)).toBe(false)
+  })
+})
+
+describe('Fusion external route probes', () => {
+  const baseline = {
+    status: 200,
+    contentType: 'text/html; charset=utf-8',
+    location: '',
+    body: '<!doctype html><title>DeepSeek Harness</title><div id="root"></div>',
+  }
+
+  it.each([
+    {
+      label: 'body-only difference',
+      response: {
+        ...baseline,
+        body: '<!doctype html><title>DeepSeek Harness</title><p>route-owned</p>',
+      },
+    },
+    {
+      label: 'JSON',
+      response: {
+        status: 200,
+        contentType: 'application/json',
+        location: '',
+        body: '{"branches":[]}',
+      },
+    },
+    {
+      label: 'redirect',
+      response: {
+        status: 302,
+        contentType: '',
+        location: '/',
+        body: '',
+      },
+    },
+    {
+      label: 'route-owned HTML containing the stock title',
+      response: {
+        status: 200,
+        contentType: 'text/html; charset=utf-8',
+        location: '',
+        body: '<!doctype html><title>DeepSeek Harness</title><p>route-owned</p>',
+      },
+    },
+    {
+      label: 'mounted 404 handler',
+      response: {
+        status: 404,
+        contentType: 'text/plain',
+        location: '',
+        body: 'mounted not found',
+      },
+    },
+    {
+      label: 'mounted 405 handler',
+      response: {
+        status: 405,
+        contentType: 'text/plain',
+        location: '',
+        body: 'mounted method refusal',
+      },
+    },
+  ])('rejects a mounted $label response that differs from the baseline', ({ response }) => {
+    expect(() => {
+      assertSameHttpResponse(baseline, response, 'GET /blocked')
+    }).toThrow('GET /blocked differs from the base + web-app response')
+  })
+
+  it('compares the Fusion fallback with the complete independent baseline response', async () => {
+    const acceptance = await readFile(
+      new URL('./fusion-real-composition.acceptance.ts', import.meta.url),
+      'utf8',
+    )
+
+    expect(acceptance).toMatch(
+      /assertSameHttpResponse\(\s*baselineRoutes\.fallback,\s*fusionFallback,\s*'GET \/',?\s*\)/u,
+    )
+  })
+})
+
+describe('Fusion HTTP deadlines', () => {
+  it('aborts a pending response through the acceptance signal', async () => {
+    const server = createHttpServer(() => {})
+    await new Promise<void>((resolve, reject) => {
+      server.once('error', reject)
+      server.listen(0, '127.0.0.1', resolve)
+    })
+    const address = server.address()
+    if (address === null || typeof address === 'string') throw new Error('test server has no TCP port')
+    const abort = new AbortController()
+    const reason = new Error('acceptance deadline elapsed')
+    try {
+      const operation = readHttpResponse(
+        new URL('/', `http://127.0.0.1:${String(address.port)}`),
+        undefined,
+        5_000,
+        abort.signal,
+      )
+      abort.abort(reason)
+      expect(await rejectionWithin(operation, 250)).toBe(reason)
+    } finally {
+      server.closeAllConnections()
+      await new Promise<void>((resolve, reject) => {
+        server.close((error) => {
+          if (error === undefined) resolve()
+          else reject(error)
+        })
+      })
+    }
+  })
+
+  it('aborts when a route never sends response headers', async () => {
+    const server = createHttpServer(() => {})
+    await new Promise<void>((resolve, reject) => {
+      server.once('error', reject)
+      server.listen(0, '127.0.0.1', resolve)
+    })
+    const address = server.address()
+    if (address === null || typeof address === 'string') throw new Error('test server has no TCP port')
+    try {
+      await expect(readHttpResponse(
+        new URL('/', `http://127.0.0.1:${String(address.port)}`),
+        undefined,
+        25,
+      )).rejects.toThrow()
+    } finally {
+      server.closeAllConnections()
+      await new Promise<void>((resolve, reject) => {
+        server.close((error) => {
+          if (error === undefined) resolve()
+          else reject(error)
+        })
+      })
+    }
+  })
+
+  it('aborts when a route sends headers but never finishes its body', async () => {
+    const server = createHttpServer((_request, response) => {
+      response.writeHead(200, { 'content-type': 'text/plain' })
+      response.write('partial')
+    })
+    await new Promise<void>((resolve, reject) => {
+      server.once('error', reject)
+      server.listen(0, '127.0.0.1', resolve)
+    })
+    const address = server.address()
+    if (address === null || typeof address === 'string') throw new Error('test server has no TCP port')
+    try {
+      await expect(readHttpResponse(
+        new URL('/', `http://127.0.0.1:${String(address.port)}`),
+        undefined,
+        25,
+      )).rejects.toThrow()
+    } finally {
+      server.closeAllConnections()
+      await new Promise<void>((resolve, reject) => {
+        server.close((error) => {
+          if (error === undefined) resolve()
+          else reject(error)
+        })
+      })
+    }
+  })
+})
+
+describe('Fusion scoped model-input comparison', () => {
+  const baseline = {
+    system: 'base prompt',
+    contexts: [{ name: 'runtime', text: 'stable context' }],
+    tools: [{
+      name: 'bash',
+      description: 'run a command',
+      parameters: {
+        type: 'object',
+        properties: { command: { type: 'string' } },
+        required: ['command'],
+      },
+    }],
+  }
+
+  it('rejects a same-name tool schema change', () => {
+    expect(() => {
+      assertSameModelInput(baseline, {
+        ...baseline,
+        tools: [{
+          ...baseline.tools[0]!,
+          parameters: {
+            type: 'object',
+            properties: { command: { type: 'number' } },
+            required: ['command'],
+          },
+        }],
+      })
+    }).toThrow('Fusion scoped model input differs from the base + web-app baseline')
+  })
+
+  it('rejects a tool added only to the Fusion agent scope', () => {
+    expect(() => {
+      assertSameModelInput(baseline, {
+        ...baseline,
+        tools: [
+          ...baseline.tools,
+          {
+            name: 'scoped_external_tool',
+            description: 'visible only in this agent scope',
+            parameters: { type: 'object', properties: {} },
+          },
+        ],
+      })
+    }).toThrow('Fusion scoped model input differs from the base + web-app baseline')
+  })
+
+  it('rejects a Fusion prompt contribution', () => {
+    expect(() => {
+      assertSameModelInput(baseline, {
+        ...baseline,
+        system: `${baseline.system}\n\nexternal prompt contribution`,
+      })
+    }).toThrow('Fusion scoped model input differs from the base + web-app baseline')
   })
 })

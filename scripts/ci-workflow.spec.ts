@@ -1,10 +1,57 @@
-import { readFileSync } from 'node:fs'
-import { resolve } from 'node:path'
+import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { delimiter, join, resolve } from 'node:path'
+import { spawnSync } from 'node:child_process'
 import * as yaml from 'js-yaml'
 import { describe, expect, it } from 'vitest'
+import { FUSION_ACCEPTANCE_TIMEOUT_MS } from '../apps/web/tests/fusion-real-process.ts'
 
 const root = resolve(import.meta.dirname, '..')
 const runnerPrivatePnpmDestination = '${{ runner.temp }}/setup-pnpm'
+const FUSION_CI_RESERVE_MS = 5 * 60_000
+const invalidFusionLifecycles = [
+  ['a missing timeout', (job: Record<string, unknown>) => delete job['timeout-minutes']],
+  ['an insufficient acceptance reserve', (job: Record<string, unknown>) => {
+    job['timeout-minutes'] = 10
+  }],
+  launcherMutation('a direct Chrome launch', run => replaceRequired(run, 'setsid "$chrome_bin"', '"$chrome_bin"')),
+  launcherMutation('an unreachable CDP decoy before a direct launch', addUnreachableChromeDecoy),
+  launcherMutation('commented and echoed cleanup traps',
+    run => replaceRequired(run, 'trap cleanup EXIT', '# trap cleanup EXIT\necho "trap cleanup EXIT"')),
+  launcherMutation('an EXIT trap cleared before acceptance',
+    run => replaceRequired(run, 'trap cleanup EXIT', 'trap cleanup EXIT\ntrap - EXIT')),
+  launcherMutation('an EXIT trap cleared after acceptance',
+    run => replaceRequired(run, 'pnpm run test:fusion:acceptance:built', 'pnpm run test:fusion:acceptance:built\ntrap - EXIT')),
+  launcherMutation('commented and echoed TERM',
+    run => replaceRequired(run, 'kill -TERM -- "-$chrome_pid" 2>/dev/null || true', '# kill -TERM -- "-$chrome_pid" 2>/dev/null || true\necho \'kill -TERM -- "-$chrome_pid" 2>/dev/null || true\'')),
+  launcherMutation('unbounded Chrome liveness polling',
+    run => replaceRequired(run, 'for _ in {1..20}; do', 'while true; do')),
+  launcherMutation('commented and echoed KILL',
+    run => replaceRequired(run, 'kill -KILL -- "-$chrome_pid" 2>/dev/null || true', '# kill -KILL -- "-$chrome_pid" 2>/dev/null || true\necho \'kill -KILL -- "-$chrome_pid" 2>/dev/null || true\'')),
+  launcherMutation('commented and echoed process wait',
+    run => replaceRequired(run, 'wait "$chrome_pid" 2>/dev/null || true', '# wait "$chrome_pid" 2>/dev/null || true\necho \'wait "$chrome_pid" 2>/dev/null || true\'')),
+  launcherMutation('an early cleanup return',
+    run => replaceRequired(run, 'cleanup() {', 'cleanup() {\n  return 0')),
+  launcherMutation('cleanup hidden behind a conditional return',
+    run => replaceRequired(run, 'cleanup() {', 'cleanup() {\n  if [[ -n "$chrome_profile" ]]; then\n    return 0\n  fi')),
+  launcherMutation('cleanup defined after acceptance', moveCleanupAfterAcceptance),
+  launcherMutation('readiness marked before the probe', moveReadinessSuccessBeforeProbe),
+  launcherMutation('an unreachable readiness probe', hideReadinessProbe),
+  launcherMutation('readiness after acceptance', moveReadinessAfterAcceptance),
+  launcherMutation('commented and echoed profile removal',
+    run => replaceRequired(run, 'rm -rf "$chrome_profile"', '# rm -rf "$chrome_profile"\necho \'rm -rf "$chrome_profile"\'')),
+  launcherMutation('a disconnected temporary profile',
+    run => replaceRequired(run, '--user-data-dir="$chrome_profile"', '--user-data-dir="$RUNNER_TEMP/fusion-chrome-profile"')),
+] as const
+
+const equivalentFusionLifecycleSpellings = [
+  ['quoted command substitutions', (run: string) => replaceRequired(
+    replaceRequired(run, 'chrome_bin=$(command -v google-chrome)', 'chrome_bin="$(command -v google-chrome)"'),
+    'chrome_profile=$(mktemp -d)', 'chrome_profile="$(mktemp -d)"',
+  )],
+  ['setsid option termination', (run: string) => replaceRequired(run, 'setsid "$chrome_bin"', 'setsid -- "$chrome_bin"')],
+  ['rm option termination', (run: string) => replaceRequired(run, 'rm -rf "$chrome_profile"', 'rm -rf -- "$chrome_profile"')],
+] as const
 
 describe('CI workflow', () => {
   it('isolates every pnpm action setup destination per runner', () => {
@@ -25,6 +72,109 @@ describe('CI workflow', () => {
         with: { dest: runnerPrivatePnpmDestination },
       })
     }
+  })
+
+  it('requires Fusion replay on an isolated standard-hosted pull-request job', () => {
+    const workflow = loadWorkflow('.github/workflows/ci.yml')
+    const fusion = workflowJob(workflow, 'fusion-acceptance')
+    const consumers = workflowJob(workflow, 'node-24-consumers')
+    const aggregate = workflowJob(workflow, 'all-checks-passed')
+    if (!Array.isArray(fusion.steps)
+      || !Array.isArray(consumers.steps)
+      || !Array.isArray(aggregate.needs)) {
+      throw new TypeError('Fusion, consumer, and aggregate jobs must define their execution topology')
+    }
+
+    expect(fusion).toMatchObject({
+      if: "github.event_name == 'pull_request'",
+      name: 'fusion / external-profile snapshot',
+      'runs-on': 'ubuntu-latest',
+    })
+    expect(JSON.stringify(fusion)).not.toContain('DSH_CI_FAILOVER_LINUX')
+    expect(JSON.stringify(consumers.steps)).not.toContain('test:fusion:acceptance:built')
+    expect(aggregate.needs).toContain('fusion-acceptance')
+
+    const commands = fusion.steps
+      .filter((step): step is Record<string, unknown> & { run: string } => (
+        isRecord(step) && typeof step.run === 'string'
+      ))
+    expect(commands.map(step => step.run)).toContain('pnpm install --frozen-lockfile')
+    expect(commands.map(step => step.run)).toContain('pnpm run build')
+    const preflight = commands.find(step => step.name === 'Preflight system Chrome dependencies')
+    expect(preflight?.run).toContain('command -v google-chrome')
+    expect(preflight?.run).toContain('command -v setsid')
+    expect(preflight?.run).toContain('command -v curl')
+    const launcher = commands.find(step => step.run.includes('--remote-debugging-port=9333'))
+    expect(launcher).toMatchObject({ env: { DSH_SNAPSHOT: 'replay' } })
+    expect(launcher?.run).toContain('--headless=new')
+    expect(launcher?.run).not.toContain('xvfb')
+    expect(launcher?.run).toContain('curl --silent --show-error --fail --max-time 1')
+    expect(launcher?.run).toContain('kill -TERM -- "-$chrome_pid"')
+    expect(launcher?.run).toContain('kill -KILL -- "-$chrome_pid"')
+    expect(launcher?.run).toContain('pnpm run test:fusion:acceptance:built')
+    expect(hasFusionLifecycleContract(fusion)).toBe(true)
+  })
+
+  it('keeps the Fusion job outside the acceptance timeout with setup and cleanup reserve', () => {
+    const fusion = workflowJob(loadWorkflow('.github/workflows/ci.yml'), 'fusion-acceptance')
+    expect(fusion['timeout-minutes']).toBeTypeOf('number')
+    const jobTimeoutMs = (fusion['timeout-minutes'] as number) * 60_000
+
+    expect(jobTimeoutMs).toBeGreaterThan(FUSION_ACCEPTANCE_TIMEOUT_MS)
+    expect(jobTimeoutMs - FUSION_ACCEPTANCE_TIMEOUT_MS).toBeGreaterThanOrEqual(FUSION_CI_RESERVE_MS)
+  })
+
+  it.each(invalidFusionLifecycles)('rejects %s', (_, mutate) => {
+    const fusion = structuredClone(workflowJob(loadWorkflow('.github/workflows/ci.yml'), 'fusion-acceptance'))
+    mutate(fusion)
+
+    expect(hasFusionLifecycleContract(fusion)).toBe(false)
+  })
+
+  it.each(equivalentFusionLifecycleSpellings)('accepts %s', (_, mutate) => {
+    const fusion = structuredClone(workflowJob(loadWorkflow('.github/workflows/ci.yml'), 'fusion-acceptance'))
+    mutateFusionLauncher(fusion, mutate)
+
+    expect(hasFusionLifecycleContract(fusion)).toBe(true)
+  })
+
+  it.skipIf(process.platform === 'win32')('executes Fusion acceptance and cleanup through Bash before returning', () => {
+    const fusion = workflowJob(loadWorkflow('.github/workflows/ci.yml'), 'fusion-acceptance')
+    const launcher = commandSteps(fusion).find(
+      step => step.name === 'Run Fusion external-profile snapshot with system Google Chrome',
+    )
+    if (launcher === undefined) throw new TypeError('Fusion job must define the Chrome launcher')
+
+    expect(runFusionLauncherProbe(launcher.run)).toMatchObject({
+      acceptanceCalled: true,
+      accepted: true,
+      childExited: true,
+      childFinishedBeforeReturn: true,
+      profileRemoved: true,
+      status: 0,
+    })
+  })
+
+  it.skipIf(process.platform === 'win32')('rejects an unreachable acceptance command through Bash', () => {
+    const fusion = workflowJob(loadWorkflow('.github/workflows/ci.yml'), 'fusion-acceptance')
+    const launcher = commandSteps(fusion).find(
+      step => step.name === 'Run Fusion external-profile snapshot with system Google Chrome',
+    )
+    if (launcher === undefined) throw new TypeError('Fusion job must define the Chrome launcher')
+    const unreachable = replaceRequired(
+      launcher.run,
+      'pnpm run test:fusion:acceptance:built',
+      'if [[ 1 -eq 0 ]]; then\n  pnpm run test:fusion:acceptance:built\nfi',
+    )
+
+    expect(runFusionLauncherProbe(unreachable)).toMatchObject({
+      acceptanceCalled: false,
+      accepted: false,
+      childExited: true,
+      childFinishedBeforeReturn: true,
+      profileRemoved: true,
+      status: 0,
+    })
   })
 
   it('keeps a required Wine Windows job, a non-blocking native Windows job with failover, and a master-only standby', () => {
@@ -430,4 +580,312 @@ function workflowJob(workflow: Record<string, unknown>, job: string): Record<str
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value)
+}
+
+function launcherMutation(name: string, mutate: (run: string) => string): readonly [string, (job: Record<string, unknown>) => void] {
+  return [name, (job) => { mutateFusionLauncher(job, mutate) }]
+}
+
+function mutateFusionLauncher(job: Record<string, unknown>, mutate: (run: string) => string): void {
+  const launcher = commandSteps(job).find(
+    step => step.name === 'Run Fusion external-profile snapshot with system Google Chrome',
+  )
+  if (launcher === undefined) throw new TypeError('Fusion job must define the Chrome launcher')
+  launcher.run = mutate(launcher.run)
+}
+
+function commandSteps(job: Record<string, unknown>): Array<Record<string, unknown> & { run: string }> {
+  if (!Array.isArray(job.steps)) throw new TypeError('Workflow job must define steps')
+  return (job.steps as unknown[]).filter((step): step is Record<string, unknown> & { run: string } => isRecord(step) && typeof step.run === 'string')
+}
+
+function replaceRequired(source: string, search: string | RegExp, replacement: string): string {
+  const replaced = source.replace(search, replacement)
+  if (replaced === source) throw new TypeError(`Fixture mutation did not match ${String(search)}`)
+  return replaced
+}
+
+function readinessBlock(source: string): string {
+  const readiness = source.match(/^\s*ready=\s*$[\s\S]*?^\s*if\s+\[\[\s+-z\s+"\$ready"\s+\]\];\s*then\s*$[\s\S]*?^\s*fi\s*$/m)?.[0]
+  if (readiness === undefined) throw new TypeError('Fixture mutation did not find the readiness block')
+  return readiness
+}
+
+function moveReadinessAfterAcceptance(source: string): string {
+  const readiness = readinessBlock(source)
+  const withoutReadiness = replaceRequired(source, readiness, '')
+  return replaceRequired(withoutReadiness, 'pnpm run test:fusion:acceptance:built', `pnpm run test:fusion:acceptance:built\n${readiness}`)
+}
+
+function moveCleanupAfterAcceptance(source: string): string {
+  const cleanup = source.match(/^cleanup\(\) \{\n[\s\S]*?^\}$/m)?.[0]
+  if (cleanup === undefined) throw new TypeError('Fixture mutation did not find cleanup()')
+  const withoutCleanup = replaceRequired(source, cleanup, '')
+  return replaceRequired(
+    withoutCleanup,
+    'pnpm run test:fusion:acceptance:built',
+    `pnpm run test:fusion:acceptance:built\n${cleanup}`,
+  )
+}
+
+function writeExecutable(path: string, source: string): void {
+  writeFileSync(path, source)
+  chmodSync(path, 0o755)
+}
+
+function runFusionLauncherProbe(source: string): {
+  acceptanceCalled: boolean
+  accepted: boolean
+  childExited: boolean
+  childFinishedBeforeReturn: boolean
+  profileRemoved: boolean
+  status: number | null
+} {
+  const root = mkdtempSync(join(tmpdir(), 'dsh-ci-launcher-'))
+  const bin = join(root, 'bin')
+  const profile = join(root, 'profile')
+  const ready = join(root, 'ready')
+  const finished = join(root, 'finished')
+  const pidFile = join(root, 'pid')
+  const acceptance = join(root, 'acceptance')
+  mkdirSync(bin)
+  writeExecutable(join(bin, 'setsid'), `#!/usr/bin/env python3
+import os
+import sys
+
+args = sys.argv[1:]
+if args and args[0] == "--":
+    args = args[1:]
+os.setsid()
+os.execv(args[0], args)
+`)
+  writeExecutable(join(bin, 'google-chrome'), `#!/usr/bin/env bash
+set -u
+trap 'sleep 0.1; printf done > "$FUSION_PROBE_FINISHED"; exit 0' TERM
+printf '%s' "$$" > "$FUSION_PROBE_PID"
+printf ready > "$FUSION_PROBE_READY"
+while true; do
+  sleep 1
+done
+`)
+  writeExecutable(join(bin, 'curl'), `#!/usr/bin/env bash
+[[ -f "$FUSION_PROBE_READY" ]]
+`)
+  writeExecutable(join(bin, 'mktemp'), `#!/usr/bin/env bash
+set -u
+mkdir -p "$FUSION_PROBE_PROFILE"
+printf '%s\\n' "$FUSION_PROBE_PROFILE"
+`)
+  writeExecutable(join(bin, 'pnpm'), `#!/usr/bin/env bash
+set -u
+[[ "$*" == "run test:fusion:acceptance:built" ]]
+printf called > "$FUSION_PROBE_ACCEPTANCE"
+`)
+  let pid: number | undefined
+  try {
+    const result = spawnSync('bash', ['-c', source], {
+      encoding: 'utf8',
+      env: {
+        ...process.env,
+        FUSION_PROBE_ACCEPTANCE: acceptance,
+        FUSION_PROBE_FINISHED: finished,
+        FUSION_PROBE_PID: pidFile,
+        FUSION_PROBE_PROFILE: profile,
+        FUSION_PROBE_READY: ready,
+        PATH: `${bin}${delimiter}${process.env.PATH ?? ''}`,
+        RUNNER_TEMP: root,
+      },
+      timeout: 10_000,
+    })
+    if (existsSync(pidFile)) pid = Number(readFileSync(pidFile, 'utf8'))
+    let childExited = false
+    if (pid !== undefined) {
+      try {
+        process.kill(pid, 0)
+      } catch {
+        childExited = true
+      }
+    }
+    const acceptanceCalled = existsSync(acceptance)
+    const childFinishedBeforeReturn = existsSync(finished)
+    const profileRemoved = !existsSync(profile)
+    const accepted = result.status === 0
+      && acceptanceCalled
+      && childExited
+      && childFinishedBeforeReturn
+      && profileRemoved
+    return {
+      acceptanceCalled,
+      accepted,
+      childExited,
+      childFinishedBeforeReturn,
+      profileRemoved,
+      status: result.status,
+    }
+  } finally {
+    if (pid !== undefined && Number.isFinite(pid)) {
+      try {
+        process.kill(-pid, 'SIGKILL')
+      } catch {
+        // The cleanup already reaped the process group.
+      }
+    }
+    rmSync(root, { recursive: true, force: true })
+  }
+}
+
+function addUnreachableChromeDecoy(source: string): string {
+  const launch = source.match(/^setsid "\$chrome_bin" \\\n(?:.*\\\n)*?.*&$/m)?.[0]
+  if (launch === undefined) throw new TypeError('Fixture mutation did not find the Chrome launch')
+  return replaceRequired(source, launch, `if false; then\n${launch}\nfi\n${launch.replace('setsid ', '')}`)
+}
+
+const readinessSuccess = `  if curl --silent --show-error --fail --max-time 1 \\
+    http://127.0.0.1:9333/json/version >/dev/null; then
+    ready=1
+    break
+  fi`
+
+function moveReadinessSuccessBeforeProbe(source: string): string {
+  return replaceRequired(source, readinessSuccess, `  ready=1
+  break
+  if curl --silent --show-error --fail --max-time 1 \\
+    http://127.0.0.1:9333/json/version >/dev/null; then
+  fi`)
+}
+
+function hideReadinessProbe(source: string): string {
+  const readiness = readinessBlock(source)
+  return replaceRequired(source, readiness, `if false; then\n${readiness.replace(/^/gm, '  ')}\nfi`)
+}
+
+function hasFusionLifecycleContract(job: Record<string, unknown>): boolean {
+  const launcher = commandSteps(job).find(
+    step => step.name === 'Run Fusion external-profile snapshot with system Google Chrome',
+  )
+  const timeoutMinutes = job['timeout-minutes']
+  if (
+    launcher === undefined
+    || typeof timeoutMinutes !== 'number'
+    || timeoutMinutes * 60_000 <= FUSION_ACCEPTANCE_TIMEOUT_MS
+    || timeoutMinutes * 60_000 - FUSION_ACCEPTANCE_TIMEOUT_MS < FUSION_CI_RESERVE_MS
+  ) return false
+
+  const lines = executableLines(launcher.run)
+  const acceptance = lines.indexOf('pnpm run test:fusion:acceptance:built')
+  const chromeVariable = assignedVariable(lines, /^"?\$\(\s*command\s+-v\s+google-chrome\s*\)"?$/)
+  const profileVariable = assignedVariable(lines, /^"?\$\(\s*mktemp\s+-d\s*\)"?$/)
+  const pidVariable = assignedVariable(lines, /^\$!$/)
+  if (
+    acceptance < 0
+    || chromeVariable === undefined
+    || profileVariable === undefined
+    || pidVariable === undefined
+  ) return false
+
+  const chromeReference = `"?\\$${chromeVariable}"?`
+  const pidReference = `"?-?\\$${pidVariable}"?`
+  const profileAssignment = lines.findIndex(line =>
+    new RegExp(`^${profileVariable}="?\\$\\(\\s*mktemp\\s+-d\\s*\\)"?$`).test(line))
+  const pidAssignment = lines.findIndex(line =>
+    new RegExp(`^${pidVariable}=\\$!$`).test(line))
+  const launchPattern = new RegExp(`^(?:setsid\\s+(?:--\\s+)?)?${chromeReference}\\s+.*--remote-debugging-port(?:=|\\s+)9333(?:\\s|$)`)
+  const launchIndexes = lines.flatMap((line, index) => launchPattern.test(line) ? [index] : [])
+  const launch = launchIndexes[0] ?? -1
+  const startsWithSetsid = new RegExp(`^setsid\\s+(?:--\\s+)?${chromeReference}\\s+`).test(lines[launch] ?? '')
+  const usesProfile = new RegExp(`(?:^|\\s)--user-data-dir="?\\$${profileVariable}"?(?:\\s|$)`).test(lines[launch] ?? '')
+
+  const traps = lines.flatMap((line, index) => /\bEXIT$/.test(line) && line.startsWith('trap ') ? [[line, index] as const] : [])
+  const finalTrap = traps.at(-1)
+  const trapIsEffective = finalTrap?.[0] === 'trap cleanup EXIT'
+    && finalTrap[1] < acceptance
+    && !traps.some(([line]) => line === 'trap - EXIT')
+
+  const cleanupStart = lines.indexOf('cleanup() {')
+  const cleanupEnd = lines.indexOf('}', cleanupStart + 1)
+  const cleanup = lines.slice(cleanupStart + 1, cleanupEnd)
+  const pidGuard = cleanup.indexOf(`if [[ -n "$${pidVariable}" ]]; then`)
+  const term = cleanup.findIndex(line =>
+    new RegExp(`^kill\\s+-TERM\\s+--\\s+"?-\\$${pidVariable}"?\\s+2>\\/dev\\/null\\s+\\|\\|\\s+true$`).test(line))
+  const pollStart = cleanup.findIndex(line => /^for\s+[A-Za-z_]\w*\s+in\s+\{1\.\.[1-9]\d*\};\s*do$/u.test(line))
+  const pollEnd = cleanup.indexOf('done', pollStart + 1)
+  const pollChecksPid = cleanup.slice(pollStart + 1, pollEnd).some(line =>
+    new RegExp(`^kill\\s+-0\\s+${pidReference}\\s+2>\\/dev\\/null\\s+\\|\\|\\s+break$`).test(line))
+  const pollSleeps = cleanup.slice(pollStart + 1, pollEnd).some(line =>
+    /^sleep\s+(?:\d+(?:\.\d+)?|\.\d+)$/u.test(line))
+  const kill = cleanup.findIndex(line =>
+    new RegExp(`^kill\\s+-KILL\\s+--\\s+"?-\\$${pidVariable}"?\\s+2>\\/dev\\/null\\s+\\|\\|\\s+true$`).test(line))
+  const wait = cleanup.findIndex(line =>
+    new RegExp(`^wait\\s+"?\\$${pidVariable}"?\\s+2>\\/dev\\/null\\s+\\|\\|\\s+true$`).test(line))
+  const pidGuardEnd = cleanup.indexOf('fi', wait + 1)
+  const profileGuard = cleanup.indexOf(`if [[ -n "$${profileVariable}" ]]; then`, pidGuardEnd + 1)
+  const removesProfile = cleanup.findIndex(line =>
+    new RegExp(`^rm\\s+-rf\\s+(?:--\\s+)?"?\\$${profileVariable}"?$`).test(line))
+  const profileGuardEnd = cleanup.indexOf('fi', removesProfile + 1)
+  const returnsBeforeCleanup = cleanup.some(line => /\breturn(?:\s|$)/u.test(line))
+
+  return launchIndexes.length === 1
+    && launch < acceptance
+    && startsWithSetsid
+    && usesProfile
+    && trapIsEffective
+    && cleanupStart >= 0
+    && cleanupEnd > cleanupStart
+    && !returnsBeforeCleanup
+    && cleanupEnd < finalTrap[1]
+    && finalTrap[1] < profileAssignment
+    && profileAssignment < launch
+    && launch < pidAssignment
+    && pidAssignment < acceptance
+    && pidGuard >= 0
+    && pidGuard < term
+    && term < pollStart
+    && pollStart < pollEnd
+    && pollChecksPid
+    && pollSleeps
+    && pollEnd < kill
+    && kill < wait
+    && wait < pidGuardEnd
+    && pidGuardEnd < profileGuard
+    && profileGuard < removesProfile
+    && removesProfile < profileGuardEnd
+    && hasReadinessBeforeAcceptance(lines, acceptance)
+}
+
+function hasReadinessBeforeAcceptance(lines: string[], acceptance: number): boolean {
+  const probePattern = /^if curl\b(?=.*\s--fail(?:\s|$))(?=.*http:\/\/127\.0\.0\.1:9333\/json\/version\b).*;\s*then$/
+  const probes = lines.flatMap((line, index) => probePattern.test(line) ? [index] : [])
+  const probe = probes[0] ?? -1
+  const loop = lines.lastIndexOf('for _ in {1..40}; do', probe)
+  const done = lines.indexOf('done', probe)
+  const guard = lines.indexOf('if [[ -z "$ready" ]]; then', done + 1)
+  const failure = lines.indexOf('exit 1', guard + 1)
+  const guardEnd = lines.indexOf('fi', guard + 1)
+  return probes.length === 1
+    && lines.lastIndexOf('ready=', loop) >= 0
+    && loop < probe
+    && !lines.includes('if false; then')
+    && lines[probe + 1] === 'ready=1'
+    && lines[probe + 2] === 'break'
+    && lines[probe + 3] === 'fi'
+    && done > probe
+    && guard > done
+    && failure > guard
+    && failure < guardEnd
+    && guardEnd < acceptance
+}
+
+function executableLines(source: string): string[] {
+  return source
+    .replace(/\\\r?\n\s*/g, ' ')
+    .split(/\r?\n/)
+    .map(line => line.replace(/\s+#.*$/, '').trim())
+    .filter(line => line !== '' && !line.startsWith('#') && !/^(?:echo|printf)\b/.test(line))
+}
+
+function assignedVariable(lines: string[], value: RegExp): string | undefined {
+  for (const line of lines) {
+    const assignment = line.match(/^([A-Za-z_]\w*)=(.+)$/)
+    if (assignment !== null && value.test(assignment[2] ?? '')) return assignment[1]
+  }
 }

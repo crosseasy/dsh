@@ -6,13 +6,13 @@
 >
 > **历史计划：** 本文档记录 v2 执行计划。2026-08-21 Task 12 章节只记录已经验证的结果，不把较早的计划工作改写成当时已经获知的事实。
 
-**当前状态：** Task 12 至 Task 21 已完成。Task 18 截止后候选审计、Task 21 rescope 与产品文档修正、独立复审、最终验证补救、Chrome CDP 恢复及最终 64 文件对齐复审均已批准。
+**当前状态：** Task 12 至 Task 30 已完成。Task 30 的最终门禁、Task 28/29 复审、exact-staged V8 代码与安全复审、remediation、独立 plan/design/spec alignment、最终对账与 progress 追加均已完成。
 
-**当前结果：** 最终 Web 外部集合为空。ModLens、SSH、Remote Web UI、Task Board、Pet、Git Graph、Skin Center 与 Better Sidebar 都是有证据支持的 blocker；shim、核心改动、弱化生命周期判据或历史运行时计数均不能使其准入。截止后审计覆盖 ModLens `3.22.2`／`3.23.0`／`3.23.1`、17 个 Web UI 身份各自的 `0.2.6`／`0.2.7`、Better Sidebar `0.15.0` 和 dsh-TUI `0.8.7`／`0.8.8`。Pet 与 Git Graph 在两个新 Web UI 波次中都已静态修复授权，但精确许可证身份失败；完整安全与运行时检查为 `NOT RUN`。Better Sidebar 通过 `ctx.tools` 注册，但在模型命令到达继承 ambient 环境的无约束 PTY 前，没有包自有批准决策或不可变部署锁。当前 oracle 通过 196/196，compact 为 7 项/401 tokens，投影消息 token 从 448 降至 155，重启后保持 155。历史三行 1/1 gate 与 174/174 oracle、历史四行 1/1 与 170/170，以及历史六行 156/156 都只保留为被取代的证据。六个 runtime event id 使用规范的 `cordis/*` 名称且没有 alias。rescope 分类器在保留 event 与 locale id 的同时识别模块和包元数据引用，包括有效 JSON/JSONC 围栏内的包依赖键；格式错误的围栏保持不变。REAL process helper 已通过独立复审并为每个流保留 64 KiB byte-bounded tail。TUI `0.7.1` 源码运行时通过；`0.8.7` 与 `0.8.8` 运行时为 `NOT RUN`，公开交付保持阶段 2 BLOCKED。
+**当前结果：** staged 产品交付包含精确两行 Pet 与 Git Graph `0.2.9` Fusion Web profile。两个包均通过完整准入检查和本地系统 Chrome CDP `9333` 回放。Task 29 的 fresh assembled run 对完整 Web 工作流、精确外部配置行、stock 行为、headless 与 ACP 隔离、诊断和清理通过 36/36 项断言。ModLens `3.24.0` 在生命周期或 Chrome 验证前因服务端请求安全失败。新的无缓存 Better Sidebar packument 包含 15 个可安装版本，且不存在高于 `0.15.2` 的发布版本；精确 `0.15.2` 是上次截止后的唯一候选，并在安全、生命周期、隔离安装、组合、启动或 Chrome 前因公共 rc.5 peer 闭包为 0/14 而失败。两个阻塞包均保持未挂载。Task 30 已修复事务式迟到 acquisition、acquisition 前 CI trap 所有权、Pet 完整私有包副本变异、包含 `Promise.reject(undefined)` 的显式 settlement、带引用 identity 去重的正交 failure 聚合、单一共享 cleanup deadline，以及 deadline 到期后的已观察 best-effort 外层 disposal。精确 Pet 与 Git Graph 入口继续通过未配对、已配对、已撤销和 loopback 授权矩阵。历史零行、三行、四行与六行结果继续作为被取代的证据，公开 TUI 交付保持阶段 2 BLOCKED。
 
-**目标：** 保留纯 Fusion bundle（`@deepseek-ai/dsh-fusion`）、一个共享 `liangshen` preset 和可复现的零行 profile 组合，同时保持 `packages/core/**`、agent loop 和 session 格式不变。
+**目标：** 保留纯 Fusion bundle（`@deepseek-ai/dsh-fusion`）、一个共享 `liangshen` preset 和可复现的精确配置行 profile 组合，同时保持 `packages/core/**`、agent loop 和会话格式不变。
 
-**架构：** 仓库拥有的集成点位于 `packages/bundle/fusion/`、`apps/cli/config/agent-presets/liangshen/`、profile 组合文档和相应测试。在某个已发布外部包通过全部准入判据前，Fusion patch 与 profile dependency map 保持为空。
+**架构：** 仓库拥有的集成点位于 `packages/bundle/fusion/`、`apps/cli/config/agent-presets/liangshen/`、profile 组合文档和相应测试。Fusion patch 与 profile dependency map 仅包含 Pet 与 Git Graph `0.2.9`。
 
 **技术栈：** TypeScript ESM、pnpm workspaces、Cordis 插件、dsh profile 与 patch、Vitest、通过 CDP `9333` 驱动的系统 Chrome，以及真实 PTY。
 
@@ -20,11 +20,11 @@
 
 ## 全局约束
 
-- 保持 `packages/core/**`、agent loop 和 session 格式不变。非 Fusion 包只允许恢复六个 `cordis/*` runtime event id、约束 rescope 只改写模块和包元数据引用而不改写 event、locale 或 data id、同步 producer、allowlist、consumer、测试和生成文档，以及限制 REAL process 输出。
+- 保持 `packages/core/**`、agent loop 和会话格式不变。非 Fusion 包只允许恢复六个 `cordis/*` runtime event id、约束 rescope 只改写模块和包元数据引用而不改写 event、locale 或 data id、同步 producer、allowlist、consumer、测试和生成文档，以及限制 REAL process 输出。
 - 只有在隔离安装、组合、真实启动、目标能力可见、浏览器或终端诊断干净、完整 effect/disposer 所有权和断连重挂全部通过后，才能接受一个精确包版本。记录 peer 漂移，但不能仅凭 peer 漂移判定运行时失败。
 - 所有外部包使用精确版本；不得使用 `^`、`~` 或 `latest`。
 - 不得把第三方运行时依赖写入 `packages/bundle/fusion/package.json`。
-- 零行 REAL composition fixture 和 profile 不得包含外部依赖、React peer 或外部 `allowBuilds`；也不得把这些内容写入仓库根 `package.json`、根 lockfile 或根 `pnpm-workspace.yaml`。
+- REAL composition fixture（测试前置数据）只包含两个精确外部依赖及其 React peer，且不含外部 `allowBuilds`；Task 22 不向仓库根新增 Pet、Git Graph 或 React 条目，并保持根 `package.json`、lockfile 与 workspace 文件不变。
 - 每类能力只保留一个实现，并拒绝重复配置行。
 - 只通过 CDP `9333` 使用系统 Chrome；不得调用 `chromium.launch()` 或使用 IDE 浏览器。
 - 默认单测与覆盖率测试必须离线；只有显式 REAL composition lane 可以安装 profile 局部外部包。
@@ -195,21 +195,47 @@ Task 12.7 至 Task 12.14 只作为已完成的历史阶段保持勾选。对应�
 
 Better Sidebar 有 13 个发布版本；精确 `0.15.0` 仍被部署所有权和继承 ambient 环境的无约束 PTY sink 阻塞，而不是绕过整个 ToolRuntime。dsh-TUI 有 19 个发布版本；精确 `0.8.7` 与 `0.8.8` 各自包含 24 个非 rc.5 peer、0 个根与 15 个打包内 `workspace:*` 值，以及 8 个打包的 Liangshen 文件。历史公开安装查询覆盖 23 包直接子集；新的完整源码闭包查询在 41 个包中找到 0 个精确 rc.5。两个新 TUI 候选均在静态所有权与公开闭包门失败，因此安装与 PTY 运行时为 `NOT RUN`。[兼容矩阵](fusion-compat-matrix.md)记录详细版本计数、结果和证据路径。
 
+### Task 22：Web UI `0.2.8` 与 `0.2.9` 审计
+
+Task 22 及其独立复审均已完成。Fusion 准入精确 Pet 与 Git Graph `0.2.9`；其他每个身份都在首个失败或未选择的强制检查停止。[兼容矩阵](fusion-compat-matrix.md)记录新鲜度截止时间、发布总数、有序检查、各身份结果与组合运行时证据。
+
+Task 23 把每个阻塞路由的 `GET` 响应与独立启动的 `base + web-app` profile 的完整稳定响应作精确比较。挂载 JSON、redirect、含 stock title 的 route-owned HTML、404 与 405 控制响应都会因存在差异而失败；已准入的 Git 路由另以 `POST /git/branches` 验证。
+
+### Task 26：ModLens `3.24.0` 与 Better Sidebar `0.15.1`
+
+Task 26 已完成。ModLens 现有 77 个发布版本和 39 个 DSH 候选；精确 `3.24.0` 通过产物、许可证、依赖闭包、隔离安装与组合检查，随后因跨站 `POST /modlens/paste` 会写入所提交的图像而失败。Better Sidebar 现有 14 个可安装发布版本；精确 `0.15.1` 通过产物与许可证检查，随后因全部 14 个 DSH peer 范围均要求 `^0.1.0-rc.8`，且公共注册表对 14 个 peer 包提供精确 rc.5 的数量为 0 而失败。首个失败使之后的候选生命周期、启动与 Chrome 检查均为 `NOT RUN`；两行 Fusion 选择保持不变。
+
+### Task 28：Better Sidebar `0.15.2`
+
+Task 28 已完成。执行时无缓存 packument 截止时间为 `2026-08-22T17:01:07Z`；`latest` 为 `0.15.2`，packument 包含 15 个可安装 manifest，且精确 `0.15.2` 是上次截止后的唯一发布版本。该版本通过身份、完整性、路径安全与 MIT 许可证检查，随后因全部 14 个 DSH peer 均要求 `^0.1.0-rc.8`，且公共注册表对 14 个包提供精确 rc.5 的数量为 0 而失败。安全、生命周期、隔离安装、组合、启动与 Chrome 均为 `NOT RUN`；两行 Fusion 选择保持不变。
+
+### Task 29：当前组合 Web 回归
+
+Task 29 已完成。精确 Pet 与 Git Graph `0.2.9` profile 的同一次 fresh assembled run 通过系统 Chrome CDP `9333` 的 36/36 项断言。该运行覆盖对话渲染、工具卡片、New Session 创建或复用、会话列表、fork、resume、compact、两条 export 路径、Search、Settings、模型选择、Pet、Git Graph、stock Web 行为，以及 fresh headless 与 ACP 隔离。exit、console、page、network、slot、process、port、CDP target、临时目录、进程组与 cleanup 诊断均干净，独立复审没有 finding。
+
+### Task 30：最终收敛
+
+最终 exact-staged V8 package 为 `.superpowers/sdd/round5-final-staged-v8/review-package.md`，SHA-256 为 `d4d9e99624bd8f7612e92c477efeaadea1b2b37ee0f268ea6df4704fda42c8dc`，index tree 为 `d77fb5a65673db4232f5ace22726dbf9e091dc29`；该 package 包含 41 个文件、3,276 行新增与 506 行删除。四个 focused 文件通过 110/110 项测试。Typecheck、build、0 errors lint 与 hygiene 均通过。Translation pairing 检查 945 对文档，Agent Note 格式检查 542 份 note，归档 note 验证检查 426 个冻结产物，Markdown wrap 检查 1,874 个文件，Markdown links 检查 1,911 个文件，文档 budget 检查 9 个文档。
+
+系统 Chrome 151 经 CDP `9333` 的 built acceptance 通过 1/1，结束后 Fusion target 与 listener 均为 0。Task 28 summarize 重新生成 0/14，其 blocker assertion 按预期以退出码 1 结束；Task 29 oracles 通过 10/10。Task 28 与 Task 29 的 task review 均已完成。V8 bits 复审报告 P0/P1/P2 `0/0/0`，DSH 复审报告 `PASS / APPROVE` 且 0 findings，安全复审未发现可利用问题。
+
+所有经验证的 remediation finding 均已关闭：事务式迟到 acquisition、CI trap、Pet 私有包副本、保留 `Promise.reject(undefined)` 的显式 settlement、带对象 identity 去重的正交 failure 聚合、单一共享 cleanup deadline，以及 deadline 到期后的已观察 best-effort 外层 disposal。独立 plan/design/spec alignment 为 `APPROVED`，Critical/Important/Minor 为 `0/0/0`；最终 checklist、staging 与 Git 对账及唯一最终 progress 追加均已完成。本地未运行全量仓库 coverage 或实际 GitHub-hosted job。
+
 ---
 
 ## 自审
 
 - 运行时判据测量已安装产品，而不只测量 peer metadata。
 - Profile 所有权防止第三方依赖树污染仓库 workspace。
-- ModLens、SSH、Remote Web UI、Task Board、Pet、Git Graph、Skin Center 与 Better Sidebar 是有证据支持的外部 blocker，不是被省略的成功项。
-- 运行时可见不能豁免路由授权或产物许可证身份；Pet 与 Git Graph `0.1.11` 保留其历史授权缺陷，`0.2.6` 与 `0.2.7` 已静态修复授权，但在完整安全／运行时验证前仍因精确许可证冲突被排除。
+- Pet 与 Git Graph `0.2.9` 由新的完整证据准入；更早存在授权缺陷或许可证冲突的版本继续保持拒绝。
+- 其他每个 Web UI 身份都在首个失败或未选择的强制检查停止；不得根据历史证据推断下游结果。
 - 首次加载可见不能豁免插件生命周期所有权；在某个已发布版本同时满足完整 effect/disposer 清理、完全停稳的 dispose、断连重挂、许可证身份、rc.5 runtime 与同页生命周期验证前，ModLens、SSH、Remote Web UI 与 Task Board 保持排除。
 - 包 rescope 只改写模块说明符，不改写 runtime event 或 locale id；六个 `cordis/*` id 保持规范且没有 alias。
 - TUI `0.7.1` 与 Liangshen 来源 `0.2.4` 保持单一 preset 所有权。纯 rc.5 源码验证运行时通过。历史公开安装尝试在其直接子集中发现 23 个缺失包，新的完整查询在 41 个包中找到 0 个精确 rc.5；因此不存在受支持的公开组装方式。
-- 历史失败保留为证据。文档顶部和 Task 18 结果说明当前候选与交付状态；Task 12 章节将其中的三行、四行和六行运行时阶段明确标记为被取代的证据。
+- 历史失败保留为证据。文档顶部和 Task 29 结果说明当前候选与交付状态；Task 12 章节将其中的零行、三行、四行和六行运行时阶段明确标记为被取代的证据。
 
 ---
 
 ## 执行交接
 
-Task 12 至 Task 21 已完成。最终 Fusion Web 外部集合保持为空，TUI `0.7.1` 源码运行时保持 PASS，TUI `0.8.7` 与 `0.8.8` 运行时保持 `NOT RUN`，公开 TUI 交付保持阶段 2 BLOCKED。精确的 64 文件产品交付已 staged；规划与执行记录保持在 staged 产品集合之外。最终 progress 记录为 `Round 5 Final 64-File Alignment (2026-08-22)`。
+Task 12 至 Task 30 已完成。Task 30 完成了最终门禁、Task 28/29 task review、V8 package 绑定、broad code 与 security review、全部经验证的 remediation、独立 plan/design/spec alignment、最终 checklist／staging／Git 对账及唯一最终 progress 追加。规划与证据记录保持在 staged 产品集合之外。全量仓库 coverage 与实际 GitHub-hosted job 继续由 CI 持有，本地未运行。

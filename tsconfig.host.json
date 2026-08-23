@@ -27,6 +27,8 @@
     "apps/web/tests/details-session-lifecycle.e2e.ts",
     "apps/web/tests/plugin-config.e2e.ts",
     "apps/web/tests/settings-chrome.e2e.ts",
+    "apps/web/tests/fusion-external-auth.spec.ts",
+    "apps/web/tests/fusion-external-auth.ts",
     "apps/web/tests/fusion-real-composition.acceptance.ts",
     "apps/web/tests/fusion-real-process.spec.ts",
     "apps/web/tests/fusion-real-process.ts",

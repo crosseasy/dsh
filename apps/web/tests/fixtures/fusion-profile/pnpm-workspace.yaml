@@ -1,2 +1,6 @@
 packages:
   - .
+nodeLinker: hoisted
+autoInstallPeers: false
+minimumReleaseAgeExclude:
+  - '@linxin666/dsh-pet@0.2.9'

@@ -13,8 +13,8 @@ export const name = 'fusion-bundle-invariant'
 /** Service required before the companion can register. */
 export const inject = ['invariants']
 
-// No runtime invariant: the package carries an empty static patch and owns no
-// mutable runtime relation.
+// No runtime invariant: the package carries a static composition patch and
+// owns no mutable runtime relation.
 const install: InvariantInstaller = () => {}
 
 /**

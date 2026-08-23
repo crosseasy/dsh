@@ -6,19 +6,19 @@ Electron 桌面壳通过已发布的 NPM 包消费 DeepSeek Harness。桌面壳�
 
 ## Profile 与服务
 
-桌面壳持有一个名为 `fusion` 的内部 profile。其组合包按顺序为 `@deepseek-ai/dsh-base`、`@deepseek-ai/dsh-web-app` 和 `@deepseek-ai/dsh-fusion`；[Fusion Web profile 指南](./fusion-profile.md)定义当前零行组合。
+桌面壳持有一个名为 `fusion` 的内部 profile。其组合包按顺序为 `@deepseek-ai/dsh-base`、`@deepseek-ai/dsh-web-app` 和 `@deepseek-ai/dsh-fusion`；[Fusion Web profile 指南](./fusion-profile.md)定义当前 Pet 与 Git Graph 组合。
 
 桌面壳使用 `--profile fusion` 启动已安装的 `dsh` 可执行文件，等待 HTTP 端点就绪，然后在应用窗口中加载该端点。桌面壳还负责随应用生命周期重启和关闭服务。
 
 ## 能力所有权
 
-全部外部候选保持阻塞期间，Fusion 不提供移动端远程访问。桌面壳可以保留自身的远程实现，并持有该实现的生命周期；消费 Fusion 不要求桌面壳禁用或关闭该实现。
+Remote Web UI 保持阻塞期间，Fusion 不提供移动端远程访问。桌面壳可以保留自身的远程实现，并持有该实现的生命周期；消费 Fusion 不要求桌面壳禁用或关闭该实现。
 
 桌面壳负责原生窗口、系统托盘、自动启动服务、应用更新和插件市场。这些原生职责包装 fusion 服务，不重复实现其 Web UI 功能。
 
 ## 升级验证
 
-升级时需要同时修改两个精确包版本，并保持 Fusion 外部依赖集合为空。分发使用新 dsh 版本的桌面构建前，需要针对打包后的应用运行兼容矩阵：
+升级时需要同时修改两个精确包版本，并保留精确 Pet 与 Git Graph profile 依赖。分发使用新 dsh 版本的桌面构建前，需要针对打包后的应用运行兼容矩阵：
 
 - 通过桌面 lockfile 安装并解析两个 NPM 包；
 - 组合 fusion profile 并启动服务；

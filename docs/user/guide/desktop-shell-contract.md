@@ -6,19 +6,19 @@ The Electron desktop shell consumes DeepSeek Harness as released npm packages. I
 
 ## Profile and service
 
-The shell owns an internal profile named `fusion`. Its ordered bundle list is `@deepseek-ai/dsh-base`, `@deepseek-ai/dsh-web-app`, and `@deepseek-ai/dsh-fusion`; the [Fusion Web profile guide](./fusion-profile.md) defines the current zero-row composition.
+The shell owns an internal profile named `fusion`. Its ordered bundle list is `@deepseek-ai/dsh-base`, `@deepseek-ai/dsh-web-app`, and `@deepseek-ai/dsh-fusion`; the [Fusion Web profile guide](./fusion-profile.md) defines the current Pet and Git Graph composition.
 
 The shell starts the installed `dsh` executable with `--profile fusion`, waits for its HTTP endpoint, and loads that endpoint in the application window. The shell also owns service restart and shutdown around application lifecycle events.
 
 ## Capability ownership
 
-Fusion does not provide mobile remote access while every external candidate remains blocked. The desktop shell may retain its own remote implementation and owns that implementation's lifecycle; consuming Fusion does not require the shell to disable or close it.
+Fusion does not provide mobile remote access while Remote Web UI remains blocked. The desktop shell may retain its own remote implementation and owns that implementation's lifecycle; consuming Fusion does not require the shell to disable or close it.
 
 The desktop shell owns native windows, the system tray, automatic service startup, application updates, and the plugin marketplace. Those native responsibilities wrap the fusion service and do not duplicate its Web UI features.
 
 ## Upgrade verification
 
-An upgrade changes both exact package versions together and preserves the empty Fusion external dependency set. Before distributing a desktop build with a new dsh version, run the compatibility matrix against the packaged application:
+An upgrade changes both exact package versions together and preserves the exact Pet and Git Graph profile dependencies. Before distributing a desktop build with a new dsh version, run the compatibility matrix against the packaged application:
 
 - installation from the desktop lockfile and resolution of both npm packages;
 - fusion profile composition and service startup;

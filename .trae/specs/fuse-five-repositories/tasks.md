@@ -146,11 +146,90 @@
 
 - [x] Task 21: 修复 Round 5 两项确认 finding: 以 TDD 限制 vendored rescope 只改写独立 JSON、YAML 与文档正文中的模块或包元数据引用，并从四份 Fusion 产品文档移除指向未 staged 兼容矩阵的条款，同时保留 owning Agent Note 对决策、包级 blocker 与重验要求的所有权说明。
 
-- [ ] Task 22: 审计 Web UI `0.2.8` 发布波次: 对 17 个 Web UI 身份在 `2026-08-22T01:55:55Z` 至 `01:56:30Z` 发布的 `0.2.8` 精确产物执行适用的身份、完整性、许可证、安全、生命周期、所有权、去重和运行时准入检查，并同步版本计数、兼容矩阵、Agent Note 与最终准入结论。
+- [x] Task 22: 审计 Web UI `0.2.8`／`0.2.9` 发布波次: 对 17 个 Web UI 身份在 `2026-08-22T01:55:55Z` 至 `01:56:30Z` 发布的 `0.2.8` 与本轮审计期间在 `2026-08-22T09:32:20Z` 至 `09:32:49Z` 发布的 `0.2.9` 精确产物执行适用的身份、完整性、许可证、安全、生命周期、所有权、去重和运行时准入检查，并同步版本计数、兼容矩阵、Agent Note 与最终准入结论。
 
-- [ ] Task 23: 修复零路由 REAL 验收假阴性: 对 `/git/branches` 使用真实 `GET` 方法并断言未挂载响应，增加一个挂载该 GET handler 时必然失败的负控，同时复核其他外部路由探针使用各自真实方法且能区分路由存在与 Web fallback。
+- [x] Task 23: 修复缺席路由探针假阴性: 对 `/git/branches` 的 `GET` 响应与独立启动的 `base + web-app` 完整稳定响应作精确比较，并用挂载 JSON、redirect、含 stock title 的 route-owned HTML、404 与 405 handler 负控证明差异必然失败。Task 22 后续准入 Git Graph 后，最终 assembled gate 对 `/git/branches` 使用真实 `POST` 正控验证已挂载路由，不再把 GET 路由缺席作为当前组合结论。
 
-- [ ] Task 24: 稳定 fusion-tui 恢复态退出验收: 消除 resume 场景在 UI 已恢复后两次 Ctrl+C 偶发无法于 10 秒内退出的时序不稳定，并用重复 fresh/resume PTY 运行证明消息恢复、支持退出和零残留进程均稳定通过。
+- [x] Task 24: 稳定 fusion-tui 恢复态退出验收: 消除 resume 场景在 UI 已恢复后两次 Ctrl+C 偶发无法于 10 秒内退出的时序不稳定，并用重复 fresh/resume PTY 运行证明消息恢复、支持退出和零残留进程均稳定通过。
+
+- [x] Task 25: 修复最终运行时审查发现并建立 Fusion 外部 profile 必需快照门
+  - [x] 以独立启动的 `base + web-app` 响应为权威基线比较全部禁用路由，并用负控证明 mounted JSON、redirect、包含 stock title 的 route-owned HTML、404 与 405 handler 均被拒绝。
+  - [x] 以等价真实 agent/session scope 比较 `base + web-app` 与 Fusion 的完整工具 schema 和已渲染 prompt-visible 输入，并用负控证明同名 schema 变更、scoped 新工具和 prompt contribution 均被拒绝。
+  - [x] 所有新增 RPC、HTTP fetch 和 body read 均使用 `AbortSignal.timeout` 截止时间，并用 hanging-header 与 hanging-body 负控证明失败进入既有 cleanup。
+  - [x] Git Graph 正控断言 canonical 临时 workspace root、当前分支 `task22` 及唯一 current `task22` branch row。
+  - [x] Fusion bundle 测试把 stub 放入 `profileDirectory/node_modules` 并从 `profileDirectory/cordis.yml` 启动，且旧 parent-only 布局有失败证据。
+  - [x] 专用 Fusion REAL lane 提交 Pet + Git Graph 的确定性 ARIA golden，profile 外部包保持局部安装，默认 unit/coverage 保持离线。
+  - [x] 必需的隔离 `ubuntu-latest` Linux PR job 已配置并通过静态 CI contract 测试，本地等价的系统 Google Chrome CDP `9333` keyless Fusion snapshot/acceptance replay 已通过；实际 GitHub-hosted 执行由 CI 持有，未在本地运行，且既有 required `test:web` lane 未弱化。
+  - [x] Fusion fixture 保留 `nodeLinker: hoisted`、`autoInstallPeers: false` 和精确 `minimumReleaseAgeExclude`，局部 lockfile 一致且不改仓库根依赖或 lock。
+  - [x] 使用已运行的系统 Chrome CDP `9333` 完成 focused tests 与真实验收，并将新鲜 RED/GREEN 命令和结果记录到 runtime remediation 报告。
+  - [x] 更新最窄 testing policy 与 Agent Note 英中配对，说明外部 profile 专用 required snapshot lane；Fusion 产品/plan/spec 文档由独立 writer 对齐。
+  - [x] Task 25 最终 exact-staged bits 复审为 P0/P1/P2 `0/0/0`，DSH 复审为 `APPROVE`，安全复审无可利用问题；规格对齐复审唯一剩余的 progress ledger finding 已由最终 `Round 1` append-only 记录关闭。
+
+- [x] Task 26: 审计新增外部候选: 对 `@liustack/modlens@3.24.0` 与 `dsh-better-sidebar@0.15.1` 执行适用的产物、许可证、安全、生命周期、隔离安装和真实运行时准入检查，更新版本计数、兼容矩阵、Agent Note 与最终准入结论。
+
+- [x] Task 27: 固定 Fusion CI 生命周期约束: 扩展 `scripts/ci-workflow.spec.ts`，使 `fusion-acceptance` job 的 15 分钟上限、比 10 分钟验收至少多 5 分钟的 reserve、`setsid` 启动，以及位于 trap／验收前并按序执行 TERM、有限轮询、KILL、wait、profile 删除的 `cleanup()` 在接线回归时失败；验收操作响应取消信号，最终清理使用独立 30 秒截止时间。
+
+- [x] Task 28: 审计执行时 fresh cutoff 后的完整 Better Sidebar 候选集合并确定最终 selected-row decision
+  - [x] 通过唯一 nonce 与 no-cache 请求获取执行时 packument，记录 HTTP `2026-08-22T17:01:07Z` fresh cutoff、cache MISS／无 `Age`、`latest: 0.15.2`、`beta: 0.12.0-beta.1`、15 个可安装 manifest 和 16 个 time-map 版本键。
+  - [x] 相对兼容矩阵的 `2026-08-22T15:28:38Z` cutoff 枚举完整 post-cutoff 集合，确认唯一新候选为发布于 `2026-08-22T15:35:41.933Z` 的精确 `0.15.2`，没有遗漏执行期间发布的更高候选。
+  - [x] 验证 `0.15.2` 的身份、registry SHA-1、SHA-512 SRI、tar 路径／链接安全与 MIT 许可证，产物和许可证结论为 PASS。
+  - [x] 保存 14 个 DSH peer 的唯一请求 URL、原始响应 headers、原始 packument、逐包 summary、采集元数据、机械汇总脚本与预期失败断言，使公共 rc.5 闭包可从原始证据重算为 0/14 FAIL。
+  - [x] 在首个前置门失败后，将安全、生命周期、隔离安装、组合、启动、能力、Chrome CDP `9333` 和浏览器诊断准确记录为 `NOT RUN`；最终决定为 Better Sidebar 保持阻塞且未挂载，Fusion 继续选择 Pet 与 Git Graph `0.2.9` 两行。
+  - [x] 同步兼容矩阵、owning Agent Note、plan、design 的英文、中文与 i18n sidecar，以及 spec、tasks、checklist、Task 28 报告和原始可重算证据；保持所有执行记录不进入 Git index。
+
+- [x] Task 29: 补齐 Task 28 final selected-row decision 对应的 Fusion Web 回归证据
+  - [x] 依赖 Task 28 的最终决定；当前决定为 Better Sidebar BLOCKED，因此使用只含精确 Pet 与 Git Graph `0.2.9` 的最终两行 profile，不得用历史零行、三行、四行或六行证据补足。
+  - [x] 在同一个 fresh assembled run 中使用系统 Chrome CDP `9333` 验证对话渲染、工具卡片、New Session create-or-reuse、会话列表、fork、resume、compact、header export、`/export`、Search、Settings 与模型选择。
+  - [x] 在同一精确组合上验证 stock Web 行为不变，并以 fresh smoke 证明 headless 与 ACP 不加载 fusion bundle、保持隔离。
+  - [x] 记录完整 exit、console、page、network、slot、process、port、CDP target 与临时目录诊断和 cleanup，任何 console error 或残留资源均必须修复后重跑。
+  - [x] 将同一 fresh assembled run 的完整成功结果追加到 tracked regression report，并同步英文、中文与 i18n sidecar；Task 29 完成前不得追加本轮最终 progress。
+
+- [x] Task 30: 执行 Task 28/29 后的最终收敛
+  - [x] 在 Task 28 与 Task 29 完成后，按最终触达面新鲜运行最小必要叶级门禁与工作树／staged diff checks，所有单次前台等待保持小于一分钟；四文件 focused tests 为 110/110，typecheck、build、lint 以 0 errors 通过，hygiene 通过，translation／Agent Note／归档／Markdown／budget 门禁分别检查 945／542／426／1,874／1,911／9 项。
+  - [x] 对 Task 28 候选审计和 Task 29 同一 assembled run 证据分别执行独立 task review，关闭全部有效 finding；Task 28 summarize 为 0/14、assert 按预期退出 1，Task 29 oracles 为 10/10。
+  - [x] 基于排除 `.trae/specs/**`、`docs/superpowers/**` 与 `.superpowers/**` 执行记录的 exact-staged review package 完成 broad code、security 与 plan/design/spec review；最终 V8 package、broad code 与 security review 均 clean，独立 plan/design/spec alignment 为 `APPROVED`，Critical/Important/Minor 为 `0/0/0`。
+  - [x] 最终 V8 package 为 `.superpowers/sdd/round5-final-staged-v8/review-package.md`，SHA-256 `d4d9e99624bd8f7612e92c477efeaadea1b2b37ee0f268ea6df4704fda42c8dc`，index tree `d77fb5a65673db4232f5ace22726dbf9e091dc29`，包含 41 个文件、3,276 行新增与 506 行删除；bits 复审为 P0/P1/P2 `0/0/0`，DSH 复审为 `PASS / APPROVE` 且 0 findings，安全复审未发现可利用问题。
+  - [x] 修复所有有效阻塞 finding，并对受影响门禁、运行时路径和审查结论执行新鲜复验；系统 Chrome 151 经 CDP `9333` 的 built acceptance 通过 1/1，结束后 Fusion target 与 listener 均为 0。全量 coverage 与实际 GitHub-hosted job 未在本地运行。
+  - [x] 修复 P1 acceptance late-publication 缺口：每项外层资源 acquisition 在启动前登记到 operation-local owner，取消后到达的 Fiber、Browser、Context、Page、临时目录与 link 由同一 owner 清理；self-cleaning helper 登记结算，正常 cleanup 在共享 deadline 内等待 acquisition 与 teardown 终态；operation 正常结算时立即移除 abort listener。
+  - [x] 修复 P1 CI trap 缺口：在 `mktemp` 和 Chrome launch 前初始化变量、定义 guarded cleanup 并安装 `EXIT` trap，保留 TERM、有限轮询、KILL、wait、profile 删除顺序；return／不可达 mutation 命中 RED，非 Windows 真实 Bash 探针证明子进程终止并被等待且目录删除。
+  - [x] 修复 P1 Pet pnpm mutation 缺口：把完整 Pet 包复制到 profile 私有目录并确认入口 inode 不同，只修改和导入副本；安装入口在正常与取消／失败路径 hash 不变，真实 `apply` 四态矩阵与未配对 403→200 RED 保持。
+  - [x] 修复隐式 rejection sentinel 缺口：使用显式 `pending`／`fulfilled`／`rejected` settlement 状态，保留 acquisition、operation 与 cleanup 的 `Promise.reject(undefined)`。
+  - [x] 修复 failure aggregation 缺口：相互独立的 cancellation、operation、resource disposal 与 final cleanup failure 全部聚合；重复引用只按对象 identity 去重，不按值折叠独立 primitive failure。
+  - [x] 修复 cleanup deadline 分裂缺口：pending acquisition、disposal、final cleanup 与 operation settlement 共用一个总 deadline，正常路径仍按反向顺序串行等待 disposer。
+  - [x] 修复 deadline 后外层资源遗漏：deadline 到期后仍以已取消 signal 启动所有已取得但尚未开始的外层 disposer，永久观察其 promise 并报告未结算工作，但不等待这些 best-effort disposer 延长总 deadline。
+  - [x] 最终逐项核对 checklist、staging 边界与 Git 边界；执行记录保持 unstaged／untracked，未执行未授权 Git 写操作，并只追加一次最终 progress 记录。
+
+- [x] Task 31: 从零冻结本轮审查基线并拆分独立审查域
+  - [x] 记录当前分支、HEAD、index tree、staged／unstaged／untracked 路径、目标 plan/design/spec/checklist 与现有 V8 审查包摘要；不得改变既有 staged 产品集合。
+  - [x] 生成只包含当前 exact-staged 产品交付的全新审查包，明确排除 `.trae/specs/**`、`docs/superpowers/**`、`.superpowers/**` 与 `.learnings/**`。
+  - [x] 以执行时 no-cache 元数据检查所有已记录外部包家族是否出现晚于现有 cutoff 的新候选；有新候选时追加独立审计任务，没有时保存可复算的无新增结论。
+  - [x] 将审查分为需求与计划对齐、实现与生命周期、测试与负控、安全、文档语义、运行时与交付边界六个互不写入的审查域。
+
+- [x] Task 32: 并行执行六域独立从零审查
+  - [x] 需求与计划审查逐条映射 design、plan、Ralph spec、tasks、checklist 与 exact-staged 文件，识别遗漏、矛盾、过期结论和不可验证验收项。
+  - [x] 实现与生命周期审查读取完整相关实现及调用方，验证资源取得、取消、反向释放、总 deadline、异常聚合、profile 组合与既有 Web／headless／ACP／TUI 不变量。
+  - [x] 测试与负控审查验证断言会在目标回归下失败，覆盖所有分支与超时路径，且 REAL lane、ARIA golden、外部路由、模型输入和 CI shell contract 没有假阳性。
+  - [x] 安全审查从外部输入到最终操作追踪授权、路径、进程、环境、依赖安装和浏览器连接，确认没有 shim、核心绕过或未受控副作用。
+  - [x] 文档语义审查核对英文、中文、sidecar、Agent Note、用户指南、testing policy、计划与兼容矩阵同代码和证据一致，并检查唯一事实归属和当前态措辞。
+  - [x] 运行时与交付审查核对 Chrome CDP `9333`、必要的真实 PTY、CI 拓扑、cleanup、staging 排除和 Git 禁令；汇总所有发现并逐项验证技术事实。
+
+- [ ] Task 33: 以 TDD 修复全部有效阻塞发现
+  - [x] 将每个确认的 Critical、Important、P0、P1、P2 或规格违背项追加为具体修复子任务，注明失败证据、目标文件、最小测试和验收命令。
+  - [ ] Task 33.1: 撤销 Git Graph `0.2.9` 准入。现有真实 probe 已证明 active `/git` JSON operation 在 row fiber dispose 后继续 pending 且子进程存活；从 Fusion patch、profile dependency metadata、REAL fixture/lock、ARIA golden、验收断言、产品指南和 owning Agent Note 移除 Git Graph，记录其 lifecycle blocker 与重验条件，将当前 selected row 收敛为仅 Pet `0.2.9`。
+  - [ ] Task 33.2: 修复 `invokeRoute()` 取消传播。先增加真实 hanging handler／Git child 取消测试，证明 acceptance signal 能在 handler 返回前使调用失败并进入 inner Context `finally`；最小实现从调用开始竞争 signal、永久观察被放弃 promise，并在 lifecycle 返回前等待 Context 与进程树停稳。
+  - [ ] Task 33.3: 补齐 blocked-route 完整跨 profile 比较。先增加 body-only 差异负控并确认 RED，再让 Fusion `/` fallback 与独立 `base + web-app` fallback 通过 `assertSameHttpResponse()` 比较 status、headers 和 body。
+  - [ ] Task 33.4: 固定 CI acceptance 命令可达性。先加入 `if [[ 1 -eq 0 ]]` 包裹 acceptance 的 RED mutation，再把现有真实 Bash probe 扩展为完整 launcher 行为探针，要求 acceptance stub 确实执行、cleanup 顺序成立、进程停稳且 profile 删除。
+  - [ ] Task 33.5: 补齐 lifecycle/aggregation 永久负控并删除未用协议。增加内部 `operationTimeoutMs` 自触发、deadline 后 disposer 延迟拒绝无 unhandled rejection、两个相同 primitive failure 按 occurrence 保留的测试；将无调用方返回非空数组的 `cleanup(): Promise<unknown[]>` 收窄为 `Promise<void>` 并删除对应 fulfilled-array 分支。
+  - [ ] Task 33.6: 收敛代码与文档语义。修正 testing policy 的独立 Fusion acceptance tier、managed-process cancellation JSDoc、CI Agent Note 的 `#**`、网站 Fusion 标签、兼容矩阵完整准入定义／Task 31 freshness／历史窄范围 PASS 措辞、regression report 当前 Task 29 指针，以及 plan/design/checklist 的本轮 baseline 指针；所有双语对同步并重录 sidecar。
+  - [ ] 由单写入实现 Subagent 先运行 RED，再做最小修复并运行 GREEN；不得弱化测试、修改核心 `packages/core/**`、引入兼容 shim 或扩大产品范围。
+  - [ ] 每批修复后由独立 Subagent 复审规格符合性、正确性、简洁性、架构、安全和性能；所有阻塞 finding 关闭后才进入最终验证。
+  - [ ] 只 stage 本轮确认的产品代码、测试、产品文档和 Agent Note；计划、规格、证据与学习记录保持 unstaged／untracked。
+
+- [ ] Task 34: 执行新鲜验证、最终复审与交付对账
+  - [ ] 按最终触达面运行小于一分钟的 focused tests、typecheck、build、0-error lint、hygiene、文档叶级门禁和 staged／working-tree diff checks；长任务在后台运行并轮询。
+  - [ ] 使用系统 Chrome CDP `9333` 运行最终 exact-row built acceptance 与完整现有 Web 工作流；若 TUI 或共享 preset／进程路径受影响，运行真实 fresh/resume PTY；修复所有 console、page、network、cleanup 或残留资源错误。
+  - [ ] 生成最终 exact-staged 审查包并由独立 Subagent 完成 broad code、security、plan/design/spec alignment 与 checklist 审查；若有失败则回到 Task 33。
+  - [ ] 逐项勾选本轮 checklist，确认 index 仅包含产品交付、未执行 commit／push／merge／rebase／reset，并向 `progress.md` append exactly one 本轮总结。
 
 ## 任务依赖
 
@@ -166,3 +245,7 @@
 - Task 12 依赖 Task 11 的新鲜基线；各独立审查域可并行，修复和复审按发现串行收敛。
 - Task 13 依赖 Task 12 无未解决阻塞发现。
 - Task 17 依赖 Task 14–16 完成。
+- Task 29 依赖 Task 28 的 final selected-row decision；Task 30 依赖 Task 28 与 Task 29 完成，最终顺序为 Task 28 -> Task 29 -> Task 30。
+- Task 31 依赖 Task 30 的交付状态；Task 32 的六个只读审查域依赖 Task 31，可并行执行。
+- Task 33 依赖 Task 32 的发现完成技术事实核验；实现保持单写入，独立复审可并行读取。
+- Task 34 依赖 Task 33 无未解决阻塞 finding；最终复审发现问题时回到 Task 33 修复并复验。

@@ -2,7 +2,7 @@
 
 English | [中文](fusion-profile.zh.md)
 
-The Fusion Web profile preserves the external-integration release layer on top of the standard Web application. No external package currently satisfies every admission criterion, so the profile adds zero external rows while retaining three bundle layers: `@deepseek-ai/dsh-base`, `@deepseek-ai/dsh-web-app`, and `@deepseek-ai/dsh-fusion`.
+The Fusion Web profile preserves the external-integration release layer on top of the standard Web application. Pet and Git Graph `0.2.9` satisfy every admission criterion, so the profile adds those two rows while retaining three bundle layers: `@deepseek-ai/dsh-base`, `@deepseek-ai/dsh-web-app`, and `@deepseek-ai/dsh-fusion`.
 
 ## Prerequisites
 
@@ -17,6 +17,11 @@ export DSH_HOME="$(mktemp -d "${TMPDIR:-/tmp}/dsh-fusion.XXXXXX")"
 export FUSION_PROFILE="$DSH_HOME/profiles/fusion"
 
 dsh plugin --profile fusion add @deepseek-ai/dsh-fusion@0.1.0-rc.5
+dsh plugin --profile fusion add \
+  @linxin666/dsh-client-ui-git-graph@0.2.9 \
+  @linxin666/dsh-pet@0.2.9 \
+  react@18.3.1 \
+  react-dom@18.3.1
 
 node --input-type=module - "$FUSION_PROFILE/package.json" <<'NODE'
 import { readFileSync, writeFileSync } from 'node:fs'
@@ -34,26 +39,31 @@ NODE
 
 The `base` and `web-app` bundles resolve from the installed `dsh`; the profile dependency supplies `fusion`. The normalization makes their order explicit and prevents any other installed bundle declaration from becoming a profile layer.
 
-## Keep the profile external-free
+## Pin the profile dependencies
 
-The current Fusion profile needs no external dependency or build approval. Keep its pnpm workspace settings minimal:
+The two accepted packages and their React peers are profile-owned. They need no native build approval. Keep the fresh-release exceptions exact:
 
 ```sh
 cat > "$FUSION_PROFILE/pnpm-workspace.yaml" <<'YAML'
 packages:
   - .
+nodeLinker: hoisted
+autoInstallPeers: false
+minimumReleaseAgeExclude:
+  - '@linxin666/dsh-client-ui-git-graph@0.2.9'
+  - '@linxin666/dsh-pet@0.2.9'
 YAML
 ```
 
-Do not add ModLens, SSH, Remote Web UI, their React peers, or their transitive build approvals to this profile or the repository root.
+Do not add ModLens, SSH, Remote Web UI, or their transitive build approvals to this profile or the repository root.
 
-## Confirm zero external dependencies
+## Confirm exact external dependencies
 
-The Fusion package's [`dsh.bundle.profileDependencies`](../../../packages/bundle/fusion/package.json) is `{}`, and its patch is empty. Do not install any external candidate until a published version passes the complete license, security, lifecycle, rc.5, and assembled-runtime criteria.
+The Fusion package's [`dsh.bundle.profileDependencies`](../../../packages/bundle/fusion/package.json) contains exactly Pet and Git Graph `0.2.9`, and its patch inserts exactly `pet` and `ui-git-graph`. Do not install another external candidate until a published version passes the complete license, security, lifecycle, ownership, deduplication, rc.5, and assembled-runtime criteria.
 
 ## Verify the profile manifest
 
-Check the exact bundle list and confirm that no blocked package is declared in the profile's `dependencies` before boot:
+Check the exact bundle list and five-entry dependency map before boot:
 
 ```sh
 node --input-type=module - "$FUSION_PROFILE/package.json" <<'NODE'
@@ -65,23 +75,22 @@ const expectedBundles = [
   '@deepseek-ai/dsh-web-app',
   '@deepseek-ai/dsh-fusion',
 ]
-const blockedPackages = [
-  '@liustack/modlens',
-  '@linxin666/dsh-ssh',
-  '@linxin666/dsh-remote-web-ui',
-  '@linxin666/dsh-web-ui-all',
-  '@linxin666/dsh-client-ui-task-board',
-  '@linxin666/dsh-pet',
-  '@linxin666/dsh-client-ui-git-graph',
-  '@linxin666/dsh-client-ui-skin-center',
-  'dsh-better-sidebar',
-]
+const expectedDependencies = {
+  '@deepseek-ai/dsh-fusion': '0.1.0-rc.5',
+  '@linxin666/dsh-client-ui-git-graph': '0.2.9',
+  '@linxin666/dsh-pet': '0.2.9',
+  react: '18.3.1',
+  'react-dom': '18.3.1',
+}
 
 if (JSON.stringify(manifest.dsh?.profile?.bundles) !== JSON.stringify(expectedBundles)) {
   throw new Error('fusion profile bundle order does not match the documented recipe')
 }
-for (const name of blockedPackages) {
-  if (manifest.dependencies?.[name] !== undefined) throw new Error(`${name} is blocked`)
+if (Object.keys(manifest.dependencies ?? {}).length !== Object.keys(expectedDependencies).length) {
+  throw new Error('fusion profile dependencies do not match the documented recipe')
+}
+for (const [name, version] of Object.entries(expectedDependencies)) {
+  if (manifest.dependencies?.[name] !== version) throw new Error(`${name} must be ${version}`)
 }
 console.log('fusion profile manifest verified')
 NODE
@@ -97,10 +106,10 @@ Start the profile on an available port:
 dsh --profile fusion --port 3080
 ```
 
-Open the printed URL. The page remains the stock Web interface, including its left `ui-sidebar`, Settings, and New Session entry. Open the agent preset picker for a new session and select **梁神模式**. The preset roster returned by the Web API uses the id `liangshen`; the preset is repository-owned and is not a Fusion external row.
+Open the printed URL. The page retains the stock Web interface, including its left `ui-sidebar`, Settings, and New Session entry. Pet is visible as one global dock, and Git Graph adds one branch chip for a session backed by a Git workspace. Open the agent preset picker for a new session and select **梁神模式**. The preset roster returned by the Web API uses the id `liangshen`; the preset is repository-owned and is not a Fusion external row.
 
-The checked-in browser acceptance boots this zero-row recipe through system Chrome CDP `9333`. It verifies that all eight blocked integrations have no Host row, browser entry, client resource, UI root, route, or tool, while the stock Web interface remains visible and diagnostics and cleanup are clean.
+The checked-in browser acceptance boots this two-row recipe through system Chrome CDP `9333`. It verifies exact package and row identity, one Pet root, one Git Graph chip, live data from the Pet-state and Git-branches probes, blocked-package absence, stock Web visibility, clean diagnostics, and cleanup.
 
 ## Known limitations
 
-- This profile has zero external rows, so image understanding, SSH, mobile remote UI, Task Board, Pet, Git Graph, Skin Center, and the right-side Files, editor, terminal, and Source Control workbench are unavailable. Do not install candidate packages or add profile rows to bypass admission. The owning [Agent Note](../../../.agents/notes/implemented/architecture/2026-08-19-fusion-profile-external-plugin-ownership.md) defines the zero-row decision, package-specific blockers, and revalidation requirements.
+- This profile has two external rows. Image understanding, SSH, mobile remote UI, Task Board, Skin Center, and the right-side Files, editor, terminal, and Source Control workbench remain unavailable. Do not install other candidate packages or add profile rows to bypass admission. The owning [Agent Note](../../../.agents/notes/implemented/architecture/2026-08-19-fusion-profile-external-plugin-ownership.md) defines the accepted set, package-specific blockers, and revalidation requirements.

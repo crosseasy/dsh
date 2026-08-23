@@ -1,6 +1,83 @@
 import type { SubprocessHandle, SubprocessOutcome, SubprocessRuntime, SubprocessSpawnSpec } from '@deepseek-ai/dsh-subprocess'
+import type { ContextSnapshotSection, ToolSchema } from '@deepseek-ai/dsh-llm'
 
 const DIAGNOSTIC_OUTPUT_MAX_BYTES = 64 * 1024
+
+/** Total Vitest budget for the Fusion acceptance, including its final cleanup. */
+export const FUSION_ACCEPTANCE_TIMEOUT_MS = 600_000
+
+/** Cleanup reserve excluded from the acceptance's cancellable operation budget. */
+export const FUSION_ACCEPTANCE_CLEANUP_TIMEOUT_MS = 30_000
+
+/** Vitest return and reporting reserve after acceptance cleanup. */
+export const FUSION_ACCEPTANCE_FRAMEWORK_HEADROOM_MS = 30_000
+
+/** Cancellable operation budget before cleanup and framework reserves. */
+export const FUSION_ACCEPTANCE_OPERATION_TIMEOUT_MS =
+  FUSION_ACCEPTANCE_TIMEOUT_MS
+  - FUSION_ACCEPTANCE_CLEANUP_TIMEOUT_MS
+  - FUSION_ACCEPTANCE_FRAMEWORK_HEADROOM_MS
+
+/** Inputs for an acceptance operation whose cleanup must begin on cancellation. */
+export interface AcceptanceLifecycleOptions<T> {
+  cleanup(signal: AbortSignal): Promise<void>
+  cleanupTimeoutMs: number
+  operation(signal: AbortSignal, resources: AcceptanceResourceOwner): Promise<T>
+  operationTimeoutMs: number
+  testSignal: AbortSignal
+}
+
+interface ObservedPromise<T> {
+  done: Promise<void>
+  state:
+    | { status: 'pending' }
+    | { status: 'fulfilled'; value: T }
+    | { reason: unknown; status: 'rejected' }
+}
+
+interface OwnedAcquisition<T> {
+  acquired: ObservedPromise<T>
+  disposal: ObservedPromise<void> | undefined
+  dispose(signal: AbortSignal): Promise<void>
+  label: string
+}
+
+interface AcceptanceCleanupDeadline {
+  dispose(): void
+  expired: Promise<void>
+  signal: AbortSignal
+  timeoutMs: number
+}
+
+/** Transactional owner for resources acquired by one acceptance operation. */
+interface AcceptanceResourceOwner {
+  /**
+   * Register an acquisition before it starts and dispose its result during lifecycle cleanup.
+   * @param label - Resource name used in cleanup diagnostics.
+   * @param acquire - Acquisition started only after ownership is registered.
+   * @param dispose - Teardown for a successfully acquired resource.
+   * @returns The acquired resource while the lifecycle remains active.
+   */
+  acquire<T>(
+    label: string,
+    acquire: () => Promise<T>,
+    dispose: (resource: T, signal: AbortSignal) => Promise<void>,
+  ): Promise<T>
+
+  /**
+   * Release one acquired resource before final lifecycle cleanup.
+   * @param resource - Value previously returned by `acquire`.
+   */
+  release(resource: unknown): Promise<void>
+
+  /**
+   * Register a self-cleaning resource operation that must settle before lifecycle return.
+   * @param label - Operation name used in cleanup diagnostics.
+   * @param run - Signal-aware operation with its own rollback.
+   * @returns The operation result while the lifecycle remains active.
+   */
+  settle<T>(label: string, run: () => Promise<T>): Promise<T>
+}
 
 /** Result with decoded stdout/stderr suffixes whose UTF-8 encoding is at most 64 KiB each. */
 export interface ManagedCommandResult extends SubprocessOutcome {
@@ -24,6 +101,21 @@ export interface SystemChromeVersion {
   webSocketDebuggerUrl: string
 }
 
+/** Stable fields observed from one route probe. */
+export interface HttpResponseSnapshot {
+  body: string
+  contentType: string
+  location: string
+  status: number
+}
+
+/** Stable fields passed into one scoped model request. */
+export interface ModelInputSnapshot {
+  contexts: ContextSnapshotSection[]
+  system: string
+  tools: ToolSchema[]
+}
+
 /** Explicit environment additions for the isolated Fusion profile. */
 export function acceptanceEnvironment(home: string, agentsHome: string): NodeJS.ProcessEnv {
   return {
@@ -33,6 +125,366 @@ export function acceptanceEnvironment(home: string, agentsHome: string): NodeJS.
     DSH_HOME: home,
     DSH_TELEMETRY_DISABLED: '1',
     NODE_OPTIONS: undefined,
+  }
+}
+
+function signalReason(signal: AbortSignal, label: string): Error {
+  const reason: unknown = signal.reason
+  return reason instanceof Error ? reason : new Error(`${label} was cancelled`)
+}
+
+function caughtError(error: unknown, label: string): Error {
+  return error instanceof Error ? error : new Error(label, { cause: error })
+}
+
+function observePromise<T>(promise: Promise<T>): ObservedPromise<T> {
+  const observed: ObservedPromise<T> = {
+    done: Promise.resolve(),
+    state: { status: 'pending' },
+  }
+  observed.done = promise.then(
+    (value) => {
+      observed.state = { status: 'fulfilled', value }
+    },
+    (reason: unknown) => {
+      observed.state = { reason, status: 'rejected' }
+    },
+  )
+  return observed
+}
+
+function createAcceptanceCleanupDeadline(timeoutMs: number): AcceptanceCleanupDeadline {
+  const controller = new AbortController()
+  const expired = Promise.withResolvers<undefined>()
+  const timer = setTimeout(() => {
+    controller.abort(new Error(
+      `acceptance cleanup exceeded its ${String(timeoutMs)}ms total deadline`,
+    ))
+    expired.resolve(undefined)
+  }, timeoutMs)
+  return {
+    dispose: () => { clearTimeout(timer) },
+    expired: expired.promise,
+    signal: controller.signal,
+    timeoutMs,
+  }
+}
+
+async function settlesBeforeDeadline(
+  observed: ObservedPromise<unknown>,
+  deadline: AcceptanceCleanupDeadline,
+): Promise<boolean> {
+  if (observed.state.status !== 'pending') return true
+  await Promise.race([observed.done, deadline.expired])
+  return observed.state.status !== 'pending'
+}
+
+function cleanupDeadlineFailure(subject: string, timeoutMs: number): Error {
+  return new Error(
+    `${subject} did not settle before the ${String(timeoutMs)}ms cleanup deadline`,
+  )
+}
+
+class AcceptanceResourceOwnerImpl implements AcceptanceResourceOwner {
+  private readonly acquisitions: Array<OwnedAcquisition<unknown>> = []
+  private readonly byValue = new Map<unknown, OwnedAcquisition<unknown>>()
+  private cleanupDeadline: AcceptanceCleanupDeadline | undefined
+  private closing = false
+
+  constructor(private readonly operationSignal: AbortSignal) {}
+
+  async acquire<T>(
+    label: string,
+    acquire: () => Promise<T>,
+    dispose: (resource: T, signal: AbortSignal) => Promise<void>,
+  ): Promise<T> {
+    if (this.closing) throw signalReason(this.operationSignal, label)
+    const acquired = observePromise(Promise.resolve().then(acquire))
+    const owned: OwnedAcquisition<T> = {
+      acquired,
+      disposal: undefined,
+      label,
+      dispose: async (signal) => {
+        await acquired.done
+        if (acquired.state.status !== 'fulfilled') return
+        const resource = acquired.state.value
+        owned.disposal ??= observePromise(
+          Promise.resolve().then(() => dispose(resource, signal)),
+        )
+        await owned.disposal.done
+        if (owned.disposal.state.status === 'rejected') {
+          throw owned.disposal.state.reason
+        }
+      },
+    }
+    this.acquisitions.push(owned)
+    await acquired.done
+    if (acquired.state.status === 'rejected') throw acquired.state.reason
+    if (acquired.state.status === 'pending') {
+      throw new Error(`${label} acquisition did not settle`)
+    }
+    const value = acquired.state.value
+    this.byValue.set(value, owned)
+    if (this.closing) {
+      await owned.dispose(this.cleanupDeadline!.signal)
+      throw signalReason(this.operationSignal, label)
+    }
+    return value
+  }
+
+  async release(resource: unknown): Promise<void> {
+    const owned = this.byValue.get(resource)
+    if (owned === undefined) throw new Error('acceptance resource is not owned by this lifecycle')
+    await owned.dispose(this.cleanupDeadline?.signal ?? this.operationSignal)
+  }
+
+  async settle<T>(label: string, run: () => Promise<T>): Promise<T> {
+    return await this.acquire(label, run, async () => {})
+  }
+
+  async close(deadline: AcceptanceCleanupDeadline): Promise<unknown[]> {
+    this.closing = true
+    this.cleanupDeadline = deadline
+    const failures: unknown[] = []
+    for (const owned of [...this.acquisitions].reverse()) {
+      if (deadline.signal.aborted) {
+        if (owned.acquired.state.status === 'pending') {
+          failures.push(cleanupDeadlineFailure(
+            `${owned.label} acquisition`,
+            deadline.timeoutMs,
+          ))
+        } else if (owned.acquired.state.status === 'fulfilled') {
+          const disposal = owned.disposal
+          if (disposal === undefined) {
+            observePromise(owned.dispose(deadline.signal))
+            failures.push(cleanupDeadlineFailure(
+              `${owned.label} disposer`,
+              deadline.timeoutMs,
+            ))
+          } else if (disposal.state.status === 'pending') {
+            failures.push(cleanupDeadlineFailure(
+              `${owned.label} disposer`,
+              deadline.timeoutMs,
+            ))
+          } else if (disposal.state.status === 'rejected') {
+            failures.push(caughtError(
+              disposal.state.reason,
+              `${owned.label} cleanup threw a non-Error value`,
+            ))
+          }
+        }
+        continue
+      }
+      const disposal = observePromise(owned.dispose(deadline.signal))
+      if (!await settlesBeforeDeadline(disposal, deadline)) {
+        const subject = owned.acquired.state.status === 'pending'
+          ? `${owned.label} acquisition`
+          : `${owned.label} disposer`
+        failures.push(cleanupDeadlineFailure(subject, deadline.timeoutMs))
+      } else if (disposal.state.status === 'rejected') {
+        failures.push(caughtError(
+          disposal.state.reason,
+          `${owned.label} cleanup threw a non-Error value`,
+        ))
+      }
+    }
+    return failures
+  }
+}
+
+/**
+ * Run one acceptance operation and start its single cleanup owner as soon as
+ * Vitest cancellation or the internal operation deadline aborts. The method
+ * observes both operation and cleanup promises. Normal completion waits for
+ * quiescence; after cleanup starts, one total deadline bounds every remaining
+ * acquisition, teardown, final cleanup, and operation-settlement wait.
+ * @param options - Test signal, deadlines, operation, and cleanup owner.
+ * @returns The operation result after cleanup reaches settlement within its deadline.
+ */
+export async function runAcceptanceLifecycle<T>(
+  options: AcceptanceLifecycleOptions<T>,
+): Promise<T> {
+  const operationSignal = AbortSignal.any([
+    options.testSignal,
+    AbortSignal.timeout(options.operationTimeoutMs),
+  ])
+  const resources = new AcceptanceResourceOwnerImpl(operationSignal)
+  let cancellationFailure: unknown
+  let cleanupDeadline: AcceptanceCleanupDeadline | undefined
+  let cleanupTask: ObservedPromise<unknown[]> | undefined
+  const startCleanup = (): ObservedPromise<unknown[]> => {
+    if (cleanupTask !== undefined) return cleanupTask
+    cleanupDeadline = createAcceptanceCleanupDeadline(options.cleanupTimeoutMs)
+    let cleanup: Promise<unknown[]>
+    try {
+      cleanup = resources.close(cleanupDeadline).then(async (resourceFailures) => {
+        let finalCleanup: ObservedPromise<void>
+        try {
+          finalCleanup = observePromise(options.cleanup(cleanupDeadline!.signal))
+        } catch (error) {
+          return [...resourceFailures, error]
+        }
+        if (!await settlesBeforeDeadline(finalCleanup, cleanupDeadline!)) {
+          return [
+            ...resourceFailures,
+            cleanupDeadlineFailure(
+              'acceptance final cleanup',
+              cleanupDeadline!.timeoutMs,
+            ),
+          ]
+        }
+        if (finalCleanup.state.status === 'rejected') {
+          return [...resourceFailures, finalCleanup.state.reason]
+        }
+        if (finalCleanup.state.status === 'fulfilled') {
+          return resourceFailures
+        }
+        return [
+          ...resourceFailures,
+          cleanupDeadlineFailure(
+            'acceptance final cleanup',
+            cleanupDeadline!.timeoutMs,
+          ),
+        ]
+      })
+    } catch (error) {
+      cleanup = Promise.reject(caughtError(error, 'acceptance cleanup threw a non-Error value'))
+    }
+    cleanupTask = observePromise(cleanup)
+    return cleanupTask
+  }
+  const cancelled = Promise.withResolvers<undefined>()
+  const onAbort = (): void => {
+    cancellationFailure = signalReason(operationSignal, 'acceptance operation')
+    startCleanup()
+    cancelled.resolve(undefined)
+  }
+  if (operationSignal.aborted) onAbort()
+  else operationSignal.addEventListener('abort', onAbort, { once: true })
+
+  let operation: Promise<T>
+  try {
+    operation = options.operation(operationSignal, resources)
+  } catch (error) {
+    operation = Promise.reject(caughtError(error, 'acceptance operation threw a non-Error value'))
+  }
+  const observedOperation = observePromise(operation)
+  await Promise.race([observedOperation.done, cancelled.promise])
+  if (observedOperation.state.status !== 'pending') {
+    operationSignal.removeEventListener('abort', onAbort)
+  }
+
+  const cleanupFailures: unknown[] = []
+  try {
+    const cleanup = startCleanup()
+    await cleanup.done
+    if (cleanup.state.status === 'rejected') {
+      cleanupFailures.push(cleanup.state.reason)
+    } else if (cleanup.state.status === 'fulfilled') {
+      cleanupFailures.push(...cleanup.state.value)
+    } else {
+      cleanupFailures.push(new Error('acceptance cleanup did not settle'))
+    }
+    await Promise.race([observedOperation.done, cleanupDeadline!.expired])
+  } finally {
+    operationSignal.removeEventListener('abort', onAbort)
+    cleanupDeadline?.dispose()
+  }
+
+  const failures: unknown[] = []
+  const addFailure = (failure: unknown): void => {
+    const hasIdentity = (
+      (typeof failure === 'object' && failure !== null)
+      || typeof failure === 'function'
+    )
+    if (!hasIdentity || !failures.includes(failure)) failures.push(failure)
+  }
+  if (cancellationFailure !== undefined) addFailure(cancellationFailure)
+  if (observedOperation.state.status === 'rejected') {
+    addFailure(observedOperation.state.reason)
+  } else if (observedOperation.state.status === 'pending') {
+    addFailure(cleanupDeadlineFailure(
+      'acceptance operation',
+      options.cleanupTimeoutMs,
+    ))
+  }
+  for (const failure of cleanupFailures) addFailure(failure)
+  if (failures.length === 1) throw failures[0]
+  if (failures.length > 1) {
+    throw new AggregateError(failures, 'Fusion REAL composition acceptance failed')
+  }
+  if (observedOperation.state.status !== 'fulfilled') {
+    throw new Error('acceptance operation did not settle')
+  }
+  return observedOperation.state.value
+}
+
+/**
+ * Require Fusion to preserve one route's complete stable HTTP response.
+ * @param baseline - Response from the independently booted base and web-app profile.
+ * @param fusion - Response from the Fusion profile.
+ * @param label - HTTP method and pathname used in diagnostics.
+ */
+export function assertSameHttpResponse(
+  baseline: HttpResponseSnapshot,
+  fusion: HttpResponseSnapshot,
+  label: string,
+): void {
+  if (JSON.stringify(baseline) === JSON.stringify(fusion)) return
+  throw new Error(
+    `${label} differs from the base + web-app response`
+    + `\nbaseline: ${JSON.stringify(baseline)}`
+    + `\nfusion: ${JSON.stringify(fusion)}`,
+  )
+}
+
+/**
+ * Require Fusion to preserve every model-visible field assembled for one agent.
+ * @param baseline - Scoped request input from the base and web-app profile.
+ * @param fusion - Equivalent scoped request input from the Fusion profile.
+ */
+export function assertSameModelInput(
+  baseline: ModelInputSnapshot,
+  fusion: ModelInputSnapshot,
+): void {
+  if (JSON.stringify(baseline) === JSON.stringify(fusion)) return
+  throw new Error(
+    'Fusion scoped model input differs from the base + web-app baseline'
+    + `\nbaseline: ${JSON.stringify(baseline)}`
+    + `\nfusion: ${JSON.stringify(fusion)}`,
+  )
+}
+
+/**
+ * Read one complete HTTP response under a single deadline.
+ * @param url - Route URL to request.
+ * @param init - Request method, headers, and body.
+ * @param timeoutMs - Deadline covering headers and the complete body.
+ * @param signal - Optional acceptance-wide cancellation signal.
+ * @returns Stable response fields suitable for baseline comparison.
+ */
+export async function readHttpResponse(
+  url: URL,
+  init?: RequestInit,
+  timeoutMs = 5_000,
+  signal?: AbortSignal,
+): Promise<HttpResponseSnapshot> {
+  const signals = [
+    AbortSignal.timeout(timeoutMs),
+    init?.signal ?? undefined,
+    signal,
+  ].filter((candidate): candidate is AbortSignal => candidate !== undefined)
+  const requestSignal = signals.length === 1 ? signals[0]! : AbortSignal.any(signals)
+  const response = await fetch(url, {
+    ...init,
+    redirect: 'manual',
+    signal: requestSignal,
+  })
+  return {
+    status: response.status,
+    contentType: response.headers.get('content-type') ?? '',
+    location: response.headers.get('location') ?? '',
+    body: await response.text(),
   }
 }
 
@@ -144,6 +596,7 @@ async function waitForOutput(
   pattern: RegExp,
   label: string,
   timeoutMs: number,
+  signal?: AbortSignal,
 ): Promise<string> {
   return await new Promise((resolveReady, rejectReady) => {
     let settled = false
@@ -151,6 +604,7 @@ async function waitForOutput(
       clearTimeout(timer)
       process.handle.stdout?.off('data', inspect)
       process.handle.stderr?.off('data', inspect)
+      signal?.removeEventListener('abort', onAbort)
     }
     const resolveOnce = (value: string): void => {
       if (settled) return
@@ -169,12 +623,21 @@ async function waitForOutput(
       const match = pattern.exec(output)
       if (match !== null) resolveOnce(match[1] ?? match[0])
     }
+    const onAbort = (): void => {
+      const reason: unknown = signal?.reason
+      rejectOnce(reason instanceof Error ? reason : new Error(`${label} was cancelled`))
+    }
     const timer = setTimeout(() => {
       rejectOnce(new Error(
         `${label} did not become ready within ${String(timeoutMs)}ms`
         + `\nstdout:\n${process.getStdout()}\nstderr:\n${process.getStderr()}`,
       ))
     }, timeoutMs)
+    if (signal?.aborted === true) {
+      onAbort()
+      return
+    }
+    signal?.addEventListener('abort', onAbort, { once: true })
     process.handle.stdout?.on('data', inspect)
     process.handle.stderr?.on('data', inspect)
     inspect()
@@ -279,15 +742,30 @@ async function cleanupAfterFailure(
 export async function startManagedProcess(
   runtime: Pick<SubprocessRuntime, 'spawn'>,
   spec: SubprocessSpawnSpec,
-  readiness: { label: string; pattern: RegExp; timeoutMs: number; cleanupTimeoutMs?: number },
+  readiness: {
+    label: string
+    pattern: RegExp
+    timeoutMs: number
+    cleanupTimeoutMs?: number
+    signal?: AbortSignal
+  },
 ): Promise<ReadyProcess> {
-  const process = captureOutput(runtime.spawn(spec))
+  const processSignal = spec.signal === undefined
+    ? readiness.signal
+    : readiness.signal === undefined
+      ? spec.signal
+      : AbortSignal.any([spec.signal, readiness.signal])
+  const process = captureOutput(runtime.spawn({
+    ...spec,
+    ...processSignal === undefined ? {} : { signal: processSignal },
+  }))
   try {
     const ready = await waitForOutput(
       process,
       readiness.pattern,
       readiness.label,
       readiness.timeoutMs,
+      processSignal,
     )
     return { ...process, ready }
   } catch (error) {
@@ -309,28 +787,36 @@ export async function runManagedCommand(
   spec: SubprocessSpawnSpec,
   label: string,
   timeoutMs: number,
+  signal?: AbortSignal,
 ): Promise<ManagedCommandResult> {
-  const process = captureOutput(runtime.spawn(spec))
   const deadline = new AbortController()
-  let timer: ReturnType<typeof setTimeout> | undefined
-  const timeout = new Promise<never>((_resolve, reject) => {
-    timer = setTimeout(() => {
-      const error = new Error(
-        `${label} timed out after ${String(timeoutMs)}ms`
-        + `\nstdout:\n${process.getStdout()}\nstderr:\n${process.getStderr()}`,
-      )
-      deadline.abort(error)
-      process.handle.terminate()
-      reject(error)
-    }, timeoutMs)
-  })
+  const signals = [spec.signal, signal, deadline.signal]
+    .filter((candidate): candidate is AbortSignal => candidate !== undefined)
+  const operationSignal = signals.length === 1 ? signals[0]! : AbortSignal.any(signals)
+  const process = captureOutput(runtime.spawn({ ...spec, signal: operationSignal }))
+  const cancelled = Promise.withResolvers<never>()
+  const onAbort = (): void => {
+    process.handle.terminate()
+    const reason: unknown = operationSignal.reason
+    cancelled.reject(reason instanceof Error ? reason : new Error(`${label} was cancelled`))
+  }
+  if (operationSignal.aborted) onAbort()
+  else operationSignal.addEventListener('abort', onAbort, { once: true })
+  const timer = setTimeout(() => {
+    const error = new Error(
+      `${label} timed out after ${String(timeoutMs)}ms`
+      + `\nstdout:\n${process.getStdout()}\nstderr:\n${process.getStderr()}`,
+    )
+    deadline.abort(error)
+  }, timeoutMs)
   try {
-    const outcome = await Promise.race([process.done, timeout])
+    const outcome = await Promise.race([process.done, cancelled.promise])
     const stopped = await Promise.race([
-      process.handle.waitForExit(deadline.signal),
-      timeout,
+      process.handle.waitForExit(operationSignal),
+      cancelled.promise,
     ])
     if (!stopped) {
+      operationSignal.throwIfAborted()
       throw new Error(
         `${label} timed out after ${String(timeoutMs)}ms`
         + `\nstdout:\n${outcome.stdout}\nstderr:\n${outcome.stderr}`,
@@ -340,7 +826,8 @@ export async function runManagedCommand(
   } catch (error) {
     return await cleanupAfterFailure(process, error, label, spec.graceMs + 5_000)
   } finally {
-    if (timer !== undefined) clearTimeout(timer)
+    operationSignal.removeEventListener('abort', onAbort)
+    clearTimeout(timer)
   }
 }
 

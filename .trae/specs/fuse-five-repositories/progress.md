@@ -219,3 +219,47 @@
   - 测试/覆盖率: FAIL；受影响 Vitest 为 18 files/386 tests 全通过，未运行全仓 coverage，因为规格要求 focused tests。对抗探针证明已挂载且 `GET /git/branches` 返回 200 时，当前 acceptance 的 `POST` 探针仍返回预期 405 并通过，未证明外部路由为零。
   - 清单审计: 63/66 passed，3 failed；已追加三个未勾选检查点，覆盖 Web UI `0.2.8` 完整准入、真实方法的零路由负控和 TUI resume 支持退出稳定性。
 - **风险和问题**: P1：17 个 `0.2.8` 候选发布于现有矩阵截止时间之后，当前兼容结论与 staged Agent Note 已失去完整候选证据。P1：REAL gate 的 Git Graph 路由断言存在已实证的假阴性。P2：fusion-tui resume 支持退出在两次相同运行中一次超时、一次通过，运行证据存在时序不稳定。
+
+## Round 1
+
+- **完成范围**: Task 22 审计 17 个 Web UI 身份的 `0.2.8`／`0.2.9` 并准入 Pet 与 Git Graph `0.2.9`；Task 23 以独立 `base + web-app` 完整响应和 mounted JSON、redirect、stock-title HTML、404、405 负控修复路由探针假阴性；Task 24 以重复 fresh/resume PTY 运行稳定支持退出与零残留进程；Task 25 收敛完整 model-visible 输入比较、HTTP deadline、真实 Git 数据、profile-local Loader anchor、确定性 ARIA golden 与必需 CI topology。
+- **新鲜本地证据**: focused Vitest 通过 63/63；已运行的系统 Chrome CDP `9333` keyless Fusion snapshot/acceptance replay 通过 1/1；typecheck、`doc-sync` 28/28、`docs:check` 46/46、hygiene 均通过；lint 为 0 errors，12 warnings 仅来自未跟踪的 extracted evidence。
+- **最终复审**: exact-staged bits 为 P0/P1/P2 `0/0/0`，DSH 结论为 `APPROVE`，安全复审未发现可利用问题；规格对齐复审唯一剩余 finding 是缺少当前 progress ledger 记录，本条 append-only 记录将其关闭。
+- **交付状态**: 精确两行 Pet 与 Git Graph `0.2.9` 结果包含 36 个 staged 产品文件；`.trae/specs/**`、`docs/superpowers/**` 与 `.superpowers/**` 规划和证据路径不属于 staged 产品集合。
+- **CI 与 Git 边界**: 必需的隔离 `ubuntu-latest` job 已配置并通过静态 CI contract 测试，本地等价 Chrome CDP `9333` replay 已通过；实际 GitHub-hosted 执行由 CI 持有，未在本地运行。本轮未执行 commit、push、merge、rebase 或 reset。
+
+## Round 2
+
+- **裁决**: FAIL
+- **审查范围**: Broad；覆盖五仓 Fusion 规格、计划、设计、36 个 staged 产品文件、外部候选新鲜度、两行 Web REAL composition、fusion-tui `0.7.1` fresh/resume、Fusion bundle、CI workflow、产品文档、Agent Note 与 Git 暂存边界。
+- **验证结果**:
+  - 构建/运行时: FAIL；`pnpm run build`、`pnpm run typecheck`、`pnpm run lint:contracts-ready`、`pnpm run hygiene`、`pnpm run doc-sync` 均退出 0；系统 Chrome `151.0.7922.172` 的 CDP `9333` replay 通过 1/1，验收后无 DSH target、服务进程或监听端口残留；两轮隔离 TUI fresh/resume 均通过同 session 恢复、消息持久性、支持退出与零残留。整体失败，因为 registry 已出现未审计的 ModLens `3.24.0` 与 Better Sidebar `0.15.1`。
+  - 测试/覆盖率: FAIL；Fusion/CI/process focused Vitest 通过 3 files/63 tests，TUI 退出握手 8/8、进程关闭 9/9、真实 PTY E2E 1/1 均通过；未运行全仓 coverage，且 `scripts/ci-workflow.spec.ts` 未固定新 job 的 10 分钟上限、`setsid`、`trap cleanup EXIT`、Chrome wait 和临时 profile 删除。
+  - 清单审计: 77/79 passed，2 failed。
+- **风险和问题**: P1：`@liustack/modlens@3.24.0` 于 `2026-08-22T08:14:03.368Z` 发布，`dsh-better-sidebar@0.15.1` 于 `2026-08-22T09:47:57.145Z` 发布，当前兼容矩阵和 Agent Note 仍只审计到 `3.23.1`／`0.15.0`，最高精确候选结论已过期。P2：Fusion CI contract 测试在 timeout 或 Chrome cleanup 接线被删除时仍可通过。实际 GitHub-hosted Fusion job 仍由 CI 持有，本地未运行。
+
+## Round 3
+
+- Task 26 与 Task 27 已完成：ModLens `3.24.0` 在服务端请求安全门失败，Better Sidebar `0.15.1` 在公共 rc.5 依赖闭包门失败，后续生命周期与 Chrome 检查保持 `NOT RUN`；Fusion 继续只准入 Pet 与 Git Graph `0.2.9`。Fusion CI 生命周期契约通过定向变异固定 10 分钟上限、实际 CDP Chrome 的 `setsid` 启动、最终有效的 `trap cleanup EXIT`、acceptance 前 readiness 和临时 profile 清理。
+- 新鲜门禁通过 focused Vitest 3 files/77 tests、typecheck、lint contracts-ready、hygiene、六项文档叶级检查、工作树与 staged diff check；bits exact-staged 代码审查为 P0/P1/P2 `0/0/0`，安全审查未发现可利用问题。
+- 审查发现并修复了 CI 测试的误匹配、顺序与变量关联缺口以及过度的 shell 解析实现；候选审计补齐 77/39 个 ModLens 版本／候选和 14 个 Better Sidebar 可安装版本，统一中文术语、双语 handoff、兼容矩阵与 owning Agent Note。Task 26 前置门失败且 Task 27 仅修改测试，因此本轮不重跑 Chrome/TUI，也不把未运行项记为通过。
+- 36 个产品文件保持 staged；本轮新增或更新的产品内容仅为 owning Agent Note 三联文件和 `scripts/ci-workflow.spec.ts`，计划、规格、兼容矩阵、回归记录、Ralph 账本与 `.superpowers/**` 证据保持 unstaged/untracked。未执行 commit、push、merge、rebase 或 reset。
+
+## Round 4
+
+- **Verdict**: FAIL
+- **Scope reviewed**: Broad; five-repository Fusion specification, 36 staged product files, external-candidate freshness, the two-row Pet and Git Graph `0.2.9` Web composition, Fusion TUI `0.7.1`, CI lifecycle enforcement, product documentation, Agent Notes, and Git staging boundaries.
+- **Verification results**:
+  - Build/Runtime: FAIL overall; build, typecheck, lint with 0 errors, hygiene, doc-sync 28/28, system Chrome `151.0.7922.172` CDP `9333` REAL acceptance 1/1, and fresh TUI fresh/resume runs all passed with clean cleanup. Fresh npm metadata shows unaudited `dsh-better-sidebar@0.15.2`, published `2026-08-22T15:35:41.933Z` after the recorded cutoff.
+  - Tests/Coverage: FAIL; focused Vitest passed 3 files/77 tests, but the current two-row REAL acceptance covers Settings, New Session, Pet, Git Graph, model-input equality, blocked routes, diagnostics, and cleanup without exercising the required conversation, tool-card, session-list, fork, resume, compact, export, Search, and model-selection regression matrix. Full repository coverage was not run because the specification requires focused tests and CI owns the exhaustive coverage lane.
+  - Checklist audit: 79/81 passed, 2 failed.
+- **Risks and issues**: P1 - Better Sidebar `0.15.2` has no complete admission or blocker audit, so the recorded highest-candidate conclusion is stale. P1 - the current Pet and Git Graph two-row composition lacks end-to-end evidence for the complete existing Web workflow requirement; the report's detailed workflow evidence belongs to superseded historical compositions.
+
+## Round 5 Final Convergence (2026-08-23)
+
+- **裁决**: PASS；Task 30 已完成，最终 exact-staged V8 package 为 `.superpowers/sdd/round5-final-staged-v8/review-package.md`，SHA-256 为 `d4d9e99624bd8f7612e92c477efeaadea1b2b37ee0f268ea6df4704fda42c8dc`，index tree 为 `d77fb5a65673db4232f5ace22726dbf9e091dc29`，包含 41 个文件、3,276 行新增与 506 行删除。
+- **验证**: 四文件 focused tests 通过 110/110；typecheck、build、0 errors lint 与 hygiene 均通过。Translation pairing 检查 945 对，Agent Note 格式检查 542 份，冻结归档检查 426 个产物，Markdown wrap、links 与 budgets 分别检查 1,874 个文件、1,911 个文件与 9 个文档，均通过。
+- **运行时与复算**: 系统 Chrome 151 经 CDP `9333` 的 built acceptance 通过 1/1，结束后 residual Fusion target 与 listener 均为 0；Task 28 summarize 为 0/14，blocker assert 按预期以退出码 1 结束；Task 29 oracles 通过 10/10。
+- **最终复审**: V8 bits 为 P0/P1/P2 `0/0/0`；DSH 为 `PASS / APPROVE` 且 0 findings；安全复审 clean，未发现可利用问题；独立 plan/design/spec alignment 为 `APPROVED`，Critical/Important/Minor 为 `0/0/0`。
+- **Remediation**: 全部有效 finding 均已关闭，包括事务式迟到 acquisition、acquisition 前 CI trap 所有权、Pet 完整私有包副本变异、保留 `Promise.reject(undefined)` 的显式 settlement、带对象 identity 去重的正交 failure 聚合、单一共享 cleanup deadline，以及 deadline 到期后的已观察 best-effort 外层 disposal。
+- **范围与残余**: 全量仓库 coverage 与实际 GitHub-hosted job 未在本地运行。41 个产品文件保持 staged；`.trae/specs/**`、`docs/superpowers/**`、`.superpowers/**` 与 `.learnings/**` 的 cached paths 为空，兼容矩阵、回归报告及规划／证据记录保持 unstaged／untracked；`packages/core/**`、agent-loop 与 session 格式保持零改动。本轮未执行 commit、push、merge、rebase 或 reset。

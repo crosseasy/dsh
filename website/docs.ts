@@ -133,7 +133,7 @@ const homeAndGuide = pairedPages([
   {
     source: 'docs/user/guide/fusion-profile.md',
     route: 'guide/fusion-profile.md',
-    label: { root: 'Fusion Web 零行配置', en: 'Zero-row Fusion Web profile' },
+    label: { root: '组装 Fusion Web profile', en: 'Assemble the Fusion Web profile' },
     sidebar: { root: 'zh-guide', en: 'en-guide' },
     section: { root: '入门', en: 'Guide' },
     order: 3,
