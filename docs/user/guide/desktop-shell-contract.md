@@ -6,7 +6,7 @@ The Electron desktop shell consumes DeepSeek Harness as released npm packages. I
 
 ## Profile and service
 
-The shell owns an internal profile named `fusion`. Its ordered bundle list is `@deepseek-ai/dsh-base`, `@deepseek-ai/dsh-web-app`, and `@deepseek-ai/dsh-fusion`; the [Fusion Web profile guide](./fusion-profile.md) defines the current Pet and Git Graph composition.
+The shell owns an internal profile named `fusion`. Its ordered bundle list is `@deepseek-ai/dsh-base`, `@deepseek-ai/dsh-web-app`, and `@deepseek-ai/dsh-fusion`; the [Fusion Web profile guide](./fusion-profile.md) defines the current Pet-only composition.
 
 The shell starts the installed `dsh` executable with `--profile fusion`, waits for its HTTP endpoint, and loads that endpoint in the application window. The shell also owns service restart and shutdown around application lifecycle events.
 
@@ -18,7 +18,7 @@ The desktop shell owns native windows, the system tray, automatic service startu
 
 ## Upgrade verification
 
-An upgrade changes both exact package versions together and preserves the exact Pet and Git Graph profile dependencies. Before distributing a desktop build with a new dsh version, run the compatibility matrix against the packaged application:
+An upgrade changes both exact package versions together and preserves the exact Pet profile dependency. Before distributing a desktop build with a new dsh version, run the compatibility matrix against the packaged application:
 
 - installation from the desktop lockfile and resolution of both npm packages;
 - fusion profile composition and service startup;

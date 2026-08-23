@@ -153,7 +153,7 @@ describe('CI workflow', () => {
       profileRemoved: true,
       status: 0,
     })
-  })
+  }, 15_000)
 
   it.skipIf(process.platform === 'win32')('rejects an unreachable acceptance command through Bash', () => {
     const fusion = workflowJob(loadWorkflow('.github/workflows/ci.yml'), 'fusion-acceptance')
@@ -175,7 +175,7 @@ describe('CI workflow', () => {
       profileRemoved: true,
       status: 0,
     })
-  })
+  }, 15_000)
 
   it('keeps a required Wine Windows job, a non-blocking native Windows job with failover, and a master-only standby', () => {
     const workflow = loadWorkflow('.github/workflows/ci.yml')

@@ -14,11 +14,13 @@ Fusion 组合了与 DeepSeek Harness 独立发布的包。即使这些包可以�
 
 只有 manifest（元数据清单）许可证身份与包内授权文本一致的外部包才能进入候选集合。Fusion 从中选择在目标 Harness 版本上通过运行时判据的最高精确版本：在隔离 profile 中安装成功、有序 profile 组合可以解析、目标 Web 或终端界面可以启动、能够通过该界面观察到目标能力，并且其资源具有完整 effect/disposer 所有权与断连重挂能力。peer 范围不匹配会记录为漂移，但不会独立构成失败。
 
-Fusion 组合包的 `dsh.bundle.profileDependencies` 包含精确 `@linxin666/dsh-pet@0.2.9` 与 `@linxin666/dsh-client-ui-git-graph@0.2.9`；其 patch 增加 `pet` 与 `ui-git-graph` 配置行。checked-in `test:fusion:acceptance` lane 通过系统 Google Chrome CDP `9333` 启动 `base -> web-app -> fusion`，把完整 scoped 模型输入和阻塞路由响应与独立启动的 `base + web-app` profile 比较，并比较已提交的 Pet 与 Git Graph ARIA golden。精确 profile 冻结安装完成后，该车道从该 profile 解析每个包真实的 `lib/index.js`，在提供必需服务的 Context 中调用其 `apply` 导出，捕获该次激活实际注册的 route，再让这个 route 实例依次处理非 loopback 未配对、已配对、已撤销和 loopback 状态；被拒绝的请求会在访问 Pet 状态或 Git workspace 前返回 403。apply-only Pet 变异会把完整安装包复制到 profile 下的私有目录，验证副本入口与安装入口不是同一个 inode，并且只修改和导入该副本。安装入口保持只读，正常完成或取消后其 SHA-256 hash 都必须不变。该变异保持 `makePetRoutes` 守卫不变但注册无守卫状态 handler，因此必须精确地因首个远端未配对请求返回 200 而非 403 失败。该车道不进入默认 unit、coverage 和普通 Web 收集，但作为必需的 Linux PR 检查运行。TUI 源码验证选择 `@deepseek-harness-tui/dsh-tui@0.7.1` 和 `@deepseek-ai/dsh-code-runtime-worker-thread@0.1.0-rc.5`，但该运行时结果不能建立可公开安装的 profile。
+Fusion 组合包的 `dsh.bundle.profileDependencies` 包含精确 `@linxin666/dsh-pet@0.2.9`；其 patch 只增加 `pet` 配置行。checked-in `test:fusion:acceptance` lane 通过系统 Google Chrome CDP `9333` 启动 `base -> web-app -> fusion`，把完整 scoped 模型输入和非 fallback 完整响应快照与独立启动的 `base + web-app` profile 比较，只把每个 blocked `GET` 与同一 profile 的 `GET /` 比较，并比较已提交的 Pet ARIA golden。精确 profile 冻结安装完成后，该车道从该 profile 解析 Pet 真实的 `lib/index.js`，在提供必需服务的 Context 中调用其 `apply` 导出，捕获该次激活实际注册的 route，再让这个 route 实例依次处理非 loopback 未配对、已配对、已撤销和 loopback 状态；被拒绝的请求会在访问 Pet 状态前返回 403。apply-only Pet 变异会把完整安装包复制到 profile 下的私有目录，验证副本入口与安装入口不是同一个 inode，并且只修改和导入该副本。安装入口保持只读，正常完成或取消后其 SHA-256 hash 都必须不变。该变异保持 `makePetRoutes` 守卫不变但注册无守卫状态 handler，因此必须精确地因首个远端未配对请求返回 200 而非 403 失败。该车道不进入默认 unit、coverage 和普通 Web 收集，但作为必需的 Linux PR 检查运行。TUI 源码验证选择 `@deepseek-harness-tui/dsh-tui@0.7.1` 和 `@deepseek-ai/dsh-code-runtime-worker-thread@0.1.0-rc.5`，但该运行时结果不能建立可公开安装的 profile。
+
+在每个 profile 内，该 lane 要求每个 blocked `GET` 完整响应快照与该 profile 自身的 `GET /` 相同，包括 body 原始字节相等。非 fallback 完整响应快照在独立启动的 `base + web-app` 与 Fusion profile 间保持原始字节相等。每个根响应各有且仅有一个可解析的 `window.__DSH_BOOT__` 赋值：baseline 不含 Pet entry，Fusion 精确增加一个合法 Pet entry，每侧 graph revision 都由该 graph 的完整、有序 entries 计算。从 Fusion graph 删除 Pet entry 并按剩余完整、有序 entries 重算 revision 后，完整 Fusion HTML 与 baseline 原始字节相等。额外 client entry、共享 entry 字段或顺序漂移、任一侧错误 graph revision、boot script 外 body 差异，以及 mounted JSON、redirect、含 stock title 的 route-owned HTML、404 或 405 控制响应均使 oracle 失败。
 
 `@deepseek-ai/dsh-fusion` 不在 `dependencies`、`devDependencies`、`peerDependencies` 或 `optionalDependencies` 中携带任何第三方包。其 `dsh.bundle.profileDependencies` 对象是静态所有权元数据：[`verify-cordis-config`](../../../../scripts/verify-cordis-config.ts) 要求每个由 profile 持有的裸 patch 配置行都有精确 NPM 版本，拒绝未使用的映射，也拒绝映射包在任何标准依赖区重复出现。运行时不会读取该对象，也不会依据它安装包。
 
-每个 profile 都持有自己的包 manifest、锁文件和 pnpm workspace 设置。当前 Web profile 安装两个精确候选及 `react`／`react-dom` `18.3.1`，且没有原生构建许可；该组装不会向仓库根增加对应条目，并保持根 `package.json`、锁文件与 workspace 文件不变。其组合包顺序显式固定为 `@deepseek-ai/dsh-base`、`@deepseek-ai/dsh-web-app`、`@deepseek-ai/dsh-fusion`。Fusion 不是 `PROFILE_TEMPLATES` 条目，因此缺失的 `fusion` profile 会一直失败，直到用户完成组装。所需 rc.5 包闭包公开可用之前，Fusion TUI 没有受支持的公开组装命令。
+每个 profile 都持有自己的包 manifest、锁文件和 pnpm workspace 设置。当前 Web profile 安装精确 Pet 候选及 `react`／`react-dom` `18.3.1`，且没有原生构建许可；该组装不会向仓库根增加对应条目，并保持根 `package.json`、锁文件与 workspace 文件不变。其组合包顺序显式固定为 `@deepseek-ai/dsh-base`、`@deepseek-ai/dsh-web-app`、`@deepseek-ai/dsh-fusion`。Fusion 不是 `PROFILE_TEMPLATES` 条目，因此缺失的 `fusion` profile 会一直失败，直到用户完成组装。所需 rc.5 包闭包公开可用之前，Fusion TUI 没有受支持的公开组装命令。
 
 该决策细化了 [profile 插件组合包](2026-08-05-profile-plugin-bundles.md)的安装和排序模型，并使用了[移除 repository 插件路径](../simplification/2026-08-09-remove-repository-plugin.md)后保留的唯一外部插件分发路径。
 
@@ -32,7 +34,7 @@ Task Board 是外部生命周期阻塞项。其 28 个已发布版本均不同�
 
 Remote Web UI 在 28 个已发布版本中仍保持排除。版本 `0.1.11` 会移除全部 12 条 Host route 并能重挂且不保留旧 handler，但资源清理不完整；截至 `0.2.8` 的后续版本另有 manifest 与包内 LICENSE 身份冲突。精确 `0.2.9` 修复许可证文本，但在更早的安全检查失败，因为 `requirePairingForLan:false` 会让 `/remote` HTTP 与 WebSocket handler 跳过实时设备授权。因此其生命周期与运行时检查为 `NOT RUN`。由于 Fusion 不提供远程实现，Electron 消费方可以保留自己的远程实现，并持有其生命周期。
 
-Git Graph `0.2.9` 已准入。版本 `0.1.11` 在历史上通过公开 tunnel 暴露未经过 Remote Web UI 配对和撤销检查的 `/git/*`，`0.2.8` 则在许可证身份停止。精确 `0.2.9` 同时具备 Apache-2.0 manifest 与 LICENSE 身份，以及 JSON 与 SSE 路由的服务端授权；实时未配对与已撤销请求在触达 Git 服务前返回 403，已配对与 loopback 请求通过，直接 route／SSE dispose 与同 Context 重挂通过。独立 RED 运行会抑制返回的 disposer，检测遗留 route、开放 SSE 响应、活动 timer 与重复重挂，并通过强制清理把全部受跟踪资源计数归零。组合 REAL gate 观察到唯一分支 chip、可用的 Git 状态路由和干净诊断。
+Git Graph `0.2.9` 是外部生命周期阻塞项。版本 `0.1.11` 在历史上通过公开 tunnel 暴露未经过 Remote Web UI 配对和撤销检查的 `/git/*`，`0.2.8` 则在许可证身份停止。精确 `0.2.9` 具备一致的 Apache-2.0 身份与服务端授权，较早的直接 route／SSE dispose 和同 Context 重挂检查也已通过，但这些检查没有覆盖活跃 JSON 操作：配置行 fiber dispose 移除 route 后，真实 `POST /git/branches` 请求仍保持 pending，其 Git 子进程会一直存活到父 Context dispose 共享 subprocess service。只有新的精确发布版本在配置行 dispose 时先拒绝新请求，再于有界期限内取消并等待全部活跃 JSON／SSE 操作和完整进程树，并通过进行中 JSON 请求卸载与同 Context 重挂负控，才能重新考虑准入。
 
 Pet `0.2.9` 已准入。版本 `0.1.11` 在历史上注册了绕过 Host、Origin 与配对检查的精确 `/api/pet/*` 路由，`0.2.8` 则在许可证身份停止。精确 `0.2.9` 同时具备 Apache-2.0 manifest 与 LICENSE 身份，以及 API、asset、运行时与 decoration 路由的服务端授权；实时未配对与已撤销请求在触达 Pet 服务前返回 403，已配对与 loopback 请求通过，包内客户端生命周期测试通过 5/5，隔离 Chrome CDP 验证观察到唯一 Pet root 与 dock、可用的状态路由和干净诊断。
 
@@ -46,7 +48,7 @@ Fusion 不包含 Skin Center。已发布的 `0.1.12` 至 `0.2.9` 在 manifest �
 
 ## 交付状态
 
-选定的 Web profile 包含两条外部配置行：Pet 与 Git Graph `0.2.9`。精确隔离 profile 的安装、组合、路由检查、诊断与清理通过。更新后的 checked-in REAL composition lane 通过 1/1，并提供最终可见性证据：系统 Chrome CDP `9333` 观察到唯一可见 Pet 控件与唯一 Git Graph 分支 chip，Pet 状态与 Git 分支探针返回实时数据，且进程、端口、target 与临时目录清理完成。历史零行 1/1 与 196/196 结果只对已被取代的空 profile 有效；更早的三行、四行与六行证据仍被其已记录的生命周期和安全发现取代。
+选定的 Web profile 包含一条外部配置行：Pet `0.2.9`。其精确隔离 profile 的安装、组合、路由检查、诊断与清理通过。系统 Chrome 151 经 CDP `9333` 的当前单行 built acceptance 通过 1/1，完整 Web driver 通过 39/39，runtime-final oracle 通过 50/50。console、page、network 与 cleanup 诊断干净，pre/post target、listener、process、port 与临时目录检查均无残留。较早的两行 1/1 验收与两行 `36/36` 回归只对各自精确的历史组合有效，不能在 Git Graph 生命周期发现后建立当前准入结论。零行 1/1 与 196/196 结果同样只适用于历史空 profile。三行、四行与六行结果只适用于各自历史组合，不能覆盖已记录的生命周期和安全发现。Pet-only Web 证据未执行 TUI；TUI 为 `NOT RUN`，Fusion TUI 公开交付保持阶段 2 BLOCKED。
 
 Fusion TUI 运行时与交付采用独立结论。使用 41 个 rc.5 Harness 包的源码验证 profile 通过全新与恢复 PTY、持久回放、受支持退出和进程清理。历史公开安装尝试在其直接查询的子集中发现 23 个缺失包；新的完整查询在历史源码闭包的 41 个包中找到 0 个精确 rc.5。精确 TUI `0.8.7` 与 `0.8.8` 各自声明 24 个非 rc.5 DSH peer，包含 0 个根与 15 个打包内 `workspace:*` 值，并在安装前因单一 Liangshen 所有权和公开闭包失败。其安装与 PTY 检查为 `NOT RUN`，Fusion TUI 公开交付保持阶段 2 BLOCKED。
 
@@ -56,7 +58,7 @@ Harness 版本、外部包版本或 tarball、声明的 peer 基线、解析出�
 
 Web 重新验证包括 `pnpm run test:fusion:acceptance`、任何候选的隔离精确安装、配置 dump 与启动、同一 Context 卸载和重挂、开放资源 dispose、通过系统 Chrome CDP `9333` 执行的完整组合 Web oracle，以及干净的 console、页面、网络和 slot 诊断。只有一致的公开 rc.5 闭包可用，或明确批准新的 Harness 基线后，才能重新考虑 TUI 公开交付；任一路径都必须验证精确安装、lock、配置 dump、全新与恢复真实 PTY 消息往返、持久会话事件、受支持退出、进程清理和公开文档命令。
 
-只有精确 `0.2.9` 产物继续保持许可证身份、服务端授权、disposer／重挂行为与组合运行时结果时，Git Graph 与 Pet 才保持准入。Skin Center 还需要一致的许可证身份和目标 Harness 版本支持的 Settings slot。右侧工作台还需要包自有批准决策或不可变部署策略：隐藏或禁用 `agentTerminalTools` 控件、拒绝持久化配置或 API 将其开启、阻止 `terminal_*` 注册，同时保留设置持久化与 UI Terminal 执行。其判据需要在被拒绝的设置写入前后检查模型工具目录，并通过 Chrome 执行 UI Terminal。
+只有精确 `0.2.9` 产物继续保持许可证身份、服务端授权、disposer／重挂行为与组合运行时结果时，Pet 才保持准入。Git Graph 在新的精确发布版本满足上述活跃操作与进程树 dispose 条件之前保持阻塞。Skin Center 还需要一致的许可证身份和目标 Harness 版本支持的 Settings slot。右侧工作台还需要包自有批准决策或不可变部署策略：隐藏或禁用 `agentTerminalTools` 控件、拒绝持久化配置或 API 将其开启、阻止 `terminal_*` 注册，同时保留设置持久化与 UI Terminal 执行。其判据需要在被拒绝的设置写入前后检查模型工具目录，并通过 Chrome 执行 UI Terminal。
 
 Task Board 还要求一个已发布产物同时具备完整 effect/disposer 所有权、container 断连后重挂、一致的 manifest 与包内 LICENSE 身份，以及 rc.5 运行时支持。其判据需要在同一页面卸载并重挂配置行与 AppFrame，并验证只有一个已连接 root，observer、listener、timer 与 subscription 均不增长。
 
@@ -64,9 +66,9 @@ ModLens 还要求每条修改状态的 route 执行适用的请求信任策略�
 
 ## 验证
 
-`verify-cordis-config` 单元覆盖固定了精确版本、配置行对应关系、未使用条目和标准依赖排除规则。Fusion 包测试固定了两个精确 profile 依赖、第三方标准依赖条目的缺失、两行 patch、阻塞包排除项，以及通过真实 profile 组合执行的 Loader 解析。
+`verify-cordis-config` 单元覆盖固定了精确版本、配置行对应关系、未使用条目和标准依赖排除规则。Fusion 包测试固定了精确 Pet profile 依赖、第三方标准依赖条目的缺失、单行 patch、包含 Git Graph 的阻塞包排除项，以及通过真实 profile 组合执行的 Loader 解析。
 
-包专属的生命周期审计覆盖前 38 个 ModLens 候选，以及全部已发布 SSH 与 Remote Web UI 候选。精确 ModLens `3.24.0` 在更早的服务端请求安全检查停止。精确 Better Sidebar `0.15.2` 在公共 rc.5 peer 闭包检查停止，精确 rc.5 可用数为 0/14；安全、生命周期、隔离安装、组合、启动与 Chrome 均为 `NOT RUN`。checked-in REAL composition lane 固定系统 Google Chrome CDP `9333`、包含两个精确外部依赖和 React peer 且不含原生构建许可的 fixture（测试前置数据）、恰好两个外部 Host 配置行与浏览器入口、完整 scoped 模型输入相等、阻塞路由与基线相等、ARIA golden 中唯一 Pet 控件与唯一 Git Graph 分支控件、实时 `task22` 仓库数据、进程清理和默认测试集隔离。
+包专属的生命周期审计覆盖前 38 个 ModLens 候选、全部已发布 SSH 与 Remote Web UI 候选，以及带活跃 JSON 子进程的 Git Graph `0.2.9`。精确 ModLens `3.24.0` 在更早的服务端请求安全检查停止。精确 Better Sidebar `0.15.2` 在公共 rc.5 peer 闭包检查停止，精确 rc.5 可用数为 0/14；安全、生命周期、隔离安装、组合、启动与 Chrome 均为 `NOT RUN`。checked-in REAL composition lane 固定系统 Google Chrome CDP `9333`、包含精确 Pet 依赖和 React peer 且不含原生构建许可的 fixture（测试前置数据）、恰好一个外部 Host 配置行与浏览器入口、完整 scoped 模型输入相等、决策章节定义的分层 blocked-route 与 root HTML oracle、全部命名负控、ARIA golden 中唯一 Pet 控件、Pet 状态实时数据、进程清理和默认测试集隔离。
 
 源码验证 Fusion TUI profile 固定了 `dsh-tui@0.7.1`、仓库 Liangshen preset、由 profile 持有的 worker-thread code 运行时和 41 个 rc.5 Harness 包。终端渲染、完整的消息与工具往返、第二个 PTY 中的持久事件回放、干净的受支持退出和进程清理均通过。其上游 DSH 与 React peer 警告继续记录为漂移，因为实际执行的运行时路径已经完成。该证据不能满足公开交付：23 是历史直接安装子集，新的完整查询在 41 个包中找到 0 个精确 rc.5。精确 `0.8.7` 与 `0.8.8` 在静态所有权与闭包检查停止，运行时保持 `NOT RUN`。
 
@@ -76,13 +78,13 @@ ModLens 还要求每条修改状态的 route 执行适用的请求信任策略�
 
 **把 Fusion 和 Fusion TUI 加入 `PROFILE_TEMPLATES`。** 不予采纳，因为内置模板会自动初始化，并且由安装本体持有。Fusion 组合了独立发布的包，要求用户显式审查并一起保留精确安装、锁文件、peer provider 与构建许可。Fusion TUI 还缺少受支持的公开包闭包，因此模板会宣传无法重建已验证运行时的安装。
 
-**挂载聚合 Web UI 组合包。** 不予采纳，因为聚合包还携带重复能力配置行。直接使用保留子包，可以显式提供 Pet 与 Git Graph，而不会重新引入 `aionui-panel` 或无关 Web UI 能力。
+**挂载聚合 Web UI 组合包。** 不予采纳，因为聚合包还携带重复或已阻塞的能力配置行。直接使用保留的 Pet 包，可以显式提供选定能力，而不会重新引入 Git Graph、`aionui-panel` 或无关 Web UI 能力。
 
 **使用许可证身份冲突的 Web UI 产物。** 不予采纳，因为 10 个直接冲突的 `0.2.8` 身份，以及 `0.2.9` 中仍存在的直接或继承冲突，其 manifest metadata 与包内 LICENSE 标识不同许可证。运行时成功无法消除该分发歧义。
 
 **保留最后可见的 ModLens、SSH 或 Remote Web UI 配置行。** 不予采纳，因为首次加载能力证据不满足生命周期准入要求。它们遗留的 route、活跃会话、SSE stream、子进程、subscription 或 root 可能比所属插件 fiber 存活更久；bundle shim 或历史运行时计数不能豁免该失败。
 
-**保留 Git Graph `0.1.11`。** 不予采纳，因为其 `/git/*` 路由在 Remote Web UI 公开 tunnel 上绕过实时配对与撤销检查，并且能够读取或修改共享 workspace 分支。精确 `0.2.9` 无需组合包授权 shim 即可替代它。
+**保留某个 Git Graph 发布版本。** 版本 `0.1.11` 不予采纳，因为其 `/git/*` 路由在 Remote Web UI 公开 tunnel 上绕过实时配对与撤销检查，并且能够读取或修改共享 workspace 分支。精确 `0.2.9` 修复了该授权缺陷，但其活跃 JSON 操作与子进程可以越过配置行 fiber dispose，因此同样不予采纳。
 
 **保留 Pet `0.1.11`。** 不予采纳，因为它暴露的精确 `/api/pet/*` 路由不执行 Host、Origin 与配对检查。精确 `0.2.9` 以服务端授权和一致许可证身份替代它。
 
@@ -100,6 +102,6 @@ ModLens 还要求每条修改状态的 route 执行适用的请求信任策略�
 
 ## 后果
 
-Fusion Web 得到可复现的两行外部集成层，不会把第三方依赖树或原生构建许可加入仓库根。该包仍是可发布的 ESM 组合包，并保留 patch 导出与 invariant companion。
+Fusion Web 得到可复现的单行外部集成层，不会把第三方依赖树或原生构建许可加入仓库根。该包仍是可发布的 ESM 组合包，并保留 patch 导出与 invariant companion。
 
-组装非内置 Web profile 的用户必须一起保留其 manifest、锁文件和 workspace 设置。Fusion 提供 Pet 与 Git Graph，但在外部阻塞项解除前不提供 ModLens、SSH、Remote Web UI、Task Board、Skin Center、右侧 Files、编辑器、终端和 Source Control 工作台，也不提供可公开安装的 TUI profile。每次相关 Harness、包、依赖图、patch、许可或 preset 变化，都会产生许可证审查、隔离安装、生命周期与安全审查，以及 Web 或 TUI 经验重验成本；这些证据只证明受测平台和路径，不代表通用的跨平台兼容性。
+组装非内置 Web profile 的用户必须一起保留其 manifest、锁文件和 workspace 设置。Fusion 提供 Pet，但在外部阻塞项解除前不提供 Git Graph、ModLens、SSH、Remote Web UI、Task Board、Skin Center、右侧 Files、编辑器、终端和 Source Control 工作台，也不提供可公开安装的 TUI profile。每次相关 Harness、包、依赖图、patch、许可或 preset 变化，都会产生许可证审查、隔离安装、生命周期与安全审查，以及 Web 或 TUI 经验重验成本；这些证据只证明受测平台和路径，不代表通用的跨平台兼容性。

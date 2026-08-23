@@ -6,13 +6,13 @@ English | [中文](2026-08-19-dsh-five-repo-fusion.zh.md)
 >
 > **Historical plan:** this document records the v2 execution plan. The 2026-08-21 Task 12 section records verified outcomes without rewriting earlier planned work as if it had already been known.
 
-**Current status:** Tasks 12 through 30 are complete. Task 30's final gates, Task 28/29 reviews, exact-staged V8 code and security reviews, remediations, independent plan/design/spec alignment, final reconciliation, and progress append are complete.
+**Current status:** Tasks 12 through 38 are complete. The final V2 `exact-product-worktree` package contains exactly 43 product paths, with package SHA-256 `74e694a7c5e5bc18452596b0ec70a7379de1d3459c2073d8f0e1eee9c7b34170` and patch SHA-256 `1f71831a467bd652af7eeedf1561b0e431c95088d7e3cc26c9dfc4e2d5921581`. Its bits review is P0/P1/P2 `0/0/0`, its security review is clean, and its product-documentation and plan/design/spec alignment reviews are Critical/Important/Minor `0/0/0`.
 
-**Current result:** the staged product delivery contains the exact two-row Pet and Git Graph `0.2.9` Fusion Web profile. Both packages pass the complete admission checks and local system Chrome CDP `9333` replay. The fresh Task 29 assembled run passes 36/36 assertions for the complete Web workflow, exact external rows, stock behavior, headless and ACP isolation, diagnostics, and cleanup. ModLens `3.24.0` fails server-side request safety before lifecycle or Chrome validation. A fresh no-cache Better Sidebar packument contains 15 installable versions and no release above `0.15.2`; exact `0.15.2` is the sole candidate after the prior cutoff and fails the public rc.5 peer closure at 0/14 before security, lifecycle, isolated installation, composition, boot, or Chrome. Both blocked packages remain unmounted. Task 30 repairs transactional late acquisition, pre-acquisition CI trap ownership, private complete-package Pet mutation, explicit settlement including `Promise.reject(undefined)`, orthogonal failure aggregation with identity-only reference deduplication, one shared cleanup deadline, and observed best-effort outer disposal after deadline expiry. The exact Pet and Git Graph entrypoints retain the unpaired, paired, revoked, and loopback authorization matrix. Historical zero-row, three-row, four-row, and six-row results remain superseded evidence, and public TUI delivery remains phase 2 BLOCKED.
+**Current result:** the product delivery selects one external row, exact Pet `0.2.9`. System Chrome 151 through CDP `9333` passes the current built acceptance 1/1, the full Web driver passes 39/39, and the runtime-final oracle passes 50/50. Console, page, network, and cleanup diagnostics are clean, and pre/post target, listener, process, port, and temporary-directory checks leave no residue. Git Graph `0.2.9` is blocked because an active JSON operation and its child process can outlive row-fiber disposal. The Task 22 and Task 29 two-row results remain superseded historical evidence for their exact runs. ModLens `3.24.0` fails server-side request safety before lifecycle or Chrome validation. A fresh no-cache Better Sidebar packument contains 15 installable versions and no release above `0.15.2`; exact `0.15.2` is the sole candidate after the prior cutoff and fails the public rc.5 peer closure at 0/14 before security, lifecycle, isolated installation, composition, boot, or Chrome. These blockers remain unmounted. Task 30 repairs transactional late acquisition, pre-acquisition CI trap ownership, private complete-package Pet mutation, explicit settlement including `Promise.reject(undefined)`, orthogonal failure aggregation with identity-only reference deduplication, one shared cleanup deadline, and observed best-effort outer disposal after deadline expiry. Historical zero-row, three-row, four-row, and six-row results also remain superseded evidence. TUI is `NOT RUN (not affected)`, and public TUI delivery remains phase 2 BLOCKED. Full repository coverage and the actual GitHub-hosted job were not run locally. HEAD remains `6e0f654` with an empty index; restoring staged-only delivery or cleaning commit history requires separate user authorization.
 
 **Goal:** preserve a pure Fusion bundle (`@deepseek-ai/dsh-fusion`), one shared `liangshen` preset, and reproducible exact-row profile assembly while leaving `packages/core/**`, the agent loop, and the session format unchanged.
 
-**Architecture:** the repository-owned integration point lives in `packages/bundle/fusion/`, `apps/cli/config/agent-presets/liangshen/`, profile assembly documentation, and owning tests. The Fusion patch and profile dependency map contain only Pet and Git Graph `0.2.9`.
+**Architecture:** the repository-owned integration point lives in `packages/bundle/fusion/`, `apps/cli/config/agent-presets/liangshen/`, profile assembly documentation, and owning tests. The Fusion patch and profile dependency map contain only Pet `0.2.9`.
 
 **Technology:** TypeScript ESM, pnpm workspaces, Cordis plugins, dsh profiles and patches, Vitest, system Chrome with CDP `9333`, and real PTYs.
 
@@ -24,15 +24,14 @@ English | [中文](2026-08-19-dsh-five-repo-fusion.zh.md)
 - Accept an exact package only after isolated install, composition, real boot, visible target capability, clean browser or terminal diagnostics, complete effect/disposer ownership, and disconnect remounting. Record peer drift without treating it alone as a runtime failure.
 - Pin every external package exactly; do not use `^`, `~`, or `latest`.
 - Keep third-party runtime dependencies out of `packages/bundle/fusion/package.json`.
-- Keep the REAL composition fixture limited to the two exact external dependencies and React peers, with no external `allowBuilds`; Task 22 adds no Pet, Git Graph, or React entry to the repository root and leaves the root package, lockfile, and workspace files unchanged.
+- Keep the REAL composition fixture limited to the exact Pet dependency and React peers, with no external `allowBuilds`; no Pet or React entry belongs in the repository root, whose package, lockfile, and workspace files remain unchanged.
 - Keep one implementation for each capability and reject duplicate rows.
 - Use system Chrome through CDP `9333`; do not call `chromium.launch()` or use an IDE browser.
 - Keep default unit and coverage tests offline. Only the explicit REAL composition lane may install profile-local external packages.
 - Keep each REAL process stdout/stderr diagnostic tail byte-bounded at 64 KiB while preserving cross-chunk readiness matching.
 - Keep `cordis/request-run`, `cordis/request-run-resolved`, `cordis/dynamic-package`, `cordis/dynamic-retract`, `cordis/inspect-query`, and `cordis/inspect-query-resolved` as the sole event ids; add no compatibility aliases.
 - Preserve failed and blocked evidence. Do not convert a historical failure into a success.
-- Tracked planning and execution records under `.trae/specs/**` and `docs/superpowers/**` already have Git index entries; keep this round's working-tree modifications to them unstaged. Do not add currently untracked translation counterparts, sidecars, or `.superpowers/**` reports to the Git index.
-- Do not commit, push, merge, rebase, or reset without user authorization.
+- Do not reset, rebase, create another commit, push, or merge during Tasks 33 through 35. Restoring a staged-only delivery or cleaning commit history requires separate user authorization and does not block code or runtime verification.
 - Deliver phase 1 independently; a phase 2 blocker does not invalidate accepted phase 1 capabilities.
 
 ---
@@ -197,21 +196,21 @@ Better Sidebar has 13 releases and exact `0.15.0` remains blocked by deployment 
 
 ### Task 22: Web UI `0.2.8` and `0.2.9` Audit
 
-Task 22 and its independent rereview are complete. Fusion admits exact Pet and Git Graph `0.2.9`; every other identity stops at its first failed or not-selected mandatory check. The [compatibility matrix](fusion-compat-matrix.md) owns the freshness cutoff, release totals, ordered checks, per-identity results, and assembled runtime evidence.
+Task 22 and its independent rereview are complete historical evidence. That task admitted exact Pet and Git Graph `0.2.9`; Task 33 supersedes the Git Graph admission after the later active-operation lifecycle finding. The [compatibility matrix](fusion-compat-matrix.md) owns the freshness cutoff, release totals, ordered checks, per-identity results, and assembled runtime evidence.
 
-Task 23 compares each blocked `GET` response with the complete stable response from an independently booted `base + web-app` profile. Mounted JSON, redirect, stock-title route-owned HTML, 404, and 405 controls all differ and fail; the admitted Git route is verified separately with `POST /git/branches`.
+Task 23 historically compared each blocked `GET` response with the complete stable response from an independently booted `base + web-app` profile. Mounted JSON, redirect, stock-title route-owned HTML, 404, and 405 controls all differed and failed; at that checkpoint, the admitted Git route was verified separately with `POST /git/branches`. Task 35 supersedes absolute cross-profile root equality while retaining byte-for-byte equality between each profile's blocked `GET` responses and its own `GET /`.
 
 ### Task 26: ModLens `3.24.0` and Better Sidebar `0.15.1`
 
-Task 26 is complete. ModLens now has 77 releases and 39 DSH candidates; exact `3.24.0` passes artifact, license, dependency-closure, isolated-install, and composition checks, then fails because a cross-site `POST /modlens/paste` writes the submitted image. Better Sidebar now has 14 installable releases; exact `0.15.1` passes artifact and license checks, then fails because all 14 DSH peer ranges require `^0.1.0-rc.8` and the public registry provides exact rc.5 for 0/14 peer packages. The first failures make every later candidate lifecycle, boot, and Chrome check `NOT RUN`; the two-row Fusion selection does not change.
+Task 26 is complete. ModLens now has 77 releases and 39 DSH candidates; exact `3.24.0` passes artifact, license, dependency-closure, isolated-install, and composition checks, then fails because a cross-site `POST /modlens/paste` writes the submitted image. Better Sidebar now has 14 installable releases; exact `0.15.1` passes artifact and license checks, then fails because all 14 DSH peer ranges require `^0.1.0-rc.8` and the public registry provides exact rc.5 for 0/14 peer packages. The first failures make every later candidate lifecycle, boot, and Chrome check `NOT RUN`; the two-row Fusion selection remained unchanged at that historical checkpoint.
 
 ### Task 28: Better Sidebar `0.15.2`
 
-Task 28 is complete. The execution-time no-cache packument cutoff is `2026-08-22T17:01:07Z`; `latest` is `0.15.2`, the packument has 15 installable manifests, and exact `0.15.2` is the sole release after the prior cutoff. It passes identity, integrity, path safety, and MIT license checks, then fails because all 14 DSH peers require `^0.1.0-rc.8` and the public registry provides exact rc.5 for 0/14 packages. Security, lifecycle, isolated installation, composition, boot, and Chrome are `NOT RUN`; the two-row Fusion selection does not change.
+Task 28 is complete. The execution-time no-cache packument cutoff is `2026-08-22T17:01:07Z`; `latest` is `0.15.2`, the packument has 15 installable manifests, and exact `0.15.2` is the sole release after the prior cutoff. It passes identity, integrity, path safety, and MIT license checks, then fails because all 14 DSH peers require `^0.1.0-rc.8` and the public registry provides exact rc.5 for 0/14 packages. Security, lifecycle, isolated installation, composition, boot, and Chrome are `NOT RUN`; the two-row Fusion selection remained unchanged at that historical checkpoint.
 
-### Task 29: Current-Composition Web Regression
+### Task 29: Superseded Two-Row Web Regression
 
-Task 29 is complete. One fresh assembled run of the exact Pet and Git Graph `0.2.9` profile passes 36/36 assertions through system Chrome CDP `9333`. It covers conversation rendering, the tool card, New Session create-or-reuse, the session list, fork, resume, compact, both export paths, Search, Settings, model selection, Pet, Git Graph, stock Web behavior, and fresh headless and ACP isolation. Exit, console, page, network, slot, process, port, CDP target, temporary-directory, process-group, and cleanup diagnostics are clean, and the independent rereview reports no findings.
+Task 29 is complete historical evidence. One fresh assembled run of the exact Pet and Git Graph `0.2.9` profile passed 36/36 assertions through system Chrome CDP `9333`. It covered conversation rendering, the tool card, New Session create-or-reuse, the session list, fork, resume, compact, both export paths, Search, Settings, model selection, Pet, Git Graph, stock Web behavior, and fresh headless and ACP isolation. Exit, console, page, network, slot, process, port, CDP target, temporary-directory, process-group, and cleanup diagnostics were clean, and the independent rereview reported no findings. Task 33 supersedes this run for current admission without changing its measurements.
 
 ### Task 30: Final Convergence
 
@@ -221,21 +220,31 @@ System Chrome 151 through CDP `9333` passes the built acceptance 1/1, with zero 
 
 All validated remediation findings are closed: transactional late acquisition; the CI trap; the private Pet package copy; explicit settlement that preserves `Promise.reject(undefined)`; orthogonal failure aggregation with object-identity deduplication; one shared cleanup deadline; and observed best-effort outer disposal after that deadline expires. The independent plan/design/spec alignment is `APPROVED` with Critical/Important/Minor `0/0/0`; final checklist, staging, and Git reconciliation and the single final progress append are complete. Full repository coverage and the actual GitHub-hosted job were not run locally.
 
+### Task 35: Pet-Only Root HTML Oracle
+
+- [x] Within each profile, require every blocked `GET` response snapshot to equal that profile's own `GET /`, including byte-for-byte body equality.
+- [x] Across the independently booted `base + web-app` and Fusion profiles, require every non-fallback response snapshot and body to remain byte-for-byte identical.
+- [x] Require one parseable `window.__DSH_BOOT__` assignment per root response, no Pet entry in baseline, exactly one additional valid Pet entry in Fusion, and a graph revision derived from each side's complete ordered entries.
+- [x] Remove the Pet entry from the Fusion graph, recompute the revision from the remaining complete ordered entries, and require the complete Fusion HTML to equal the baseline HTML byte for byte.
+- [x] Reject any additional client entry, shared-entry field or order drift, invalid baseline or Fusion graph revision, body difference outside the boot script, mounted JSON, redirect, stock-title route-owned HTML, 404, or 405 control response.
+- [x] Synchronize the specification, plan, design, checklist, compatibility matrix, regression report, and owning Agent Note in English and Chinese, re-record all five sidecars, and run the named documentation checks.
+- [x] Complete independent review and focused tests; pass the Pet-only built acceptance 1/1 through system Chrome 151/CDP `9333`, the full Web driver 39/39, and the runtime-final oracle 50/50; leave no target, listener, process, port, or temporary-directory residue; then resume Task 34.
+
 ---
 
 ## Self-Review
 
 - The runtime criterion measures the installed product rather than peer metadata alone.
 - Profile ownership prevents third-party dependency trees from polluting the repository workspace.
-- Pet and Git Graph `0.2.9` are admitted by fresh complete evidence; older authorization-defective or license-conflicting releases remain rejected.
+- Pet `0.2.9` remains admitted by complete evidence. Git Graph `0.2.9` is blocked until a new exact release rejects new work during disposal, cancels and awaits every active JSON/SSE operation and process tree, and passes an in-flight unload plus same-Context remount negative control.
 - Every other Web UI identity stops at its first failed or not-selected mandatory check; downstream checks are not inferred from historical evidence.
-- First-load visibility cannot waive plugin lifecycle ownership: ModLens, SSH, Remote Web UI, and Task Board remain excluded until a published version satisfies complete effect/disposer cleanup, quiescent disposal, disconnect remounting, license identity, rc.5 runtime, and same-page lifecycle validation.
+- First-load visibility cannot waive plugin lifecycle ownership: ModLens, SSH, Remote Web UI, Task Board, and Git Graph remain excluded until a published version satisfies its recorded cleanup, quiescent disposal, disconnect remounting, license identity, rc.5 runtime, and same-page lifecycle requirements.
 - Package rescope changes module specifiers, not runtime event or locale ids; the six `cordis/*` ids remain canonical without aliases.
 - TUI `0.7.1` and Liangshen source `0.2.4` retain single preset ownership. The pure rc.5 source-validation runtime passes. The historical public-install attempt found 23 missing packages in its direct subset, while the fresh complete query finds exact rc.5 for 0/41 packages; no supported public assembly exists.
-- Historical failures remain evidence. The document header and Task 29 outcome state the current candidate and delivery status; the Task 12 section labels its zero-row, three-row, four-row, and six-row runtime stages as superseded evidence.
+- Historical failures and measurements remain evidence. The document header states the current Pet-only delivery status; the Task 12 and Task 22/29 sections label their zero-row, three-row, four-row, six-row, and two-row runtime stages as superseded evidence.
 
 ---
 
 ## Execution Handoff
 
-Tasks 12 through 30 are complete. Task 30 closed the final gates, Task 28/29 task reviews, V8 package binding, broad code and security reviews, all validated remediations, independent plan/design/spec alignment, final checklist/staging/Git reconciliation, and the single final progress append. Planning and evidence records remain outside the staged product set. Full repository coverage and the actual GitHub-hosted job remain CI-owned and were not run locally.
+Tasks 34 through 38 are complete. The 43-path V2 package and all final reviews are clean; HEAD remains `6e0f654` with an empty index, and staged-only restoration or history cleanup requires separate user authorization.

@@ -1,4 +1,5 @@
 import { connect, createServer } from 'node:net'
+import { createHash } from 'node:crypto'
 import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
 import { createServer as createHttpServer } from 'node:http'
 import { spawnSync } from 'node:child_process'
@@ -15,6 +16,7 @@ import type {
 } from '@deepseek-ai/dsh-subprocess'
 import {
   acceptanceEnvironment,
+  assertPetOnlyRootResponse,
   assertSameHttpResponse,
   assertSameModelInput,
   FUSION_ACCEPTANCE_CLEANUP_TIMEOUT_MS,
@@ -34,6 +36,62 @@ import {
 const fibers: Fiber[] = []
 const roots: string[] = []
 const DIAGNOSTIC_OUTPUT_MAX_BYTES = 64 * 1024
+const PET_REVISION = '488510ccdfca'
+const PET_ENTRY = {
+  id: '@linxin666/dsh-pet',
+  url: `/plugins/@linxin666/dsh-pet/client.js?rev=${PET_REVISION}`,
+  rev: PET_REVISION,
+  inject: [
+    '@deepseek-ai/dsh-client-runtime',
+    '@deepseek-ai/dsh-client-connection',
+    '@deepseek-ai/dsh-client-ui-settings',
+    '@deepseek-ai/dsh-client-ui-conversation',
+  ],
+}
+const STOCK_BOOT_ENTRIES = [
+  {
+    id: '@deepseek-ai/dsh-client-runtime',
+    url: '/plugins/@deepseek-ai/dsh-client-runtime/client.js?rev=111111111111',
+    rev: '111111111111',
+    immediately: true,
+  },
+  {
+    id: '@deepseek-ai/dsh-client-ui-settings',
+    url: '/plugins/@deepseek-ai/dsh-client-ui-settings/client.js?rev=222222222222',
+    rev: '222222222222',
+    inject: ['@deepseek-ai/dsh-client-runtime'],
+  },
+] as const
+
+function bootGraph(entries: readonly unknown[], rev?: string): {
+  entries: readonly unknown[]
+  rev: string
+} {
+  return {
+    rev: rev ?? createHash('sha1').update(JSON.stringify(entries)).digest('hex').slice(0, 12),
+    entries,
+  }
+}
+
+function responseWithBoot(
+  graph: unknown,
+  options: { afterScript?: string; assignment?: string; duplicate?: boolean } = {},
+): {
+  body: string
+  contentType: string
+  location: string
+  status: number
+} {
+  const assignment = options.assignment
+    ?? `window.__DSH_BOOT__ = ${JSON.stringify(graph)}`
+  const script = `<script>${assignment}</script>`
+  return {
+    status: 200,
+    contentType: 'text/html; charset=utf-8',
+    location: '',
+    body: `<!doctype html><html><head>${script}${options.duplicate === true ? script : ''}</head><body>stock</body></html>${options.afterScript ?? ''}`,
+  }
+}
 
 async function runtime(): Promise<Context['subprocess']> {
   const ctx = new Context()
@@ -1430,8 +1488,180 @@ describe('Fusion external route probes', () => {
     )
 
     expect(acceptance).toMatch(
-      /assertSameHttpResponse\(\s*baselineRoutes\.fallback,\s*fusionFallback,\s*'GET \/',?\s*\)/u,
+      /assertPetOnlyRootResponse\(\s*baselineRoutes\.fallback,\s*fusionFallback,\s*'GET \/',?\s*\)/u,
     )
+    expect(acceptance).toMatch(
+      /assertSameHttpResponse\(\s*fusionFallback,\s*await readHttpResponse/u,
+    )
+  })
+})
+
+describe('Fusion Pet-only root response', () => {
+  const baseline = responseWithBoot(bootGraph(STOCK_BOOT_ENTRIES))
+  const fusion = responseWithBoot(bootGraph([...STOCK_BOOT_ENTRIES, PET_ENTRY]))
+
+  it('accepts exactly one valid Pet boot entry', () => {
+    expect(() => {
+      assertPetOnlyRootResponse(baseline, fusion, 'GET /')
+    }).not.toThrow()
+  })
+
+  it.each([
+    ['status', { ...fusion, status: 201 }],
+    ['content type', { ...fusion, contentType: 'text/plain' }],
+    ['location', { ...fusion, location: '/elsewhere' }],
+  ])('rejects a %s difference', (_label, changedFusion) => {
+    expect(() => {
+      assertPetOnlyRootResponse(baseline, changedFusion, 'GET /')
+    }).toThrow()
+  })
+
+  it('rejects Pet in the baseline graph', () => {
+    expect(() => {
+      assertPetOnlyRootResponse(fusion, fusion, 'GET /')
+    }).toThrow()
+  })
+
+  it.each([
+    ['missing', STOCK_BOOT_ENTRIES],
+    ['duplicate', [...STOCK_BOOT_ENTRIES, PET_ENTRY, PET_ENTRY]],
+  ])('rejects a %s Pet entry in the Fusion graph', (_label, entries) => {
+    expect(() => {
+      assertPetOnlyRootResponse(
+        baseline,
+        responseWithBoot(bootGraph(entries)),
+        'GET /',
+      )
+    }).toThrow()
+  })
+
+  it('rejects an additional client entry', () => {
+    const extra = {
+      id: '@example/extra-client',
+      url: '/plugins/@example/extra-client/client.js?rev=333333333333',
+      rev: '333333333333',
+    }
+    expect(() => {
+      assertPetOnlyRootResponse(
+        baseline,
+        responseWithBoot(bootGraph([...STOCK_BOOT_ENTRIES, PET_ENTRY, extra])),
+        'GET /',
+      )
+    }).toThrow()
+  })
+
+  it.each([
+    ['id', [
+      { ...STOCK_BOOT_ENTRIES[0], id: '@deepseek-ai/dsh-client-runtime-changed' },
+      STOCK_BOOT_ENTRIES[1],
+      PET_ENTRY,
+    ]],
+    ['url', [
+      { ...STOCK_BOOT_ENTRIES[0], url: '/plugins/changed/client.js?rev=111111111111' },
+      STOCK_BOOT_ENTRIES[1],
+      PET_ENTRY,
+    ]],
+    ['rev', [
+      { ...STOCK_BOOT_ENTRIES[0], rev: 'aaaaaaaaaaaa' },
+      STOCK_BOOT_ENTRIES[1],
+      PET_ENTRY,
+    ]],
+    ['inject', [
+      STOCK_BOOT_ENTRIES[0],
+      { ...STOCK_BOOT_ENTRIES[1], inject: ['@deepseek-ai/dsh-client-connection'] },
+      PET_ENTRY,
+    ]],
+    ['immediately', [
+      { ...STOCK_BOOT_ENTRIES[0], immediately: false },
+      STOCK_BOOT_ENTRIES[1],
+      PET_ENTRY,
+    ]],
+    ['order', [
+      STOCK_BOOT_ENTRIES[1],
+      STOCK_BOOT_ENTRIES[0],
+      PET_ENTRY,
+    ]],
+  ])('rejects a shared entry %s difference', (_label, entries) => {
+    expect(() => {
+      assertPetOnlyRootResponse(
+        baseline,
+        responseWithBoot(bootGraph(entries)),
+        'GET /',
+      )
+    }).toThrow()
+  })
+
+  it.each([
+    ['missing assignment', {
+      ...baseline,
+      body: '<!doctype html><html><head></head><body>stock</body></html>',
+    }],
+    ['duplicate assignment', responseWithBoot(bootGraph(STOCK_BOOT_ENTRIES), {
+      duplicate: true,
+    })],
+    ['malformed payload', responseWithBoot({ rev: 'aaaaaaaaaaaa' })],
+    ['non-JSON assignment', responseWithBoot(undefined, {
+      assignment: 'window.__DSH_BOOT__ = {rev:"aaaaaaaaaaaa",entries:[]}',
+    })],
+  ])('rejects a %s', (_label, invalidBaseline) => {
+    expect(() => {
+      assertPetOnlyRootResponse(invalidBaseline, fusion, 'GET /')
+    }).toThrow()
+  })
+
+  it.each([
+    ['URL', {
+      ...PET_ENTRY,
+      url: `/plugins/@example/wrong/client.js?rev=${PET_REVISION}`,
+    }],
+    ['revision relation', {
+      ...PET_ENTRY,
+      rev: 'aaaaaaaaaaaa',
+    }],
+    ['inject list', {
+      ...PET_ENTRY,
+      inject: ['@deepseek-ai/dsh-client-runtime'],
+    }],
+    ['extra field', {
+      ...PET_ENTRY,
+      unexpected: true,
+    }],
+  ])('rejects a Pet entry with an invalid %s', (_label, petEntry) => {
+    expect(() => {
+      assertPetOnlyRootResponse(
+        baseline,
+        responseWithBoot(bootGraph([...STOCK_BOOT_ENTRIES, petEntry])),
+        'GET /',
+      )
+    }).toThrow()
+  })
+
+  it.each([
+    ['baseline', responseWithBoot(bootGraph(STOCK_BOOT_ENTRIES, 'aaaaaaaaaaaa')), fusion],
+    ['Fusion', baseline, responseWithBoot(bootGraph(
+      [...STOCK_BOOT_ENTRIES, PET_ENTRY],
+      'aaaaaaaaaaaa',
+    ))],
+  ])('rejects a %s graph revision not derived from its ordered entries', (
+    _label,
+    baselineResponse,
+    fusionResponse,
+  ) => {
+    expect(() => {
+      assertPetOnlyRootResponse(baselineResponse, fusionResponse, 'GET /')
+    }).toThrow()
+  })
+
+  it('rejects a body-only difference outside the boot script', () => {
+    expect(() => {
+      assertPetOnlyRootResponse(
+        baseline,
+        responseWithBoot(bootGraph([...STOCK_BOOT_ENTRIES, PET_ENTRY]), {
+          afterScript: '<p>route-owned</p>',
+        }),
+        'GET /',
+      )
+    }).toThrow()
   })
 })
 

@@ -3,11 +3,11 @@
 ## 阶段 1
 
 - [x] 兼容矩阵记录 modlens、Liangshen 源包及所有保留 web-ui 子包的精确版本、声明 peer、profile allowBuilds、隔离安装、组合、实际 boot、Chrome console 和目标能力结果。
-- [x] 当前 Web 外部集合包含 Pet 与 Git Graph `0.2.9` 两行；ModLens、SSH、Remote Web UI、Task Board、Skin Center 与 Better Sidebar 六项能力保持 blocker，历史部分 runtime PASS 不作为当前准入 PASS。
+- [x] 当前 Web 外部集合仅包含 Pet `0.2.9` 一行；Git Graph、ModLens、SSH、Remote Web UI、Task Board、Skin Center 与 Better Sidebar 七项能力保持 blocker，历史部分 runtime PASS 不作为当前准入 PASS。
 - [x] `@deepseek-ai/dsh-fusion` 可构建、可发布、可由 profile composer 解析，并导出运行时入口、patch 与 invariant companion。
 - [x] fusion manifest 不声明 modlens、web-ui、better-sidebar 或 dsh-TUI 等第三方运行时依赖，根 `pnpm-workspace.yaml` 未因 fusion 增加 allowBuilds。
 - [x] fusion README 英中配对、Model Experience、Known Limitations 与 bundle roster 符合仓库规则。
-- [x] fusion patch 与 profile dependency metadata 只包含 Pet 与 Git Graph `0.2.9`，且不引用 ModLens、SSH、Remote Web UI、Task Board、Skin Center、Better Sidebar、web-ui-all、describe-image 或 aionui-panel。
+- [x] fusion patch 与 profile dependency metadata 只包含 Pet `0.2.9`，且不引用 Git Graph、ModLens、SSH、Remote Web UI、Task Board、Skin Center、Better Sidebar、web-ui-all、describe-image 或 aionui-panel。
 - [x] `liangshen` preset 可发现、可挂载、realm 合法，并保留 standard 完整能力与来源包中验证过的两阶段锚定差异。
 - [x] `fusion` profile 的 bundle 顺序为 base、web-app、fusion；外部包只存在于 profile dependencies；现有 web/headless 模板未修改。
 - [x] 历史三行系统 Chrome CDP `9333` 结果为 1/1 与 174/174；ModLens、SSH 与 Remote Web UI 生命周期审查已取代其准入结论。
@@ -40,7 +40,7 @@
 - [x] 独立实现/测试/文档语义审查无未解决的 Critical 或 Important 发现。
 - [x] 历史 Task 13 零行集合的独立整体安全审查无未解决阻塞发现；当时八个外部包的任务级 blocker 结论不能替代整体安全复审。
 - [x] 所有 Task 12.11–12.14 修复均有对应复审结论和最小必要 gate 成功证据；REAL process helper 的 64 KiB bounded-tail 修复已通过独立复审。
-- [x] Pet 与 Git Graph 移除后的历史四行 Web smoke 已通过系统 Chrome CDP `9333` 重跑；四行 gate 为 1/1 PASS，完整 oracle 为 170/170、实际 compact 为 7 项/401 tokens。Task Board 生命周期审查已取代该证据，不能用于当前两行验收。
+- [x] Pet 与 Git Graph 移除后的历史四行 Web smoke 已通过系统 Chrome CDP `9333` 重跑；四行 gate 为 1/1 PASS，完整 oracle 为 170/170、实际 compact 为 7 项/401 tokens。Task Board 生命周期审查已取代该证据，不能用于当前单行验收。
 - [x] `.trae/specs/**`、`docs/superpowers/**`、兼容矩阵和回归记录仍未 staged，且未执行未经授权的 commit、push、merge、rebase 或 reset。
 
 ## 历史 2026-08-21 新鲜复审
@@ -55,7 +55,7 @@
 - [x] 历史 checked-in REAL composition gate 实际激活四行并通过系统 Chrome CDP `9333` 取得 1/1 PASS；该证据已被 Task Board 生命周期审查取代，不得用于最终零行验收。
 - [x] 默认 `pnpm run test` 与 `pnpm run test:coverage` 不访问 npm registry；只有显式 REAL composition lane 可以安装 profile 局部外部包。
 - [x] 历史四行 REAL composition fixture/profile 独立固定第三方包、lock 与 `allowBuilds`，仓库根 `package.json`、根 lockfile 和根 `pnpm-workspace.yaml` 未引入第三方包或构建许可。
-- [x] 历史四行系统 Chrome CDP `9333` 验证覆盖四行组合、既有 Web 路径、去重、Pet/Git Graph/Skin Center/Better Sidebar 排除和 clean diagnostics；oracle 为 170/170 PASS，实际 compact 为 7 项/401 tokens、投影 token 为 448→160，并在服务重启后恢复同一 durable session。该结果已被 Task Board 生命周期审查取代；历史六行 `156/156`、7 项/402 tokens 同样不能用于当前两行验收。
+- [x] 历史四行系统 Chrome CDP `9333` 验证覆盖四行组合、既有 Web 路径、去重、Pet/Git Graph/Skin Center/Better Sidebar 排除和 clean diagnostics；oracle 为 170/170 PASS，实际 compact 为 7 项/401 tokens、投影 token 为 448→160，并在服务重启后恢复同一 durable session。该结果已被 Task Board 生命周期审查取代；历史六行 `156/156`、7 项/402 tokens 同样不能用于当前单行验收。
 - [x] Task Board 已从产品、fixture、测试和产品文档移除，仅为其增加的 `data-pane="conversation"` AppFrame contract 已撤销；该历史三行阶段的正集合恰好为 ModLens `3.22.1`、SSH `0.2.5` 与 Remote Web UI `0.1.11`，并已被后续生命周期审查取代。
 - [x] 六个 runtime event id 已恢复为原 `cordis/*`；rescope 的 module-import 正控与 event/locale 不改写负控通过，producer、Remote allowlist、consumer、测试和生成文档一致，且不存在兼容 alias。
 - [x] REAL process helper 的 stdout/stderr 各自只保留最多 64 KiB byte-bounded diagnostic tail，跨 chunk readiness marker 继续工作，TDD 证据与独立复审均通过。
@@ -93,12 +93,12 @@
 ## Ralph Loop 2 复验缺口
 
 - [x] 兼容矩阵覆盖 17 个 Web UI 身份的 `0.2.8` 与 `0.2.9` 精确发布物，并按完整准入判据更新版本计数、证据和最终结论。
-- [x] `/git/branches` 缺席探针把 `GET` 响应与独立启动的 `base + web-app` 完整稳定响应作精确比较，且挂载 JSON、redirect、含 stock title 的 route-owned HTML、404 与 405 handler 负控均失败；Task 22 准入 Git Graph 后，最终 assembled gate 改用真实 `POST /git/branches` 正控验证当前路由。
+- [x] Task 23 历史缺席探针把 `/git/branches` 的 `GET` 响应与独立启动的 `base + web-app` 完整稳定响应作精确比较，且挂载 JSON、redirect、含 stock title 的 route-owned HTML、404 与 405 handler 负控均失败；Task 22 准入 Git Graph 后，最终 assembled gate 改用真实 `POST /git/branches` 正控验证当时路由。Task 35 的分层 oracle 取代跨 profile root 绝对相等判据，但保留每个 profile 内 blocked `GET` 与自身 `GET /` 的原始字节相等要求。
 - [x] fusion-tui `0.7.1` 的 fresh/resume PTY 重复运行均通过支持退出检查，且每轮退出后无残留进程。
 
 ## Task 25 运行时修复
 
-- [x] 禁用路由与独立 `base + web-app` 基线的 status、headers 和 body 完全一致，mounted JSON、redirect、含 stock title 的 route-owned HTML、404 与 405 handler 负控均失败。
+- [x] Task 25 历史检查点要求禁用路由与独立 `base + web-app` 基线的 status、headers 和 body 完全一致，mounted JSON、redirect、含 stock title 的 route-owned HTML、404 与 405 handler 负控均失败；Task 35 的分层 oracle 取代跨 profile root 绝对相等判据，不改写该历史结果。
 - [x] 等价真实 agent/session scope 的完整 tool schemas 与 rendered prompt-visible inputs 在基线和 Fusion 间一致，同名 schema 变更、scoped 新工具和 prompt contribution 负控均失败。
 - [x] 新增 RPC、HTTP fetch 和 body read 具有 `AbortSignal.timeout` 截止时间，hanging-header 与 hanging-body 测试在 cleanup 预算内失败。
 - [x] Git Graph 返回 canonical 临时 workspace root、`task22` 当前分支和精确单一 current branch row。
@@ -117,7 +117,7 @@
 
 ## Ralph Loop 4/20 Round 4 复验缺口
 
-- [x] Task 28 的执行时 no-cache packument 固定 fresh cutoff、dist-tags、完整 time map、15 个可安装版本和完整 post-cutoff 候选集合；唯一新候选 `dsh-better-sidebar@0.15.2` 的产物／许可证为 PASS，公共 rc.5 闭包由持久化原始证据机械重算为 0/14 FAIL，后续安全、生命周期、隔离安装、组合、启动与 Chrome 检查为 `NOT RUN`。兼容矩阵、owning Agent Note、plan/design 英中配对与 sidecar 以及权威 spec/tasks/checklist 已同步，最终 selected-row decision 保持 Pet 与 Git Graph `0.2.9` 两行。
+- [x] Task 28 的执行时 no-cache packument 固定 fresh cutoff、dist-tags、完整 time map、15 个可安装版本和完整 post-cutoff 候选集合；唯一新候选 `dsh-better-sidebar@0.15.2` 的产物／许可证为 PASS，公共 rc.5 闭包由持久化原始证据机械重算为 0/14 FAIL，后续安全、生命周期、隔离安装、组合、启动与 Chrome 检查为 `NOT RUN`。兼容矩阵、owning Agent Note、plan/design 英中配对与 sidecar 以及权威 spec/tasks/checklist 已同步；该 Task 28 检查点的 selected-row decision 是 Pet 与 Git Graph `0.2.9` 两行，Task 33 已将当前集合收敛为仅 Pet。
 - [x] Task 29 在 Task 28 final selected-row decision 对应的同一 fresh assembled run 中，通过系统 Chrome CDP `9333` 验证对话渲染、工具卡片、New Session create-or-reuse、会话列表、fork、resume、compact、header export、`/export`、Search、Settings 与模型选择；历史组合证据不补足本项。
 - [x] Task 29 证明 stock Web 行为保持不变，headless 与 ACP 不加载 fusion bundle，并记录干净的 exit、console、page、network、slot、process、port、CDP target、临时目录诊断与完整 cleanup。
 - [x] Task 29 将同一 fresh assembled run 的完整结果追加到 tracked regression report，并同步英文、中文与 i18n sidecar；Task 29 完成前不追加本轮最终 progress。
@@ -136,13 +136,65 @@
 
 ## Ralph Loop 1/20 从零复审
 
-- [x] 本轮基线记录当前 HEAD、index tree、staged／unstaged／untracked 路径，并生成排除 `.trae/specs/**`、`docs/superpowers/**`、`.superpowers/**` 与 `.learnings/**` 的全新 exact-staged 审查包。
+- [x] Task 31 历史基线记录 HEAD `108b96a`、index tree `d77fb5a`、41 个 staged 路径及 staged／unstaged／untracked 清单，并生成排除 `.trae/specs/**`、`docs/superpowers/**`、`.superpowers/**` 与 `.learnings/**` 的 exact-staged 审查包；该 package 只代表当时的 index。
 - [x] 执行时 no-cache 外部元数据覆盖所有已记录包家族；新增候选均有完整顺序准入或明确 `NOT RUN`，无新增候选时有可复算证据。
-- [ ] design、plan、Ralph spec、tasks、checklist 与 exact-staged 产品交付逐项一致，无过期当前结论、矛盾要求、遗漏文件或不可验证验收项。
-- [ ] 实现与生命周期审查确认 profile 组合、acquisition、cancellation、反向 disposal、共享 deadline、failure aggregation 及既有 Web／headless／ACP／TUI 不变量满足规格。
-- [ ] 测试与负控审查证明关键断言会在目标回归下失败，所有新增分支、超时、授权、路由、模型输入、ARIA golden 与 CI cleanup contract 均有有效覆盖。
-- [ ] 安全审查确认外部输入到最终副作用的授权与隔离完整，无 shim、核心绕过、依赖污染、路径逃逸、未审批进程或环境泄漏。
-- [ ] 英文、中文、i18n sidecar、Agent Note、用户指南、testing policy、兼容矩阵与回归记录同代码和新鲜证据一致，文档叶级门禁通过。
-- [ ] 所有确认的 Critical、Important、P0、P1、P2 和规格违背项均以 RED/GREEN 最小修复关闭，并通过独立复审；未通过弱化测试或扩大范围消除失败。
-- [ ] 最终 focused tests、typecheck、build、0-error lint、hygiene、文档门禁、系统 Chrome CDP `9333` exact-row built acceptance 与完整 Web 工作流均有新鲜成功证据；必要的 TUI fresh/resume PTY 通过且无残留资源。
-- [ ] 最终 exact-staged broad code、安全、plan/design/spec alignment 与 checklist 复审无未解决 finding；index 只含产品交付，执行记录保持 unstaged／untracked，未执行 commit／push／merge／rebase／reset，并且 `progress.md` 只追加一次本轮总结。
+- [x] design、plan、Ralph spec、tasks、checklist 与从原始 base `108b96a` 绑定至最终工作树的 `exact-product-worktree` package 逐项一致，无过期当前结论、矛盾要求、遗漏文件或不可验证验收项。
+- [x] 实现与生命周期审查确认 profile 组合、acquisition、cancellation、反向 disposal、共享 deadline、failure aggregation 及既有 Web／headless／ACP／TUI 不变量满足规格。
+- [x] Task 33 检查点的测试与负控审查证明当时关键断言会在目标回归下失败，新增分支、超时、授权、路由、模型输入、ARIA golden 与 CI cleanup contract 均有覆盖；Task 35 已补齐并验证新分层 oracle 覆盖。
+- [x] 安全审查确认外部输入到最终副作用的授权与隔离完整，无 shim、核心绕过、依赖污染、路径逃逸、未审批进程或环境泄漏。
+- [x] Task 33 检查点的英文、中文、i18n sidecar、Agent Note、用户指南、testing policy、兼容矩阵与回归记录同当时代码和证据一致，文档叶级门禁通过；Task 35 文档同步已由下方完成项闭合。
+- [x] Task 33 确认的 Critical、Important、P0、P1、P2 和规格违背项均以 RED/GREEN 最小修复关闭，并通过独立复审；Task 35 的 oracle 修复与复验也已完成。
+- [x] 最终 focused tests、typecheck、build、0-error lint、hygiene、文档门禁、系统 Chrome CDP `9333` exact-row built acceptance 与完整 Web 工作流均有新鲜成功证据；本轮未触达 TUI、shared preset、core、session、subprocess 或 terminal，fresh/resume PTY 条件未触发，记录为 `NOT RUN (not affected)`；仅在这些路径受影响时才必须运行。
+- [x] 最终 `exact-product-worktree` package 精确包含 Task 31 的 41 个产品路径、`website/docs.ts` 与 `scripts/project-doc-site.spec.ts`，共 43 个产品路径；其 broad code、安全、plan/design/spec alignment 与 checklist 复审无未解决 finding；该 package 不得称为 `exact-staged`。
+- [x] 独立 HEAD/index/worktree/exclusion 报告绑定原始 base `108b96a`、最终工作树内容、起止 HEAD、空 index、worktree hashes 和排除项负控，并记录执行中观察到 HEAD 变为本地 commit `6e0f654`，该 commit 混合原产品路径、`.trae/specs/**`、`docs/superpowers/**` 与 `.learnings/**`，且不推测执行者。
+- [x] Task 34 未执行 reset、rebase、新建 commit、push 或 merge，`progress.md` 只追加一次本轮总结；恢复 staged-only 交付或清理 history 需要用户另行授权，且不阻塞代码与运行时验证。
+
+## Task 35 Pet-only root HTML oracle
+
+- [x] baseline 与 Fusion 各自的每个 blocked `GET` 完整响应快照与同一 profile 的 `GET /` 相同，body 保持原始字节相等。
+- [x] 非 fallback 响应在独立启动的 `base + web-app` 与 Fusion profile 间保持完整响应快照相同，body 保持原始字节相等。
+- [x] 两个根响应各自只有一个可解析的 `window.__DSH_BOOT__` 赋值；baseline 不含 Pet，Fusion 只精确增加一个合法 Pet entry，两侧 graph revision 均由各自完整、有序 entries 计算。
+- [x] 删除 Fusion graph 的 Pet entry 并按剩余完整、有序 entries 重算 graph revision 后，完整 Fusion HTML 与 baseline HTML 原始字节相等。
+- [x] 额外 client entry、共享 entry 字段或顺序漂移、任一侧错误 graph revision、boot script 外 body 差异，以及 mounted JSON、redirect、含 stock title 的 route-owned HTML、404 或 405 handler 控制响应均使 oracle 失败。
+- [x] plan、design、兼容矩阵、回归报告和 owning Agent Note 的英文、中文与五份伴随记录已同步，spec、tasks 与 checklist 使用相同当前判据，命名文档门禁通过。
+- [x] focused tests 证明结构化解析、精确 allowlist、revision 重算、同 profile fallback 和非 fallback 跨 profile 比较通过，所有负控按预期失败。
+- [x] 系统 Chrome 151/CDP `9333` 的 Pet-only built acceptance 通过 1/1；console、page、network 与 cleanup 诊断干净，pre/post target、listener、process、port 与临时目录均无残留。
+- [x] 完整 Web driver 通过 39/39，runtime-final oracle 通过 50/50；当前外部集合精确只有 `include:pet -> @linxin666/dsh-pet@0.2.9`，stock Web、headless 与 ACP 不变量保持不变。
+- [x] 代码、文档与运行时独立复审均确认 Task 35 无未解决 finding；TUI 为 `NOT RUN (not affected)`，公开交付保持阶段 2 BLOCKED，Task 34 已在 V2 package、四类复审、对账、bookkeeping 与唯一 `progress.md` 追加后完成。
+
+## Task 36 文档网站标签契约
+
+- [x] 已核验 A 测试陈旧、B 产品标签错误、C `sourceAliases` 干扰三项假设，并以当前 Pet-only 产品指南和 `website/docs.ts` 为权威事实。
+- [x] `scripts/project-doc-site.spec.ts` 断言中文“组装 Fusion Web profile”和英文“Assemble the Fusion Web profile”，`website/docs.ts` 未修改。
+- [x] 两文件 focused Vitest 通过 46/46，限定授权路径的 `git diff --check` 通过。
+- [x] Task 34 `exact-product-worktree` allowlist 从 42 增至 43：Task 31 的 41 个产品路径加 `website/docs.ts` 与 `scripts/project-doc-site.spec.ts`。
+- [x] Task 36 报告记录 RED、GREEN、路径计数变化和未运行项，且独立复审无未解决 finding。
+
+## Task 37 最终产品文档 finding
+
+- [x] CI 故障切换手册英中两侧的标准托管必需依赖枚举均包含 `python-runtime`，并与 `all-checks-passed.needs` 一致。
+- [x] Fusion owning Agent Note 英中两侧的 Delivery status 不含裸 Task 22／29／35 编号或执行批次叙事，同时保留当前 Pet-only 1/1、39/39、50/50、历史组合限定、Pet-only Web 证据未执行 TUI 与公开 TUI phase 2 BLOCKED。
+- [x] 两组 i18n 伴随记录已重录，named pairing、Agent Note 格式、Markdown wrap／links、文档预算和限定 diff check 均通过。
+- [x] 独立复审确认 1 Important 与 1 Minor 均关闭且修改范围最小；Task 34 与 Task 37 在复审前保持未完成。
+
+## Task 38 checklist 状态语义
+
+- [x] 最终 checklist 将本轮 TUI fresh/resume PTY 准确记录为条件未触发的 `NOT RUN (not affected)`，并记录 Task 34 已在 V2 package、四类复审、对账、bookkeeping 与唯一 `progress.md` 追加后完成；限定两文件 `git diff --check` 通过，独立复审确认 1 Important 与 1 Minor 均关闭后再勾选本项。
+
+## Ralph Loop 当前工作树从零复审
+
+- [ ] 当前分支、`HEAD`、父提交、index tree、staged／unstaged／untracked 路径与内容 hash 已冻结；原始基线经过独立核验，未直接信任历史审查包。
+- [ ] 产品范围覆盖从原始基线到当前工作树的全部 Fusion 改动；`.trae/specs/**`、`docs/superpowers/**`、`.superpowers/**` 与 `.learnings/**` 被单独记录并排除于产品审查包。
+- [ ] plan、design、spec、tasks 与 checklist 对 selected row、七个 decision-bearing blocker、外部版本、历史证据适用范围、TUI 状态和 Git 实态一致。
+- [ ] 需求与架构、实现与生命周期、测试与 CI、安全、文档语义、运行时与交付六个只读审查域均由独立代理完成，全部 finding 已汇总、去重并核验技术事实。
+- [ ] 执行时 no-cache 候选检查覆盖 ModLens、17 个 Web UI 身份、Better Sidebar 与 dsh-TUI；新候选完成顺序准入，或有可复算的无新增结论。
+- [ ] 所有确认的 Critical、Important、P0、P1、P2 和规格违背 finding 均有 RED 证据、最小修复、GREEN 验证和未参与实现代理的独立复审；若为零 finding，则有明确的零 finding 报告。
+- [ ] 实现审查确认 acquisition、取消、反向释放、共享 deadline、failure aggregation、进程树与 profile 组合满足所有者和停稳要求，且 Web、headless 与 ACP 既有语义不变。
+- [ ] 测试审查确认 Pet 授权、分层 root HTML oracle、超时、取消、清理、CI shell 可达性及所有关键负控能拒绝目标回归，不依赖实现自述或历史成功数字。
+- [ ] 安全审查确认外部输入到文件、网络、进程、依赖安装与浏览器副作用的授权和隔离完整，不存在 shim、核心绕过、路径逃逸、环境泄漏或未受控资源。
+- [ ] 产品文档、Agent Note、plan、design 与 Ralph 规格符合 prose、文档层级和双语规则；当前状态没有推理过程泄漏、重复事实、过期结论或无权威来源的数字。
+- [ ] focused tests、typecheck、build、零错误 lint、hygiene、必要文档叶级门禁和 working-tree／index diff checks 均有本轮新鲜成功证据。
+- [ ] 系统 Chrome CDP `9333` 的 Pet-only built acceptance、完整 Web driver 与 runtime-final oracle 均通过；console、page、network、target、listener、process、port 和临时目录无残留，且未使用 `chromium.launch()` 或 IDE 浏览器。
+- [ ] 若本轮触达 TUI、共享 preset、core、session、subprocess 或 terminal，真实 PTY fresh/resume、消息往返、支持退出和零残留均通过；否则准确记录 `NOT RUN (not affected)`。
+- [ ] 最终产品审查包绑定原始基线、最终 `HEAD`、index 和工作树 hash；bits、DSH、安全、文档与 plan/design/spec/checklist 独立复审均无未解决 finding。
+- [ ] 本轮未执行 commit、push、merge、rebase 或 reset；规划与执行记录未进入新增 staged 产品集合，`progress.md` 只追加一次本轮总结。

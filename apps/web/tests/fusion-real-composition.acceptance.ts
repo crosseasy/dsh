@@ -17,6 +17,7 @@ import { compareOrRefreshGolden, webSnapshotMode } from './scaffold.ts'
 import type { ReadyProcess } from './fusion-real-process.ts'
 import {
   acceptanceEnvironment,
+  assertPetOnlyRootResponse,
   assertSameHttpResponse,
   assertSameModelInput,
   FUSION_ACCEPTANCE_CLEANUP_TIMEOUT_MS,
@@ -812,7 +813,7 @@ it('boots the accepted Fusion profile through the real CLI and system Chrome CDP
         5_000,
         operationSignal,
       )
-      assertSameHttpResponse(
+      assertPetOnlyRootResponse(
         baselineRoutes.fallback,
         fusionFallback,
         'GET /',

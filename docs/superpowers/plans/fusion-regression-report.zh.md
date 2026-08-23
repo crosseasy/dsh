@@ -6,9 +6,9 @@
 
 状态：`DONE`
 
-范围：历史 Task 5 矩阵、历史 Task 12 与零行补充，以及当前 Task 22 两行结果。
+范围：历史 Task 5 矩阵、Task 12 与零行补充、Task 22 准入、Task 29 两行回归，以及当前 Task 35 单行回归。
 
-当前结果：Fusion Web 外部集合包含精确 Pet 与 Git Graph `0.2.9`。两者的许可证身份、安全负控、生命周期、所有权、去重、隔离 profile 与组合 Chrome CDP `9333` 运行时均通过。[兼容矩阵](fusion-compat-matrix.md)记录各版本结果，[Fusion 所有权决策](../../../.agents/notes/implemented/architecture/2026-08-19-fusion-profile-external-plugin-ownership.md)记录准入与重验要求。其他 Web UI 身份在首个失败或未选择的强制检查停止。历史零行、三行、四行与六行结果只保留为被取代的证据。TUI 源码运行时通过，公开交付保持阶段 2 BLOCKED，Liangshen 继续使用 `0.2.4` 作为来源。
+当前结果：Fusion Web 外部集合仅包含精确 Pet `0.2.9`。系统 Chrome 151 经 CDP `9333` 的当前 built acceptance 通过 1/1，完整 Web driver 通过 39/39，runtime-final oracle 通过 50/50。console、page、network 与 cleanup 诊断干净，pre/post target、listener、process、port 与临时目录检查均无残留。Git Graph `0.2.9` 保持阻塞；[兼容矩阵](fusion-compat-matrix.md)记录各版本结果，[Fusion 所有权决策](../../../.agents/notes/implemented/architecture/2026-08-19-fusion-profile-external-plugin-ownership.md)记录准入与重验要求。Task 22 准入与 Task 29 两行 `36/36` 回归继续作为各自精确运行已被取代的历史证据。Task 35 不影响 TUI，因此 TUI 为 `NOT RUN (not affected)`，公开交付保持阶段 2 BLOCKED。
 
 ## 历史 Task 5 结果
 
@@ -128,13 +128,13 @@ Task 12.1 至 Task 12.17 已有任务级证据或权威审计。Task 12 顶层�
 - **历史 gate：** 零行 REAL gate 通过系统 Chrome CDP `9333` 取得 1/1 PASS；完整 oracle 通过 196/196，三项负控均以 195/196 和退出码 1 阻断，compact 记录 7 项/401 tokens 和投影消息 token 448→155，重启后保持 155。
 - **独立复审：** 零行证据与运行时复审结论为 `EVIDENCE PASS / RUNTIME PASS`，没有阻塞发现。
 
-## 2026-08-22 Task 22 两行收敛
+## 2026-08-22 Task 22 两行准入（已被 Task 33 取代）
 
-Task 22 及其独立复审均已完成。Fusion 准入精确 Pet 与 Git Graph `0.2.9`；[兼容矩阵](fusion-compat-matrix.md)记录新鲜度、发布总数、有序停止点、生命周期与安全结果以及阻塞能力集合。[Fusion 所有权决策](../../../.agents/notes/implemented/architecture/2026-08-19-fusion-profile-external-plugin-ownership.md)记录准入理由与重验条件。
+在 Task 22 检查点，精确 Pet 与 Git Graph `0.2.9` 在完成当时记录的新鲜度、有序停止点、生命周期、安全与独立复审检查后获准接入。Task 33 随后取代该准入结论；当前选择仅含 Pet，[兼容矩阵](fusion-compat-matrix.md)与 [Fusion 所有权决策](../../../.agents/notes/implemented/architecture/2026-08-19-fusion-profile-external-plugin-ownership.md)记录当前结果和重验条件。
 
-已跟踪的 [Fusion patch](../../../packages/bundle/fusion/cordis.patch.yml)只包含 `pet` 与 `ui-git-graph`，[profile 依赖](../../../packages/bundle/fusion/package.json)把两个包固定为 `0.2.9`。[REAL 验收](../../../apps/web/tests/fusion-real-composition.acceptance.ts)把完整有序模型输入与阻塞路由响应同独立启动的 `base + web-app` profile 比较，检查 Pet 状态与 Git 分支实时数据，并验证可见控件、干净诊断与清理。
+在该检查点，`packages/bundle/fusion/cordis.patch.yml` 只包含 `pet` 与 `ui-git-graph`，`packages/bundle/fusion/package.json` 把两个包固定为 `0.2.9`，`apps/web/tests/fusion-real-composition.acceptance.ts` 把完整有序模型输入与阻塞路由响应同独立启动的 `base + web-app` profile 比较，并检查 Pet 状态与 Git 分支实时数据、可见控件、诊断与清理。Task 33 之后，这些 HEAD 文件已改为仅含 Pet，不能证明该检查点的历史内容。
 
-## 2026-08-23 Task 29 两行 Web 回归
+## 2026-08-23 Task 29 两行 Web 回归（已被 Task 33 取代）
 
 Task 29 一次性驱动通过 CDP `http://127.0.0.1:9333` 使用系统 Google Chrome 151，以退出码 `0` 和空 stderr 完成并取得 36/36 项 PASS 断言。该运行使用 profile 局部的精确 Pet 与 Git Graph `0.2.9`、仓库 commit `108b96a10a34941d93ad99b35c3a1f2cee16a9e2`、驱动 SHA-256 `6afc44191217200cfbe0630b4e5e445d9109f284c71b9343ef34d082691bf2d0`、oracle SHA-256 `4b2e8684f7506f92924bec641a289da300e2fa70dec869e5d3df7e8d4069e112`、oracle 测试 SHA-256 `cfcfd643678c00d22bd977e1c2ae8ae5525cd211603c51d76b208ffdb462d37e`，以及 fixture lock SHA-256 `5459fff341481642aacb7f9fb31c9caf114cc4ae737927550bb05d04a96f68c9`。
 
@@ -144,7 +144,7 @@ Task 29 一次性驱动通过 CDP `http://127.0.0.1:9333` 使用系统 Google Ch
 - **Export 语义：** 两个 ZIP 均包含根 `session.jsonl` 和预期 fork 后代日志。页头与 slash ledger 分别绑定触发动作、唯一 HEAD Request identity、HTTP 200 response、Download URL／完成状态和 ZIP SHA-256；abort request-id 集合与全局 download URL multiset 精确等于这两次操作。
 - **组合与隔离：** Pet 保持唯一，Git Graph 在空白会话显示实时 `task29` 分支数据并在对话开始后隐藏；全新的 stock Web、headless、headless 行为与 ACP 检查均不含 Fusion 泄漏。
 - **诊断与清理：** console warning/error、page error、HTTP 失败、slot error 与意外 network 失败均为空。两次 Fusion 服务的 PGID 均保存了启动进程树和空的最终快照；两个端口、模型 provider 端口、Task 创建的 CDP target、profile 链接与临时目录均已移除。受控子进程证明仅检查 leader 会漏掉后代，而 PGID oracle 能检出；10 项 oracle 负控全部通过。
-- **仅追加范围：** index 到工作树的累计 diff 包含早于 Task 29 的 Task 22 历史正文整改。Task 29 事实只出现在此末尾章节；头部保持 Task 22 当前状态，指向未跟踪 `.superpowers/**` 证据的链接继续保持删除，避免 tracked 报告在 clean checkout 中出现死链。
+- **仅追加范围：** index 到工作树的累计 diff 包含早于 Task 29 的 Task 22 历史正文整改。Task 29 事实只出现在此末尾章节；头部已说明 Task 29 两行结果被 Task 33 取代，指向未跟踪 `.superpowers/**` 证据的链接继续保持删除，避免 tracked 报告在 clean checkout 中出现死链。
 
 精确长命令在后台启动，并以小于一分钟的间隔轮询：
 
@@ -153,3 +153,14 @@ sh .superpowers/sdd/round5-task29/run-driver.sh
 ```
 
 完整 RED/GREEN 分析、命令台账、provenance、诊断、截图、可访问性快照、RPC 与 DOM 清单及清理记录均位于 `.superpowers/sdd/round5-task29/`；汇总报告为 `.superpowers/sdd/round5-task29-report.md`。
+
+## 2026-08-23 Task 35 当前单行回归
+
+当前精确 Pet `0.2.9` 组合通过 CDP `127.0.0.1:9333` 使用既有系统 Chrome `151.0.7922.172` 完成。运行时报告与独立复审分别为 `.superpowers/sdd/ralph-round6-task35-runtime-report.md` 和 `.superpowers/sdd/ralph-round6-task35-runtime-review.md`。
+
+- **Built acceptance：** `DSH_SNAPSHOT=replay pnpm run test:fusion:acceptance:built` 以 `0` 退出并通过 1/1。
+- **完整 Web driver：** 全新 fixture 局部安装精确暴露 `include:pet -> @linxin666/dsh-pet@0.2.9`；driver 以 `0` 退出，并在 Pet-only oracle、既有 Web 工作流、stock Web、headless 与 ACP 隔离上通过 39/39。
+- **Runtime-final oracle：** `TASK34_PHASE=runtime-final` 以 `0` 退出并通过 50/50，stderr 为空，受控进程最终快照为空。
+- **诊断：** 浏览器 console、page、HTTP、slot 与非预期 network 诊断均为空；两个预期的 export HEAD abort 与已完成 export 操作的 identity 匹配。
+- **清理：** cleanup errors 为空，全部服务与 mock provider 端口关闭，全部服务与受控进程组退出，Task 创建的 Chrome target 与临时目录均不存在。
+- **Pre/post 对账：** Chrome 身份与 3 个既有 target 保持不变；target、listener、process、port 与临时目录 diff 均为空。TUI 为 `NOT RUN (not affected)`，TUI 公开交付保持阶段 2 BLOCKED，Task 34 已恢复但其剩余最终交付项仍未完成。

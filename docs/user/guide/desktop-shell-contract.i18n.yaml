@@ -2,5 +2,5 @@
 # side as of the last confirmed-consistent state. Both languages carry equal authority;
 # after editing either side, bring the other along and re-record with:
 #   pnpm run verify-translation-pairing --write docs/user/guide/desktop-shell-contract.md
-desktop-shell-contract.md: 884ed2ba808cd2ab4381260d2675a349b2ea912c
-desktop-shell-contract.zh.md: 2b9ae57fe0dd5736c8b21f5104e48d408c39e370
+desktop-shell-contract.md: ef989dbbaa0aa1a0adbc1035d81b763520e54224
+desktop-shell-contract.zh.md: 7ad5821044053419bda488dbdf87ad789a457b8a

@@ -6,13 +6,13 @@
 >
 > **历史计划：** 本文档记录 v2 执行计划。2026-08-21 Task 12 章节只记录已经验证的结果，不把较早的计划工作改写成当时已经获知的事实。
 
-**当前状态：** Task 12 至 Task 30 已完成。Task 30 的最终门禁、Task 28/29 复审、exact-staged V8 代码与安全复审、remediation、独立 plan/design/spec alignment、最终对账与 progress 追加均已完成。
+**当前状态：** Task 12 至 Task 38 已完成。最终 V2 `exact-product-worktree` package 精确包含 43 个产品路径，package SHA-256 为 `74e694a7c5e5bc18452596b0ec70a7379de1d3459c2073d8f0e1eee9c7b34170`，patch SHA-256 为 `1f71831a467bd652af7eeedf1561b0e431c95088d7e3cc26c9dfc4e2d5921581`。其 bits 复审为 P0/P1/P2 `0/0/0`，安全复审 clean，产品文档与 plan/design/spec alignment 复审均为 Critical/Important/Minor `0/0/0`。
 
-**当前结果：** staged 产品交付包含精确两行 Pet 与 Git Graph `0.2.9` Fusion Web profile。两个包均通过完整准入检查和本地系统 Chrome CDP `9333` 回放。Task 29 的 fresh assembled run 对完整 Web 工作流、精确外部配置行、stock 行为、headless 与 ACP 隔离、诊断和清理通过 36/36 项断言。ModLens `3.24.0` 在生命周期或 Chrome 验证前因服务端请求安全失败。新的无缓存 Better Sidebar packument 包含 15 个可安装版本，且不存在高于 `0.15.2` 的发布版本；精确 `0.15.2` 是上次截止后的唯一候选，并在安全、生命周期、隔离安装、组合、启动或 Chrome 前因公共 rc.5 peer 闭包为 0/14 而失败。两个阻塞包均保持未挂载。Task 30 已修复事务式迟到 acquisition、acquisition 前 CI trap 所有权、Pet 完整私有包副本变异、包含 `Promise.reject(undefined)` 的显式 settlement、带引用 identity 去重的正交 failure 聚合、单一共享 cleanup deadline，以及 deadline 到期后的已观察 best-effort 外层 disposal。精确 Pet 与 Git Graph 入口继续通过未配对、已配对、已撤销和 loopback 授权矩阵。历史零行、三行、四行与六行结果继续作为被取代的证据，公开 TUI 交付保持阶段 2 BLOCKED。
+**当前结果：** 产品交付选择唯一外部配置行，即精确 Pet `0.2.9`。系统 Chrome 151 经 CDP `9333` 的当前 built acceptance 通过 1/1，完整 Web driver 通过 39/39，runtime-final oracle 通过 50/50。console、page、network 与 cleanup 诊断干净，pre/post target、listener、process、port 与临时目录检查均无残留。Git Graph `0.2.9` 因活跃 JSON 操作及其子进程可越过配置行 fiber dispose 而被阻塞。Task 22 与 Task 29 两行结果对各自精确运行仍是已被取代的历史证据。ModLens `3.24.0` 在生命周期或 Chrome 验证前因服务端请求安全失败。新的无缓存 Better Sidebar packument 包含 15 个可安装版本，且不存在高于 `0.15.2` 的发布版本；精确 `0.15.2` 是上次截止后的唯一候选，并在安全、生命周期、隔离安装、组合、启动或 Chrome 前因公共 rc.5 peer 闭包为 0/14 而失败。这些 blocker 均保持未挂载。Task 30 已修复事务式迟到 acquisition、acquisition 前 CI trap 所有权、Pet 完整私有包副本变异、包含 `Promise.reject(undefined)` 的显式 settlement、带引用 identity 去重的正交 failure 聚合、单一共享 cleanup deadline，以及 deadline 到期后的已观察 best-effort 外层 disposal。历史零行、三行、四行与六行结果也继续作为被取代的证据。TUI 为 `NOT RUN (not affected)`，公开交付保持阶段 2 BLOCKED。全量仓库 coverage 与实际 GitHub-hosted job 未在本地运行。HEAD 保持 `6e0f654` 且 index 为空；恢复 staged-only 交付或清理 commit history 需要用户另行授权。
 
 **目标：** 保留纯 Fusion bundle（`@deepseek-ai/dsh-fusion`）、一个共享 `liangshen` preset 和可复现的精确配置行 profile 组合，同时保持 `packages/core/**`、agent loop 和会话格式不变。
 
-**架构：** 仓库拥有的集成点位于 `packages/bundle/fusion/`、`apps/cli/config/agent-presets/liangshen/`、profile 组合文档和相应测试。Fusion patch 与 profile dependency map 仅包含 Pet 与 Git Graph `0.2.9`。
+**架构：** 仓库拥有的集成点位于 `packages/bundle/fusion/`、`apps/cli/config/agent-presets/liangshen/`、profile 组合文档和相应测试。Fusion patch 与 profile dependency map 仅包含 Pet `0.2.9`。
 
 **技术栈：** TypeScript ESM、pnpm workspaces、Cordis 插件、dsh profile 与 patch、Vitest、通过 CDP `9333` 驱动的系统 Chrome，以及真实 PTY。
 
@@ -24,15 +24,14 @@
 - 只有在隔离安装、组合、真实启动、目标能力可见、浏览器或终端诊断干净、完整 effect/disposer 所有权和断连重挂全部通过后，才能接受一个精确包版本。记录 peer 漂移，但不能仅凭 peer 漂移判定运行时失败。
 - 所有外部包使用精确版本；不得使用 `^`、`~` 或 `latest`。
 - 不得把第三方运行时依赖写入 `packages/bundle/fusion/package.json`。
-- REAL composition fixture（测试前置数据）只包含两个精确外部依赖及其 React peer，且不含外部 `allowBuilds`；Task 22 不向仓库根新增 Pet、Git Graph 或 React 条目，并保持根 `package.json`、lockfile 与 workspace 文件不变。
+- REAL composition fixture（测试前置数据）只包含精确 Pet 依赖及其 React peer，且不含外部 `allowBuilds`；仓库根不得增加 Pet 或 React 条目，并保持根 `package.json`、lockfile 与 workspace 文件不变。
 - 每类能力只保留一个实现，并拒绝重复配置行。
 - 只通过 CDP `9333` 使用系统 Chrome；不得调用 `chromium.launch()` 或使用 IDE 浏览器。
 - 默认单测与覆盖率测试必须离线；只有显式 REAL composition lane 可以安装 profile 局部外部包。
 - REAL process 的每个 stdout/stderr diagnostic tail 必须按字节限制为 64 KiB，同时保留跨 chunk readiness 匹配。
 - `cordis/request-run`、`cordis/request-run-resolved`、`cordis/dynamic-package`、`cordis/dynamic-retract`、`cordis/inspect-query` 和 `cordis/inspect-query-resolved` 是唯一 event id；不得增加兼容 alias。
 - 保留失败和阻塞证据。不得把历史失败改写为成功。
-- `.trae/specs/**` 与 `docs/superpowers/**` 下的 tracked 计划和执行记录已有 Git index 条目；其本轮工作树修改必须保持 unstaged。当前未跟踪的翻译对、sidecar 与 `.superpowers/**` 报告不得加入 Git index。
-- 未经用户授权，不得 commit、push、merge、rebase 或 reset。
+- Task 33 至 Task 35 期间不得 reset、rebase、新建 commit、push 或 merge。恢复 staged-only 交付或清理 commit history 需要用户另行授权，且不阻塞代码或运行时验证。
 - 阶段 1 独立交付；阶段 2 blocker 不使已接受的阶段 1 能力失效。
 
 ---
@@ -197,21 +196,21 @@ Better Sidebar 有 13 个发布版本；精确 `0.15.0` 仍被部署所有权和
 
 ### Task 22：Web UI `0.2.8` 与 `0.2.9` 审计
 
-Task 22 及其独立复审均已完成。Fusion 准入精确 Pet 与 Git Graph `0.2.9`；其他每个身份都在首个失败或未选择的强制检查停止。[兼容矩阵](fusion-compat-matrix.md)记录新鲜度截止时间、发布总数、有序检查、各身份结果与组合运行时证据。
+Task 22 及其独立复审是已完成的历史证据。该任务曾准入精确 Pet 与 Git Graph `0.2.9`；Task 33 根据后续活跃操作生命周期发现取代了 Git Graph 准入结论。[兼容矩阵](fusion-compat-matrix.md)记录新鲜度截止时间、发布总数、有序检查、各身份结果与组合运行时证据。
 
-Task 23 把每个阻塞路由的 `GET` 响应与独立启动的 `base + web-app` profile 的完整稳定响应作精确比较。挂载 JSON、redirect、含 stock title 的 route-owned HTML、404 与 405 控制响应都会因存在差异而失败；已准入的 Git 路由另以 `POST /git/branches` 验证。
+Task 23 在历史上把每个阻塞路由的 `GET` 响应与独立启动的 `base + web-app` profile 的完整稳定响应作精确比较。挂载 JSON、redirect、含 stock title 的 route-owned HTML、404 与 405 控制响应都会因存在差异而失败；在该检查点，已准入的 Git 路由另以 `POST /git/branches` 验证。Task 35 取代跨 profile root 绝对相等判据，但保留每个 profile 的 blocked `GET` 响应与自身 `GET /` 原始字节相等要求。
 
 ### Task 26：ModLens `3.24.0` 与 Better Sidebar `0.15.1`
 
-Task 26 已完成。ModLens 现有 77 个发布版本和 39 个 DSH 候选；精确 `3.24.0` 通过产物、许可证、依赖闭包、隔离安装与组合检查，随后因跨站 `POST /modlens/paste` 会写入所提交的图像而失败。Better Sidebar 现有 14 个可安装发布版本；精确 `0.15.1` 通过产物与许可证检查，随后因全部 14 个 DSH peer 范围均要求 `^0.1.0-rc.8`，且公共注册表对 14 个 peer 包提供精确 rc.5 的数量为 0 而失败。首个失败使之后的候选生命周期、启动与 Chrome 检查均为 `NOT RUN`；两行 Fusion 选择保持不变。
+Task 26 已完成。ModLens 现有 77 个发布版本和 39 个 DSH 候选；精确 `3.24.0` 通过产物、许可证、依赖闭包、隔离安装与组合检查，随后因跨站 `POST /modlens/paste` 会写入所提交的图像而失败。Better Sidebar 现有 14 个可安装发布版本；精确 `0.15.1` 通过产物与许可证检查，随后因全部 14 个 DSH peer 范围均要求 `^0.1.0-rc.8`，且公共注册表对 14 个 peer 包提供精确 rc.5 的数量为 0 而失败。首个失败使之后的候选生命周期、启动与 Chrome 检查均为 `NOT RUN`；两行 Fusion 选择在该历史检查点保持不变。
 
 ### Task 28：Better Sidebar `0.15.2`
 
-Task 28 已完成。执行时无缓存 packument 截止时间为 `2026-08-22T17:01:07Z`；`latest` 为 `0.15.2`，packument 包含 15 个可安装 manifest，且精确 `0.15.2` 是上次截止后的唯一发布版本。该版本通过身份、完整性、路径安全与 MIT 许可证检查，随后因全部 14 个 DSH peer 均要求 `^0.1.0-rc.8`，且公共注册表对 14 个包提供精确 rc.5 的数量为 0 而失败。安全、生命周期、隔离安装、组合、启动与 Chrome 均为 `NOT RUN`；两行 Fusion 选择保持不变。
+Task 28 已完成。执行时无缓存 packument 截止时间为 `2026-08-22T17:01:07Z`；`latest` 为 `0.15.2`，packument 包含 15 个可安装 manifest，且精确 `0.15.2` 是上次截止后的唯一发布版本。该版本通过身份、完整性、路径安全与 MIT 许可证检查，随后因全部 14 个 DSH peer 均要求 `^0.1.0-rc.8`，且公共注册表对 14 个包提供精确 rc.5 的数量为 0 而失败。安全、生命周期、隔离安装、组合、启动与 Chrome 均为 `NOT RUN`；两行 Fusion 选择在该历史检查点保持不变。
 
-### Task 29：当前组合 Web 回归
+### Task 29：已被取代的两行 Web 回归
 
-Task 29 已完成。精确 Pet 与 Git Graph `0.2.9` profile 的同一次 fresh assembled run 通过系统 Chrome CDP `9333` 的 36/36 项断言。该运行覆盖对话渲染、工具卡片、New Session 创建或复用、会话列表、fork、resume、compact、两条 export 路径、Search、Settings、模型选择、Pet、Git Graph、stock Web 行为，以及 fresh headless 与 ACP 隔离。exit、console、page、network、slot、process、port、CDP target、临时目录、进程组与 cleanup 诊断均干净，独立复审没有 finding。
+Task 29 是已完成的历史证据。精确 Pet 与 Git Graph `0.2.9` profile 的同一次 fresh assembled run 通过系统 Chrome CDP `9333` 的 36/36 项断言。该运行覆盖对话渲染、工具卡片、New Session 创建或复用、会话列表、fork、resume、compact、两条 export 路径、Search、Settings、模型选择、Pet、Git Graph、stock Web 行为，以及 fresh headless 与 ACP 隔离。exit、console、page、network、slot、process、port、CDP target、临时目录、进程组与 cleanup 诊断均干净，独立复审没有 finding。Task 33 在不改变这些测量结果的前提下，取代了该运行的当前准入效力。
 
 ### Task 30：最终收敛
 
@@ -221,21 +220,31 @@ Task 29 已完成。精确 Pet 与 Git Graph `0.2.9` profile 的同一次 fresh 
 
 所有经验证的 remediation finding 均已关闭：事务式迟到 acquisition、CI trap、Pet 私有包副本、保留 `Promise.reject(undefined)` 的显式 settlement、带对象 identity 去重的正交 failure 聚合、单一共享 cleanup deadline，以及 deadline 到期后的已观察 best-effort 外层 disposal。独立 plan/design/spec alignment 为 `APPROVED`，Critical/Important/Minor 为 `0/0/0`；最终 checklist、staging 与 Git 对账及唯一最终 progress 追加均已完成。本地未运行全量仓库 coverage 或实际 GitHub-hosted job。
 
+### Task 35：Pet-only root HTML oracle
+
+- [x] 在每个 profile 内，要求每个 blocked `GET` 完整响应快照与该 profile 自身的 `GET /` 相同，包括 body 原始字节相等。
+- [x] 在独立启动的 `base + web-app` 与 Fusion profile 之间，要求每个非 fallback 完整响应快照及 body 保持原始字节相等。
+- [x] 要求每个根响应各有一个可解析的 `window.__DSH_BOOT__` 赋值，baseline 不含 Pet，Fusion 精确增加一个合法 Pet entry，且每侧 graph revision 都由各自完整、有序 entries 计算。
+- [x] 从 Fusion graph 删除 Pet entry，按剩余完整、有序 entries 重算 revision，并要求完整 Fusion HTML 与 baseline HTML 原始字节相等。
+- [x] 额外 client entry、共享 entry 字段或顺序漂移、baseline 或 Fusion 的错误 graph revision、boot script 外 body 差异，以及 mounted JSON、redirect、含 stock title 的 route-owned HTML、404 或 405 控制响应必须被拒绝。
+- [x] 同步规格、计划、设计、checklist、兼容矩阵、回归报告和 owning Agent Note 的英文与中文，重录五份伴随记录，并运行命名文档检查。
+- [x] 完成独立复审与 focused tests；系统 Chrome 151/CDP `9333` 的 Pet-only built acceptance 通过 1/1，完整 Web driver 通过 39/39，runtime-final oracle 通过 50/50；target、listener、process、port 与临时目录均无残留；随后恢复 Task 34。
+
 ---
 
 ## 自审
 
 - 运行时判据测量已安装产品，而不只测量 peer metadata。
 - Profile 所有权防止第三方依赖树污染仓库 workspace。
-- Pet 与 Git Graph `0.2.9` 由新的完整证据准入；更早存在授权缺陷或许可证冲突的版本继续保持拒绝。
+- Pet `0.2.9` 继续由完整证据准入。Git Graph `0.2.9` 保持阻塞，直到新的精确发布版本在 dispose 时拒绝新操作、取消并等待全部活跃 JSON／SSE 操作和进程树，并通过进行中请求卸载与同 Context 重挂负控。
 - 其他每个 Web UI 身份都在首个失败或未选择的强制检查停止；不得根据历史证据推断下游结果。
-- 首次加载可见不能豁免插件生命周期所有权；在某个已发布版本同时满足完整 effect/disposer 清理、完全停稳的 dispose、断连重挂、许可证身份、rc.5 runtime 与同页生命周期验证前，ModLens、SSH、Remote Web UI 与 Task Board 保持排除。
+- 首次加载可见不能豁免插件生命周期所有权；在某个已发布版本满足各自已记录的清理、完全停稳的 dispose、断连重挂、许可证身份、rc.5 runtime 与同页生命周期要求前，ModLens、SSH、Remote Web UI、Task Board 与 Git Graph 保持排除。
 - 包 rescope 只改写模块说明符，不改写 runtime event 或 locale id；六个 `cordis/*` id 保持规范且没有 alias。
 - TUI `0.7.1` 与 Liangshen 来源 `0.2.4` 保持单一 preset 所有权。纯 rc.5 源码验证运行时通过。历史公开安装尝试在其直接子集中发现 23 个缺失包，新的完整查询在 41 个包中找到 0 个精确 rc.5；因此不存在受支持的公开组装方式。
-- 历史失败保留为证据。文档顶部和 Task 29 结果说明当前候选与交付状态；Task 12 章节将其中的零行、三行、四行和六行运行时阶段明确标记为被取代的证据。
+- 历史失败与测量结果保留为证据。文档顶部说明当前仅含 Pet 的交付状态；Task 12 与 Task 22/29 章节将其中的零行、三行、四行、六行和两行运行时阶段明确标记为被取代的证据。
 
 ---
 
 ## 执行交接
 
-Task 12 至 Task 30 已完成。Task 30 完成了最终门禁、Task 28/29 task review、V8 package 绑定、broad code 与 security review、全部经验证的 remediation、独立 plan/design/spec alignment、最终 checklist／staging／Git 对账及唯一最终 progress 追加。规划与证据记录保持在 staged 产品集合之外。全量仓库 coverage 与实际 GitHub-hosted job 继续由 CI 持有，本地未运行。
+Task 34 至 Task 38 已完成。43 路径 V2 package 与全部最终复审均 clean；HEAD 保持 `6e0f654` 且 index 为空，恢复 staged-only 交付或清理 history 需要用户另行授权。

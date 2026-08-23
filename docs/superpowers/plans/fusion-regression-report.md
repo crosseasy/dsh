@@ -6,9 +6,9 @@ Date: 2026-08-23
 
 Status: `DONE`
 
-Scope: the historical Task 5 matrix, the historical Task 12 and zero-row supplements, and the current Task 22 two-row result.
+Scope: the historical Task 5 matrix, Task 12 and zero-row supplements, Task 22 admission, Task 29 two-row regression, and the current Task 35 one-row regression.
 
-Current result: the Fusion Web external set contains exact Pet and Git Graph `0.2.9`. Their license identity, security negative controls, lifecycle, ownership, deduplication, isolated profiles, and combined Chrome CDP `9333` runtime pass. The [compatibility matrix](fusion-compat-matrix.md) owns the per-version results, and the [Fusion ownership decision](../../../.agents/notes/implemented/architecture/2026-08-19-fusion-profile-external-plugin-ownership.md) owns admission and revalidation. The other Web UI identities stop at their first failed or not-selected mandatory check. Historical zero-row, three-row, four-row, and six-row results remain superseded evidence. TUI source runtime passes, public delivery remains phase 2 BLOCKED, and Liangshen remains sourced from `0.2.4`.
+Current result: the Fusion Web external set contains exact Pet `0.2.9`. System Chrome 151 through CDP `9333` passes the current built acceptance 1/1, the full Web driver 39/39, and the runtime-final oracle 50/50. Console, page, network, and cleanup diagnostics are clean, and pre/post target, listener, process, port, and temporary-directory checks leave no residue. Git Graph `0.2.9` remains blocked; the [compatibility matrix](fusion-compat-matrix.md) owns the per-version results, and the [Fusion ownership decision](../../../.agents/notes/implemented/architecture/2026-08-19-fusion-profile-external-plugin-ownership.md) owns admission and revalidation. Task 22 admission and Task 29's 36/36 two-row regression remain superseded historical evidence for their exact runs. Task 35 does not affect TUI, so TUI is `NOT RUN (not affected)` and public delivery remains phase 2 BLOCKED.
 
 ## Historical Task 5 Result
 
@@ -128,13 +128,13 @@ This section records the superseded zero-row stage.
 - **Historical gate:** the zero-row REAL gate passed 1/1 through system Chrome CDP `9333`; the complete oracle passed 196/196, all three negative controls blocked at 195/196 with exit 1, compact recorded seven items/401 tokens and 448 to 155 projected message tokens, and restart retained 155.
 - **Independent review:** the zero-row evidence and runtime review records `EVIDENCE PASS / RUNTIME PASS` with no blocking finding.
 
-## 2026-08-22 Task 22 Two-Row Convergence
+## 2026-08-22 Task 22 Two-Row Admission (Superseded by Task 33)
 
-Task 22 and its independent rereview are complete. Fusion admits exact Pet and Git Graph `0.2.9`; the [compatibility matrix](fusion-compat-matrix.md) owns freshness, release totals, ordered stop points, lifecycle and security results, and the blocked capability set. The [Fusion ownership decision](../../../.agents/notes/implemented/architecture/2026-08-19-fusion-profile-external-plugin-ownership.md) owns the admission rationale and revalidation conditions.
+At the Task 22 checkpoint, exact Pet and Git Graph `0.2.9` were admitted after the recorded freshness, ordered stop-point, lifecycle, security, and independent-review checks. Task 33 later superseded that admission; the current selection is Pet-only, and the [compatibility matrix](fusion-compat-matrix.md) and [Fusion ownership decision](../../../.agents/notes/implemented/architecture/2026-08-19-fusion-profile-external-plugin-ownership.md) describe the current result and revalidation conditions.
 
-The tracked [Fusion patch](../../../packages/bundle/fusion/cordis.patch.yml) contains exactly `pet` and `ui-git-graph`, and its [profile dependencies](../../../packages/bundle/fusion/package.json) pin both packages to `0.2.9`. The [REAL acceptance](../../../apps/web/tests/fusion-real-composition.acceptance.ts) compares the complete ordered model input and blocked-route responses with an independently booted `base + web-app` profile, checks live Pet-state and Git-branches data, and verifies visible controls, clean diagnostics, and cleanup.
+At that checkpoint, `packages/bundle/fusion/cordis.patch.yml` contained exactly `pet` and `ui-git-graph`, `packages/bundle/fusion/package.json` pinned both packages to `0.2.9`, and `apps/web/tests/fusion-real-composition.acceptance.ts` compared the complete ordered model input and blocked-route responses with an independently booted `base + web-app` profile while checking live Pet-state and Git-branches data, visible controls, diagnostics, and cleanup. Those files are Pet-only at HEAD after Task 33 and do not prove the checkpoint contents.
 
-## 2026-08-23 Task 29 Two-Row Web Regression
+## 2026-08-23 Task 29 Two-Row Web Regression (Superseded by Task 33)
 
 The one-shot Task 29 driver completed with exit `0`, empty stderr, and 36/36 PASS assertions against system Google Chrome 151 through CDP `http://127.0.0.1:9333`. It used exact profile-local Pet and Git Graph `0.2.9`, repository commit `108b96a10a34941d93ad99b35c3a1f2cee16a9e2`, driver SHA-256 `6afc44191217200cfbe0630b4e5e445d9109f284c71b9343ef34d082691bf2d0`, oracle SHA-256 `4b2e8684f7506f92924bec641a289da300e2fa70dec869e5d3df7e8d4069e112`, oracle-test SHA-256 `cfcfd643678c00d22bd977e1c2ae8ae5525cd211603c51d76b208ffdb462d37e`, and fixture-lock SHA-256 `5459fff341481642aacb7f9fb31c9caf114cc4ae737927550bb05d04a96f68c9`.
 
@@ -144,7 +144,7 @@ The one-shot Task 29 driver completed with exit `0`, empty stderr, and 36/36 PAS
 - **Export semantics:** both ZIPs contained the root `session.jsonl` and expected fork descendant log. Header and slash ledgers each bound the trigger, unique HEAD Request identity, HTTP 200 response, Download URL/completion, and ZIP SHA-256; the abort request-id set and global download URL multiset exactly matched those two operations.
 - **Composition and isolation:** Pet remained unique, Git Graph exposed live `task29` branch data on blank sessions and hid after conversation start, and fresh stock Web, headless, headless behavior, and ACP checks contained no Fusion leakage.
 - **Diagnostics and cleanup:** console warnings/errors, page errors, HTTP failures, slot errors, and unexpected network failures were empty. Both Fusion service PGIDs have persisted startup trees and empty final snapshots; both ports, the model-provider port, Task-created CDP targets, the profile link, and the temporary directory were removed. A controlled child proved leader-only cleanup can miss a descendant while the PGID oracle detects it; all 10 oracle controls passed.
-- **Append-only scope:** the cumulative index-to-worktree diff includes Task 22 historical prose cleanup that predates Task 29. Task 29 facts occur only in this final section; the header remains at Task 22 current state, and links to untracked `.superpowers/**` evidence remain removed so the tracked report has no clean-checkout dead links.
+- **Append-only scope:** the cumulative index-to-worktree diff includes Task 22 historical prose cleanup that predates Task 29. Task 29 facts occur only in this final section; the header identifies the Task 29 two-row result as superseded by Task 33, and links to untracked `.superpowers/**` evidence remain removed so the tracked report has no clean-checkout dead links.
 
 The exact long-running command was started in the background and polled in intervals shorter than one minute:
 
@@ -153,3 +153,14 @@ sh .superpowers/sdd/round5-task29/run-driver.sh
 ```
 
 The complete RED/GREEN analysis, command ledger, provenance, diagnostics, screenshots, accessibility snapshots, RPC and DOM inventories, and cleanup records are under `.superpowers/sdd/round5-task29/`; the consolidated report is `.superpowers/sdd/round5-task29-report.md`.
+
+## 2026-08-23 Task 35 Current One-Row Regression
+
+The current exact Pet `0.2.9` composition completed against the existing system Chrome `151.0.7922.172` through CDP `127.0.0.1:9333`. The runtime report and independent review are `.superpowers/sdd/ralph-round6-task35-runtime-report.md` and `.superpowers/sdd/ralph-round6-task35-runtime-review.md`.
+
+- **Built acceptance:** `DSH_SNAPSHOT=replay pnpm run test:fusion:acceptance:built` exited `0` and passed 1/1.
+- **Full Web driver:** the fresh fixture-local install exposed exactly `include:pet -> @linxin666/dsh-pet@0.2.9`; the driver exited `0` and passed 39/39 across the Pet-only oracle, existing Web workflows, stock Web, headless, and ACP isolation.
+- **Runtime-final oracle:** `TASK34_PHASE=runtime-final` exited `0` and passed 50/50 with empty stderr and an empty final controlled process snapshot.
+- **Diagnostics:** browser console, page, HTTP, slot, and unexpected network diagnostics were empty; the two expected export HEAD aborts matched completed export operation identities.
+- **Cleanup:** cleanup errors were empty, all service and mock-provider ports closed, all service and controlled process groups exited, and task-created Chrome targets and temporary directories were absent.
+- **Pre/post reconciliation:** Chrome identity and the three pre-existing targets were unchanged; target, listener, process, port, and temporary-directory diffs were empty. TUI was `NOT RUN (not affected)`, public TUI delivery remains phase 2 BLOCKED, and Task 34 has resumed without completing its remaining final-delivery items.

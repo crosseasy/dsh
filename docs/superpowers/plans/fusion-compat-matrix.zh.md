@@ -4,11 +4,13 @@
 
 状态：**DONE_WITH_CONCERNS**
 
-检查截至：`2026-08-22T17:01:07Z`
+检查截至：Task 31 新鲜 registry 响应窗口 `2026-08-23T00:56:11Z` 至 `2026-08-23T00:56:17Z`；Task 35 运行时证据截至 `2026-08-23T05:16:28Z`
 
 基线：`@deepseek-ai/dsh@0.1.0-rc.5`、macOS arm64、Node.js `v24.14.0`。仓库 launcher 使用 pnpm `11.7.0`；隔离 profile 使用 pnpm `11.18.0`。Round 1 产物保留在 `/private/tmp/dsh-fusion-task0.X4pqGN`；Round 2 runtime 产物在 `/private/tmp/fusion-round2-webui-modlens.RAdgfl` 和 `/private/tmp/fusion-round2-*`；Round 3 发布报告在 `/tmp/fusion-round3-*`；Round 4 发布证据在 `/tmp/fuse-five-*-round4*`；Round 7 报告和 TUI 发布产物在 `/tmp/fusion-round7-*`；Round 8 报告在 `/tmp/dsh-fusion-round8-*-report.md`，TUI 产物在 `/tmp/dsh-fusion-round8-tui.fKKD9z/`；Round 9 报告在 `/tmp/fuse-five-repositories-round9-*.md`，新的 TUI registry 证据在 `/tmp/fuse-five-repositories-round9-tui-evidence.CPyN2H/`；Round 10 报告在 `/tmp/fuse-five-repositories-round10-*.md`，新的 registry 证据位于 evidence index 列出的目录；Round 11 报告为 `/tmp/fuse-five-repositories-round11-sidebar.md` 和 `/tmp/fuse-five-repositories-round11-tui.md`，证据在 `/tmp/fuse-five-repositories-round11-sidebar-evidence-ZHGfQ2/` 和 `/tmp/fuse-five-repositories-round11-tui-evidence-9906d414-9693-4265-b991-cf6f57874c3c/`；Round 12 更新后的报告为 `/tmp/fuse-five-repositories-round12-sidebar.md` 和 `/tmp/fuse-five-repositories-round12-tui.md`，修复后的证据在 `/tmp/fuse-five-repositories-round12-sidebar-evidence-fix-a9127c2b-77c2-40ca-b11d-359805d5f5cc/` 和 `/tmp/fuse-five-repositories-round12-tui-evidence-fix-348d5f9c-7068-42a6-a3b3-d9be6c2156e1/`，修复报告为 `/tmp/fuse-five-repositories-round12-evidence-fix.md`，复审报告为 `/tmp/fuse-five-repositories-round12-evidence-rereview.md`；Round 13 报告为 `/tmp/fusion-round13-sidebar-report.md` 和 `/tmp/fusion-round13-tui-report.md`，证据在 `/tmp/fusion-round13-sidebar-evidence.D72yMW/` 和 `/tmp/fusion-round13-tui-evidence-806ac590-6679-43c5-8f2c-0a9d87757ac2/`，独立审查为 `/tmp/fusion-round13-evidence-review.md`；Round 14 报告为 `/tmp/fusion-round14-sidebar-report.md` 和 `/tmp/fusion-round14-tui-report.md`，证据在 `/tmp/fusion-round14-sidebar-evidence-zEJSrCsn/` 和 `/tmp/fusion-round14-tui-evidence-b3c4f38f-ad80-4270-8433-5ce6eeea4dd1/`，独立审查为 `/tmp/fusion-round14-evidence-review.md`；Round 15 报告为 `/tmp/fusion-round15-sidebar-report.md` 和修复后的 `/tmp/fusion-round15-tui-report.md`，证据在 `/tmp/fusion-round15-sidebar-evidence-PArhqmkh/` 和 `/tmp/fusion-round15-tui-evidence-fix-ba261be2-8086-4a09-8aad-18cd225f54b5/`，修复报告为 `/tmp/fusion-round15-tui-evidence-fix-report.md`，最终复审为 `/tmp/fusion-round15-evidence-rereview.md`；Round 16 报告和独立审查为 `/tmp/dsh-fusion-round16-sidebar-report.md`、`/tmp/dsh-fusion-round16-sidebar-review.md`、`/tmp/dsh-fusion-round16-tui-report.md` 和 `/tmp/dsh-fusion-round16-tui-review.md`，证据在 `/tmp/dsh-fusion-round16-sidebar-evidence.MahuvZQC/` 和 `/tmp/dsh-fusion-round16-tui-evidence-4ea95909-ce88-4813-9207-5e3c8fe10abc/`；Round 17 报告为 `/tmp/fusion-round17-sidebar-report.md`、`/tmp/fusion-round17-tui-report.md` 和 `/tmp/fusion-round17-evidence-review.md`，证据在 `/tmp/fusion-round17-sidebar-evidence-mcPmfe6K/` 和 `/tmp/fusion-round17-tui-evidence-5b0933e5-76f4-4ba5-b3a2-3f66a9e68b25/`；Round 18 报告为 `/tmp/dsh-fusion-round18-sidebar/report.md` 和 `/tmp/dsh-fusion-round18-tui/report.md`，证据在 `/tmp/dsh-fusion-round18-sidebar/` 和 `/tmp/dsh-fusion-round18-tui/`，独立审查为 `/tmp/dsh-fusion-round18-evidence-review.md`；Round 19 报告为 `/private/tmp/dsh-fusion-round19-sidebar-bZennRT5/report.md` 和 `/private/tmp/dsh-fusion-round19-tui-KlLljWNS/report.md`，独立审查为 `/private/tmp/dsh-fusion-round19-evidence-review.md`，sidebar 截止时间为 `2026-08-19T18:49:16Z`，TUI 截止时间为 `2026-08-19T18:46:52.548Z`。
 
-当前结果：Fusion Web 外部集合包含精确 Pet 与 Git Graph `0.2.9`。Task 22 覆盖全部 17 个身份连续发布的 `0.2.8` 与 `0.2.9` 波次；34 个精确 tarball 全部通过身份与完整性检查。Task 26 在服务端请求安全检查拒绝 ModLens `3.24.0`。Task 28 审计上次截止后的全部 Better Sidebar 发布版本，并在公共 rc.5 peer 闭包检查拒绝唯一新候选精确 `0.15.2`；安全、生命周期、隔离安装、组合、启动与 Chrome 均为 `NOT RUN`。这些 blocker 不改变已选配置行。历史零行、三行、四行与六行结果只保留为被取代的证据。TUI `0.7.1` 源码运行时通过，公开交付保持阶段 2 BLOCKED，Liangshen 继续使用 `0.2.4` 作为来源。
+当前结果：Fusion Web 外部集合仅包含精确 Pet `0.2.9`。其包级准入保持 PASS，当前组合单行通过系统 Chrome 151/CDP `9333` 的 built acceptance 1/1、完整 Web driver 39/39 与 runtime-final oracle 50/50。console、page、network 与 cleanup 诊断干净，pre/post target、listener、process、port 与临时目录检查均无残留。Git Graph `0.2.9` 保持阻塞；Task 22 两行准入与 Task 29 两行 `36/36` 回归继续作为已被取代的历史证据。Task 26 在服务端请求安全检查拒绝 ModLens `3.24.0`。Task 28 在公共 rc.5 peer 闭包检查拒绝 Better Sidebar `0.15.2`；安全、生命周期、隔离安装、组合、启动与 Chrome 均为 `NOT RUN`。历史零行、三行、四行与六行结果也只保留为被取代的证据。Task 35 不影响 TUI，因此 TUI 为 `NOT RUN (not affected)`，公开交付保持阶段 2 BLOCKED。
+
+Task 31 在上述响应窗口内检查了 20 个包，包括全部 17 个 Web UI 身份，并确认截止后候选为 0。该结果未触发产物、许可证、安全、生命周期、所有权、去重、闭包、安装、组合、启动、Chrome 或 PTY 检查，因此既有候选结论保持不变。
 
 Round 20 报告为 `/tmp/fusion-round20-sidebar-report.md`、`/tmp/fusion-round20-tui-report.md` 和 `/tmp/fusion-round20-workspace-audit.md`，发布证据在 `/tmp/fusion-round20-sidebar-evidence.qz5emCs5/` 和 `/tmp/fusion-round20-tui-evidence-WPEgcLJ3/`，sidebar 截止时间为 `2026-08-19T19:07:10Z`，TUI 截止时间为 `2026-08-19T19:09:18.503Z`。
 
@@ -21,13 +23,13 @@ Round 21 报告为 `.superpowers/sdd/task-0-{modlens,sidebar,webui,tui}-report.m
 - `NOT RUN`：该操作没有证据。
 - `BLOCKED`：更早的必需级别失败，因此后续操作无法建立兼容性。
 
-安装不代表 boot，boot 不代表浏览器或 console 成功。一个包只有在 metadata、隔离安装、profile 层解析、实际 boot 以及适用的浏览器或终端检查全部通过时，才与 rc.5 兼容。
+兼容性要求全部适用检查按以下顺序通过：产物身份与完整性、许可证身份、安全、依赖闭包、精确隔离安装、profile 组合、实际 boot、目标能力与诊断、具备完全停稳 dispose 的完整资源与 effect 所有权，以及断连重挂。首个失败会停止该候选，之后每项检查均记为 `NOT RUN`；安装不代表 boot，boot 也不代表完整准入。
 
 ## 结果矩阵
 
 | 包或分组 | 精确候选 | 对 rc.5 的 metadata | 隔离安装 | Profile 层 | 实际 boot | 浏览器/console 或终端 | 结果 |
 | --- | --- | --- | --- | --- | --- | --- | --- |
-| 最终两行 Web 组合 | Pet 与 Git Graph `0.2.9` | PASS：精确身份、完整性与许可证 | PASS：精确包及 React `18.3.1`；无原生构建许可 | PASS：精确 `pet` 与 `ui-git-graph` 配置行 | PASS：隔离 baseline／Pet／Git 运行 | PASS：组合 gate 显示唯一 Pet root／dock、唯一 Git chip、Pet 状态与 Git 分支探针返回实时数据、CDP 诊断干净 | **PASS** |
+| 当前单行 Web 组合 | Pet `0.2.9`；包准入 PASS 见下方 | PASS：精确身份、完整性、许可证与授权 | PASS：全新 fixture 局部精确安装 | PASS：恰好一条 `pet` 配置行 | PASS：built acceptance 1/1、完整 driver 39/39 | PASS：Chrome 151/CDP `9333`、runtime-final 50/50、诊断与清理干净 | **PASS** |
 | `@liustack/modlens` | 无已接受候选；最新审计 `3.24.0` | 产物／许可证与依赖闭包 PASS；服务端请求安全 FAIL | `3.24.0` PASS | PASS：恰好一条 `modlens` 配置行 | 安全失败后 `NOT RUN` | `NOT RUN`：跨站 `/modlens/paste` 会写入文件；生命周期与 Chrome 在首个失败处停止 | **BLOCKED** |
 | `@linxin666/dsh-ssh` | 无已接受候选；最新审计 `0.2.9` | 许可证与安全 PASS；生命周期 FAIL | 生命周期失败后 `NOT RUN` | NOT ACCEPTED：配置行已移除 | `NOT RUN` | BLOCKED：活跃独立终端会话不属于 `SshEngine.dispose()` | **BLOCKED** |
 | `@linxin666/dsh-remote-web-ui` | 无已接受候选；最新审计 `0.2.9` | 许可证 PASS；安全 FAIL | 安全失败后 `NOT RUN` | NOT ACCEPTED：配置行已移除 | `NOT RUN` | BLOCKED：`requirePairingForLan:false` 会跳过 `/remote` 的实时设备授权 | **BLOCKED** |
@@ -36,13 +38,15 @@ Round 21 报告为 `.superpowers/sdd/task-0-{modlens,sidebar,webui,tui}-report.m
 | 历史四行 Web 组合 | 最终三行及 Task Board `0.1.11` | 最终生命周期判据 FAIL | 历史安装 PASS | 历史四行层 PASS | 历史 gate 1/1 与 oracle 170/170 PASS | 历史 7 项/401 tokens 与投影 token 448→160 不能豁免 Task Board 生命周期失败 | **已被取代** |
 | 历史六行 Web 组合 | 历史四行及 Pet `0.1.11`、Git Graph `0.1.11` | 最终安全判据 FAIL | 历史安装 PASS | 历史六行层 PASS | 历史 boot PASS | 历史 156/156 运行时断言未覆盖授权失败 | **已被取代** |
 | `@linxin666/dsh-pet` | 已接受 `0.2.9` | 精确许可证与授权 PASS | 精确隔离安装 PASS | PASS：唯一 `pet` 配置行 | PASS | PASS：实时状态、唯一 root／dock、干净诊断 | **PASS** |
-| `@linxin666/dsh-client-ui-git-graph` | 已接受 `0.2.9` | 精确许可证与授权 PASS | 精确隔离安装 PASS | PASS：唯一 `ui-git-graph` 配置行 | PASS | PASS：实时 Git 状态、唯一分支 chip、干净诊断 | **PASS** |
+| `@linxin666/dsh-client-ui-git-graph` | 无已接受候选；最新审计 `0.2.9` | 精确许可证、授权与较早直接 route／SSE 检查 PASS；活跃操作生命周期 FAIL | 历史精确隔离安装 PASS | NOT ACCEPTED：配置行已移除 | 历史隔离启动 PASS | BLOCKED：活跃 JSON 请求与 Git 子进程越过配置行 fiber dispose | **BLOCKED** |
 | `@linxin666/dsh-client-ui-skin-center` | 无已接受候选；最新审计 `0.2.9` | 许可证身份 FAIL | `NOT RUN` | NOT ACCEPTED | `NOT RUN` | 许可证失败后 `NOT RUN` | **BLOCKED** |
 | `dsh-better-sidebar` | 无已接受候选；最新审计 `0.15.2` | 产物／许可证 PASS；rc.5 公共 peer 闭包 FAIL | 闭包失败后 `NOT RUN` | `NOT RUN` | `NOT RUN` | 安全、生命周期、隔离安装、组合、启动与 Chrome 均为 `NOT RUN` | **BLOCKED** |
 | `@linxin666/dsh-liangshen` 源 | 保留 `0.2.4`；拒绝 `0.2.8`／`0.2.9` | 产物／许可证 PASS；Windows 策略 FAIL | 安全失败后 `NOT RUN` | PASS：仓库 preset 保持唯一所有者 | 运行时 `NOT RUN` | 不接受：新来源保留不受约束的 Windows Bash | **PASS at `0.2.4`** |
 | `@deepseek-harness-tui/dsh-tui` | 源码运行时 `0.7.1`；拒绝 `0.8.7`／`0.8.8` | 精确产物／许可证 PASS；所有权与公开 rc.5 闭包 FAIL | `0.8.7`／`0.8.8` `NOT RUN`；历史源码闭包 PASS | 历史源码验证 PASS：`base + dsh-tui`，profile 持有 `code-runtime` 配置行 | 历史 `0.7.1` 全新／恢复 PASS；新候选 `NOT RUN` | 19 个版本；24 个非 rc.5 peer、根 `workspace:*` 为 0、打包内为 15、8 个 Liangshen 文件，且新的完整闭包结果为 0/41 | **公开交付 BLOCKED** |
 
-Pet 与 Git Graph `0.2.9` 已准入；其他 6 个影响决策的外部 Web 能力保持 blocker。ModLens `3.24.0` 与 Better Sidebar `0.15.2` 都在候选 Chrome 验证前停止，因此对应 Chrome 结果为 `NOT RUN`；当前两行验收仍是最新的系统 Chrome CDP `9333` 结果。TUI 在纯 rc.5 源码闭包下运行时通过，但在一致 rc.5 闭包公开可用，或明确批准新的 Harness 基线并完成全面重验之前，公开交付保持阶段 2 blocker。
+Pet `0.2.9` 包准入与组合单行在各自证据层级均为 PASS，其他 7 个影响决策的外部 Web 能力保持 blocker。只有新的精确 Git Graph 发布版本在 dispose 时拒绝新请求，于有界期限内取消并等待全部活跃 JSON／SSE 操作和完整进程树，并通过进行中 JSON 请求卸载与同 Context 重挂负控后，才能重新考虑准入。ModLens `3.24.0` 与 Better Sidebar `0.15.2` 都在候选 Chrome 验证前停止，因此对应 Chrome 结果为 `NOT RUN`。最近完成的系统 Chrome CDP `9333` 结果是当前单行运行。Task 35 的 TUI 为 `NOT RUN (not affected)`；在一致 rc.5 闭包公开可用，或明确批准新的 Harness 基线并完成全面重验之前，公开交付保持阶段 2 blocker。
+
+Pet-only root HTML oracle 把每个 blocked `GET` 与其自身 profile 的 `GET /` 完整响应快照比较，包括 body 原始字节相等，并在独立启动的 baseline 与 Fusion profile 间逐字节比较每个非 fallback 响应。每个根响应必须各有且仅有一个可解析的 `window.__DSH_BOOT__` 赋值：baseline 不含 Pet entry，Fusion 精确增加一个合法 Pet entry，每侧 graph revision 都由该 graph 的完整、有序 entries 计算。从 Fusion graph 删除 Pet entry 并按剩余完整、有序 entries 重算 revision 后，完整 Fusion HTML 必须与 baseline 原始字节相等。额外 client entry、共享 entry 字段或顺序漂移、任一侧错误 graph revision、boot script 外 body 差异，以及 mounted JSON、redirect、含 stock title 的 route-owned HTML、404 或 405 控制响应均使 oracle 失败。
 
 ## 截至 Round 21 的历史证据
 
@@ -52,7 +56,7 @@ Pet 与 Git Graph `0.2.9` 已准入；其他 6 个影响决策的外部 Web 能�
 
 `@liustack/modlens@3.21.1` 不声明 `@deepseek-ai/dsh-*` peer dependencies，使用 `dsh.bundle.patch: ./cordis.patch.yml`，声明 `dsh.client.platform: web`，导出 `./client`，并贡献 row id `modlens`。
 
-隔离 profile 包含 `base + web-app + modlens`。真实 Web profile 在端口 `3081` boot，返回 HTTP `200`，渲染了填充后的 `#root`，暴露 immediate modlens boot entry，并以 HTTP `200` 提供 modlens client module。Chrome CDP `9333` 捕获 76 个成功请求、无加载失败、无非 2xx 响应、无 console messages、无 uncaught exceptions。该候选是 rc.5 上的完整 PASS。
+隔离 profile 包含 `base + web-app + modlens`。真实 Web profile 在端口 `3081` boot，返回 HTTP `200`，渲染了填充后的 `#root`，暴露 immediate modlens boot entry，并以 HTTP `200` 提供 modlens client module。Chrome CDP `9333` 捕获 76 个成功请求、无加载失败、无非 2xx 响应、无 console messages、无 uncaught exceptions。这是按当时较窄检查范围得出的历史 boot／浏览器 PASS；完整准入由后续生命周期与安全检查决定。
 
 ### better-sidebar
 
@@ -113,8 +117,8 @@ Semver `7.8.5` 对 169 条已发布 DSH peer 声明中 0 条接受 rc.5，因此
 
 ### 历史挂载结果
 
-- modlens `3.21.1` 是完整 rc.5 PASS。
-- 保留的 direct web-ui `0.1.20` 组合在精确 React peer providers 和精确 `allowBuilds` 下是完整 rc.5 PASS；aggregate 只是带重复项的 fallback。
+- modlens `3.21.1` 具备历史 rc.5 boot／浏览器 PASS；按后续有序检查，它不是完整准入结果。
+- 保留的 direct web-ui `0.1.20` 组合在精确 React peer providers 和精确 `allowBuilds` 下具备历史 rc.5 安装、boot 与浏览器 PASS；按后续有序检查，它不是完整准入结果，aggregate 也只是带重复项的 fallback。
 - better-sidebar 截至 `2026-08-19T19:07:10Z` 没有 rc.5 兼容的已发布候选：12 个可安装版本 manifest、`latest: 0.14.0`、registry `modified: 2026-08-19T18:11:22.931Z`，并且 0/178 条 DSH peer 声明接受 rc.5；time-only `0.12.0` 没有 manifest，不是候选，而 `0.14.0` 要求 13 个 DSH peers 为 `^0.1.0-rc.8`。TUI 截至 `2026-08-19T19:09:18.503Z` 没有 rc.5 兼容的已发布候选：16 个版本、`latest: 0.8.5`，并且 0/169 条声明接受 rc.5；`0.8.5` 仍包含 7 个根 runtime `workspace:*` 值和总计 22 个 runtime `workspace:*` 值。
 - Round 19 独立 evidence review 保持历史 `PASS_WITH_CONCERNS`，含 0 Critical、0 Important 和 2 个 sidebar-only Minor findings。Round 20 添加了截至 sidebar cutoff `2026-08-19T19:07:10Z` 和 TUI cutoff `2026-08-19T19:09:18.503Z` 的新发布事实，以及 41/41 内部 TUI evidence verification，但不声称有独立 Round 20 review 或兼容性 PASS。
 - 所需的五仓库 fusion 仍为 **BLOCKED**。Sidebar candidate tarball、manifest、install、profile、boot 和 CDP checks，以及 TUI isolated install、profile、actual boot、terminal UI 和 message round trip 均保持 `NOT RUN`；不接受 compatibility shim、Harness upgrade 或推断出的 runtime result。
@@ -382,7 +386,7 @@ Round 5 按顺序执行强制检查，因此已记录的 `NOT RUN` 是合法结�
 | Describe Image | 安全 FAIL：非 loopback 跨站上传触达 attachment 存储 | 相同安全失败 | `NOT RUN` |
 | `web-ui-all` | 许可证 FAIL：Apache manifest、BSD 正文 | 许可证 FAIL：依赖闭包含冲突身份 | `NOT RUN` |
 
-Pet 与 Git Graph `0.2.9` 各自通过未配对、已撤销、已配对与 loopback 授权探针。Pet 精确客户端生命周期测试通过 5/5。Git Graph 的直接 Host 探针 dispose 两条 route 与一个开放 SSE stream，并在同一注册表无重复重挂；其独立 RED 运行可检测遗留 route、开放 SSE 响应、活动 timer 与重复重挂，随后强制清理把全部计数归零。其精确客户端 apply／dispose／重挂测试通过。baseline、Pet-only 与 Git-only profile 都通过真实系统 Chrome CDP `9333` 的加载、路由、诊断与清理检查；组合 REAL gate 证明完整有序 tool-name 列表与 `base + web-app` 基线相等，并作为 Pet 与 Git Graph 控件最终可见性的证据。
+Task 22 曾确认 Pet 与 Git Graph `0.2.9` 各自通过未配对、已撤销、已配对与 loopback 授权探针。Pet 精确客户端生命周期测试通过 5/5。Git Graph 的直接 Host 探针 dispose 两条 route 与一个开放 SSE stream，并在同一注册表无重复重挂；其独立 RED 运行检测到遗留 route、开放 SSE 响应、活动 timer 与重复重挂，随后强制清理把全部计数归零。其精确客户端 apply／dispose／重挂测试通过。baseline、Pet-only 与 Git-only profile 都通过真实系统 Chrome CDP `9333` 的加载、路由、诊断与清理检查；组合 REAL gate 证明完整有序 tool-name 列表与 `base + web-app` 基线相等，并提供历史可见性证据。由于这些检查遗漏了配置行 fiber dispose 时的活跃 JSON 操作与子进程，Task 33 已取代 Git Graph 的准入结论。
 
 ## Round 25：Task 26 外部候选
 
@@ -395,7 +399,7 @@ Pet 与 Git Graph `0.2.9` 各自通过未配对、已撤销、已配对与 loopb
 | ModLens `3.24.0` | PASS：不含 DSH peer／运行时依赖；精确安装只解析 ModLens、Commander 与 Undici | PASS：恰好一条 `modlens` 配置行 | FAIL：`/modlens/config` 会拒绝的同一跨站请求可被 `POST /modlens/paste` 接受，返回 `200` 并写入所提交的图像字节 | `NOT RUN` | `NOT RUN` |
 | Better Sidebar `0.15.1` | FAIL：全部 14 个 DSH peer 范围均要求 `^0.1.0-rc.8`，公共注册表对 14 个 peer 包提供精确 `0.1.0-rc.5` 的数量为 0，精确 profile 安装在缺失闭包处停止 | `NOT RUN` | `NOT RUN` | `NOT RUN` | `NOT RUN` |
 
-Better Sidebar 源码差异包括 FileTree 文件拖动过滤、subagent 自动打开防抖、Side Chat 展示和 UI 终端 park 生命周期行为。`config.ts`、`prefs-shared.ts`、`tools.ts`、`agent-pty.ts` 与 `trust-fence.ts` 和 `0.15.0` 字节一致，因此产物仍包含用户可写的 `agentTerminalTools` 开关及继承 ambient 环境的 PTY 实现；该静态观察不能替代闭包失败后跳过的检查。Fusion manifest 与两行 patch 保持不变。证据位于 `.superpowers/sdd/ralph-loop-3-task-26/`。
+Better Sidebar 源码差异包括 FileTree 文件拖动过滤、subagent 自动打开防抖、Side Chat 展示和 UI 终端 park 生命周期行为。`config.ts`、`prefs-shared.ts`、`tools.ts`、`agent-pty.ts` 与 `trust-fence.ts` 和 `0.15.0` 字节一致，因此产物仍包含用户可写的 `agentTerminalTools` 开关及继承 ambient 环境的 PTY 实现；该静态观察不能替代闭包失败后跳过的检查。在 Task 26 检查点，Fusion manifest 与两行 patch 保持不变。证据位于 `.superpowers/sdd/ralph-loop-3-task-26/`。
 
 ## Round 26：Task 28 Better Sidebar `0.15.2`
 
@@ -409,4 +413,4 @@ Better Sidebar 源码差异包括 FileTree 文件拖动过滤、subagent 自动�
 | --- | --- | --- | --- | --- | --- | --- | --- |
 | Better Sidebar `0.15.2` | PASS | PASS | FAIL：精确 rc.5 提供方为 0/14 | `NOT RUN` | `NOT RUN` | `NOT RUN` | `NOT RUN` |
 
-Fusion 保持 Better Sidebar 未挂载，并保留精确 Pet 与 Git Graph `0.2.9` 配置行。Task 28 报告为 `.superpowers/sdd/round5-task28-report.md`。
+在 Task 28 检查点，Fusion 保持 Better Sidebar 未挂载，并保留精确 Pet 与 Git Graph `0.2.9` 配置行。Task 33 随后在保留 Task 28 证据的同时取代该 selected-row 结论。Task 28 报告为 `.superpowers/sdd/round5-task28-report.md`。

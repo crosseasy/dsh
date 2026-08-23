@@ -263,3 +263,11 @@
 - **最终复审**: V8 bits 为 P0/P1/P2 `0/0/0`；DSH 为 `PASS / APPROVE` 且 0 findings；安全复审 clean，未发现可利用问题；独立 plan/design/spec alignment 为 `APPROVED`，Critical/Important/Minor 为 `0/0/0`。
 - **Remediation**: 全部有效 finding 均已关闭，包括事务式迟到 acquisition、acquisition 前 CI trap 所有权、Pet 完整私有包副本变异、保留 `Promise.reject(undefined)` 的显式 settlement、带对象 identity 去重的正交 failure 聚合、单一共享 cleanup deadline，以及 deadline 到期后的已观察 best-effort 外层 disposal。
 - **范围与残余**: 全量仓库 coverage 与实际 GitHub-hosted job 未在本地运行。41 个产品文件保持 staged；`.trae/specs/**`、`docs/superpowers/**`、`.superpowers/**` 与 `.learnings/**` 的 cached paths 为空，兼容矩阵、回归报告及规划／证据记录保持 unstaged／untracked；`packages/core/**`、agent-loop 与 session 格式保持零改动。本轮未执行 commit、push、merge、rebase 或 reset。
+
+## Round 6 Final Convergence (2026-08-23)
+
+- **完成／证据**：Task 34、Task 35、Task 36 与 Task 37 已完成；最终 V2 `exact-product-worktree` package 精确包含 43 个产品路径，package SHA-256 为 `74e694a7c5e5bc18452596b0ec70a7379de1d3459c2073d8f0e1eee9c7b34170`，patch SHA-256 为 `1f71831a467bd652af7eeedf1561b0e431c95088d7e3cc26c9dfc4e2d5921581`；bits 为 P0/P1/P2 `0/0/0`，安全复审 clean，产品文档与 plan/design/spec alignment 均为 Critical/Important/Minor `0/0/0`。
+- **发现与修复**：Task 35 以分层 root HTML oracle 修复 Pet boot entry 误报，Task 36 修正文档网站标签契约，Task 37 补齐 CI 手册的 `python-runtime` 并删除 owning Agent Note 的裸任务编号叙事；系统 Chrome 151/CDP `9333` 的 built acceptance 通过 1/1，完整 Web driver 通过 39/39，runtime-final oracle 通过 50/50。
+- **关键决定／残余**：TUI 为 `NOT RUN (not affected)`，公开 TUI 交付保持阶段 2 BLOCKED；实际 GitHub-hosted job 与全量 coverage 未在本地运行。HEAD 保持 `6e0f654` 且 index 为空；恢复 staged-only 交付或清理 history 需要用户另行授权。
+- **文件／Git 边界**：本轮 root agent 与全部子代理均未执行 reset、rebase、新建 commit、push 或 merge。只读预审曾误执行 `git write-tree`，但未改变 ref、index 或 worktree；该事件记录为工具错误，不属于上述 operator attestation 的五类操作，也未被隐瞒。最终 bookkeeping 仅修改授权的 Ralph spec/tasks/checklist/progress、plan/design 英中及 sidecar，并新增最终报告；未修改 43 个产品文件、V2 package、compat matrix、regression 或 Agent Notes。
+- **Post-close 修正**：reviewer 发现并已修复 checklist 中 TUI `NOT RUN (not affected)` 与 Task 34 完成状态两处措辞；Task 38 独立复审为 Critical/Important/Minor `0/0/0`，43 个产品文件与 V2 package 均未变化。

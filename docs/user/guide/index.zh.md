@@ -24,7 +24,7 @@ agent 可以读取和编辑工作区文件、运行命令、委派工作并维�
 
 ## 继续使用
 
-- [组装 Pet 与 Git Graph Fusion Web profile](./fusion-profile.md)
+- [组装仅含 Pet 的 Fusion Web profile](./fusion-profile.md)
 - [Fusion TUI 交付状态](./fusion-tui-profile.md)
 - [集成桌面壳](./desktop-shell-contract.md)
 - [配置模型](./providers.md)

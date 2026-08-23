@@ -201,7 +201,7 @@
 
 - [x] Task 31: 从零冻结本轮审查基线并拆分独立审查域
   - [x] 记录当前分支、HEAD、index tree、staged／unstaged／untracked 路径、目标 plan/design/spec/checklist 与现有 V8 审查包摘要；不得改变既有 staged 产品集合。
-  - [x] 生成只包含当前 exact-staged 产品交付的全新审查包，明确排除 `.trae/specs/**`、`docs/superpowers/**`、`.superpowers/**` 与 `.learnings/**`。
+  - [x] 在当时的 HEAD `108b96a`、index tree `d77fb5a` 和 41 个 staged 产品路径上生成 exact-staged 审查包，明确排除 `.trae/specs/**`、`docs/superpowers/**`、`.superpowers/**` 与 `.learnings/**`；该 package 只代表 Task 31 历史 index，不代表 `6e0f654` 或最终工作树。
   - [x] 以执行时 no-cache 元数据检查所有已记录外部包家族是否出现晚于现有 cutoff 的新候选；有新候选时追加独立审计任务，没有时保存可复算的无新增结论。
   - [x] 将审查分为需求与计划对齐、实现与生命周期、测试与负控、安全、文档语义、运行时与交付边界六个互不写入的审查域。
 
@@ -213,23 +213,79 @@
   - [x] 文档语义审查核对英文、中文、sidecar、Agent Note、用户指南、testing policy、计划与兼容矩阵同代码和证据一致，并检查唯一事实归属和当前态措辞。
   - [x] 运行时与交付审查核对 Chrome CDP `9333`、必要的真实 PTY、CI 拓扑、cleanup、staging 排除和 Git 禁令；汇总所有发现并逐项验证技术事实。
 
-- [ ] Task 33: 以 TDD 修复全部有效阻塞发现
+- [x] Task 33: 以 TDD 修复全部有效阻塞发现
   - [x] 将每个确认的 Critical、Important、P0、P1、P2 或规格违背项追加为具体修复子任务，注明失败证据、目标文件、最小测试和验收命令。
-  - [ ] Task 33.1: 撤销 Git Graph `0.2.9` 准入。现有真实 probe 已证明 active `/git` JSON operation 在 row fiber dispose 后继续 pending 且子进程存活；从 Fusion patch、profile dependency metadata、REAL fixture/lock、ARIA golden、验收断言、产品指南和 owning Agent Note 移除 Git Graph，记录其 lifecycle blocker 与重验条件，将当前 selected row 收敛为仅 Pet `0.2.9`。
-  - [ ] Task 33.2: 修复 `invokeRoute()` 取消传播。先增加真实 hanging handler／Git child 取消测试，证明 acceptance signal 能在 handler 返回前使调用失败并进入 inner Context `finally`；最小实现从调用开始竞争 signal、永久观察被放弃 promise，并在 lifecycle 返回前等待 Context 与进程树停稳。
-  - [ ] Task 33.3: 补齐 blocked-route 完整跨 profile 比较。先增加 body-only 差异负控并确认 RED，再让 Fusion `/` fallback 与独立 `base + web-app` fallback 通过 `assertSameHttpResponse()` 比较 status、headers 和 body。
-  - [ ] Task 33.4: 固定 CI acceptance 命令可达性。先加入 `if [[ 1 -eq 0 ]]` 包裹 acceptance 的 RED mutation，再把现有真实 Bash probe 扩展为完整 launcher 行为探针，要求 acceptance stub 确实执行、cleanup 顺序成立、进程停稳且 profile 删除。
-  - [ ] Task 33.5: 补齐 lifecycle/aggregation 永久负控并删除未用协议。增加内部 `operationTimeoutMs` 自触发、deadline 后 disposer 延迟拒绝无 unhandled rejection、两个相同 primitive failure 按 occurrence 保留的测试；将无调用方返回非空数组的 `cleanup(): Promise<unknown[]>` 收窄为 `Promise<void>` 并删除对应 fulfilled-array 分支。
-  - [ ] Task 33.6: 收敛代码与文档语义。修正 testing policy 的独立 Fusion acceptance tier、managed-process cancellation JSDoc、CI Agent Note 的 `#**`、网站 Fusion 标签、兼容矩阵完整准入定义／Task 31 freshness／历史窄范围 PASS 措辞、regression report 当前 Task 29 指针，以及 plan/design/checklist 的本轮 baseline 指针；所有双语对同步并重录 sidecar。
-  - [ ] 由单写入实现 Subagent 先运行 RED，再做最小修复并运行 GREEN；不得弱化测试、修改核心 `packages/core/**`、引入兼容 shim 或扩大产品范围。
-  - [ ] 每批修复后由独立 Subagent 复审规格符合性、正确性、简洁性、架构、安全和性能；所有阻塞 finding 关闭后才进入最终验证。
-  - [ ] 只 stage 本轮确认的产品代码、测试、产品文档和 Agent Note；计划、规格、证据与学习记录保持 unstaged／untracked。
+  - [x] Task 33.1: 撤销 Git Graph `0.2.9` 准入。现有真实 probe 已证明 active `/git` JSON operation 在 row fiber dispose 后继续 pending 且子进程存活；从 Fusion patch、profile dependency metadata、REAL fixture/lock、ARIA golden、验收断言、产品指南和 owning Agent Note 移除 Git Graph，记录其 lifecycle blocker 与重验条件，将当前 selected row 收敛为仅 Pet `0.2.9`。
+  - [x] Task 33.2: 修复 `invokeRoute()` 取消传播。先增加真实 hanging handler／Git child 取消测试，证明 acceptance signal 能在 handler 返回前使调用失败并进入 inner Context `finally`；最小实现从调用开始竞争 signal、永久观察被放弃 promise，并在 lifecycle 返回前等待 Context 与进程树停稳。
+  - [x] Task 33.3: 在该历史检查点补齐 blocked-route 完整跨 profile 比较。先增加 body-only 差异负控并确认 RED，再让 Fusion `/` fallback 与独立 `base + web-app` fallback 通过 `assertSameHttpResponse()` 比较 status、headers 和 body；Task 35 的分层 oracle 取代该跨 profile root 绝对相等判据，不改写本项 RED/GREEN 历史。
+  - [x] Task 33.4: 固定 CI acceptance 命令可达性。先加入 `if [[ 1 -eq 0 ]]` 包裹 acceptance 的 RED mutation，再把现有真实 Bash probe 扩展为完整 launcher 行为探针，要求 acceptance stub 确实执行、cleanup 顺序成立、进程停稳且 profile 删除。
+  - [x] Task 33.5: 补齐 lifecycle/aggregation 永久负控并删除未用协议。增加内部 `operationTimeoutMs` 自触发、deadline 后 disposer 延迟拒绝无 unhandled rejection、两个相同 primitive failure 按 occurrence 保留的测试；将无调用方返回非空数组的 `cleanup(): Promise<unknown[]>` 收窄为 `Promise<void>` 并删除对应 fulfilled-array 分支。
+  - [x] Task 33.6: 收敛代码与文档语义。修正 testing policy 的独立 Fusion acceptance tier、managed-process cancellation JSDoc、CI Agent Note 的 `#**`、网站 Fusion 标签、兼容矩阵完整准入定义／Task 31 freshness／历史窄范围 PASS 措辞、regression report 当前 Task 29 指针，以及 plan/design/checklist 的本轮 baseline 指针；所有双语对同步并重录 sidecar。
+  - [x] 由单写入实现 Subagent 先运行 RED，再做最小修复并运行 GREEN；不得弱化测试、修改核心 `packages/core/**`、引入兼容 shim 或扩大产品范围。
+  - [x] 每批修复后由独立 Subagent 复审规格符合性、正确性、简洁性、架构、安全和性能；所有阻塞 finding 关闭后才进入最终验证。
+  - [x] 记录并保持当前 Git 边界：执行中观察到 HEAD 已从 Task 31 的 `108b96a`、index tree `d77fb5a` 和 41 个 staged 路径变为本地 commit `6e0f654`，当前 index 为空；该 commit 混合原产品路径、`.trae/specs/**`、`docs/superpowers/**` 与 `.learnings/**`。不得推测执行者，不得 reset、rebase、新建 commit、push 或 merge；恢复 staged-only 交付或清理 history 需要用户另行授权，且不阻塞代码与运行时验证。
 
-- [ ] Task 34: 执行新鲜验证、最终复审与交付对账
-  - [ ] 按最终触达面运行小于一分钟的 focused tests、typecheck、build、0-error lint、hygiene、文档叶级门禁和 staged／working-tree diff checks；长任务在后台运行并轮询。
-  - [ ] 使用系统 Chrome CDP `9333` 运行最终 exact-row built acceptance 与完整现有 Web 工作流；若 TUI 或共享 preset／进程路径受影响，运行真实 fresh/resume PTY；修复所有 console、page、network、cleanup 或残留资源错误。
-  - [ ] 生成最终 exact-staged 审查包并由独立 Subagent 完成 broad code、security、plan/design/spec alignment 与 checklist 审查；若有失败则回到 Task 33。
-  - [ ] 逐项勾选本轮 checklist，确认 index 仅包含产品交付、未执行 commit／push／merge／rebase／reset，并向 `progress.md` append exactly one 本轮总结。
+- [x] Task 34: 执行新鲜验证、最终复审与交付对账
+  - [x] 按最终触达面运行小于一分钟的 focused tests、typecheck、build、0-error lint、hygiene、文档叶级门禁和 staged／working-tree diff checks；长任务在后台运行并轮询。
+  - [x] 使用系统 Chrome CDP `9333` 运行最终 exact-row built acceptance 与完整现有 Web 工作流；若 TUI 或共享 preset／进程路径受影响，运行真实 fresh/resume PTY；修复所有 console、page、network、cleanup 或残留资源错误。
+  - [x] 以原始 base `108b96a` 到最终工作树的精确 43 路径产品 allowlist（Task 31 的 41 个产品路径加 `website/docs.ts` 与 `scripts/project-doc-site.spec.ts`）生成 `exact-product-worktree` package，并另附绑定起止 HEAD、index、worktree hashes 与排除项负控的 HEAD/index/worktree/exclusion 报告；不得把该 package 称为 `exact-staged`。由独立 Subagent 基于该 package 完成 broad code、security、plan/design/spec alignment 与 checklist 审查；若有失败则回到 Task 33。
+  - [x] 逐项勾选本轮 checklist，确认 Task 34 未执行 reset、rebase、新建 commit、push 或 merge，并向 `progress.md` append exactly one 本轮总结；实际恢复 staged-only 交付或清理 history 仍需用户另行授权，不阻塞代码与运行时验证。
+
+- [x] Task 35: 修复 Pet-only blocked-route 跨 profile 分层响应判据
+  - [x] 对 baseline 与 Fusion 各自独立断言：每个 blocked `GET` 的完整响应快照与同一 profile 的 `GET /` 相同，body 保持原始字节相等。
+  - [x] 断言非 fallback 响应在独立启动的 `base + web-app` 与 Fusion profile 间保持完整响应快照相同，body 保持原始字节相等。
+  - [x] 结构化解析两个根响应：每侧各有且仅有一个可解析的 `window.__DSH_BOOT__` 赋值；baseline 不含 Pet，Fusion 只精确增加一个合法 Pet entry；两侧 graph revision 都由各自完整、有序 entries 计算。
+  - [x] 从 Fusion graph 删除 Pet entry 并按剩余完整、有序 entries 重算 graph revision 后，断言完整 Fusion HTML 与 baseline HTML 原始字节相等。
+  - [x] 负控覆盖额外 client entry、共享 entry 字段或顺序漂移、baseline 或 Fusion 的错误 graph revision、boot script 外 body 差异，以及 mounted JSON、redirect、含 stock title 的 route-owned HTML、404 与 405 handler 控制响应，并要求每项使 oracle 失败。
+  - [x] 同步 spec、plan、design、checklist、兼容矩阵、回归报告和 owning Agent Note 的当前判据，更新英文、中文并重录五份伴随记录。
+  - [x] 独立复审与运行时复审均无未解决 finding；系统 Chrome 151/CDP `9333` 的 Pet-only built acceptance 通过 1/1，完整 Web driver 通过 39/39，runtime-final oracle 通过 50/50，资源对账无残留，Task 34 已恢复。
+
+- [x] Task 36: 修复 Fusion 文档网站投影标签契约
+  - [x] 记录并核验测试陈旧、产品标签错误与 `sourceAliases` 干扰三项假设，确认当前 Pet-only 产品标签为权威值。
+  - [x] 只把 `scripts/project-doc-site.spec.ts` 的中英文期望更新为“组装 Fusion Web profile”与“Assemble the Fusion Web profile”，不修改 `website/docs.ts`。
+  - [x] 重跑 `scripts/project-doc-site.spec.ts` 与 `scripts/verify-doc-site-fragments.spec.ts`，要求 46/46 通过，并对限定路径运行 `git diff --check`。
+  - [x] 独立复审确认根因、最小性、43 路径 allowlist 与验证证据后再勾选 Task 36。
+
+- [x] Task 37: 修复 Task 34 最终产品文档复审 finding
+  - [x] 根因：CI 故障切换手册的标准托管必需依赖枚举未随 `all-checks-passed.needs` 加入 `python-runtime`；Fusion owning Agent Note 的交付状态把裸 Task 22／29／35 编号与执行批次叙事写入持久文档。
+  - [x] 最小修复：英中手册枚举加入 `python-runtime`；英中 Delivery status 删除裸任务编号并保留 Pet-only 1/1、39/39、50/50、历史组合适用范围、Pet-only Web 证据未执行 TUI 与 Fusion TUI phase 2 BLOCKED；重录两组 i18n 伴随记录，不修改代码、`progress.md` 或失效 review package。
+  - [x] 门禁：两组 named translation pairing、`verify-agent-note-format`、`verify-md-wrap`、`verify-md-links`、`verify-doc-budgets` 与限定路径 `git diff --check` 全部通过。
+  - [x] 独立复审：确认 1 Important 与 1 Minor 均关闭、英中语义一致、修改范围最小、Task 34 保持未完成，再决定是否勾选 Task 37。
+
+- [x] Task 38: 修复最终 checklist 状态语义
+  - [x] 将本轮 TUI fresh/resume PTY 结论改为：未触达 TUI、shared preset、core、session、subprocess 或 terminal，条件未触发并记录 `NOT RUN (not affected)`；仅在这些路径受影响时才必须运行。
+  - [x] 将 Task 35 末项改为当前状态：Task 34 已在 V2 package、四类复审、对账、bookkeeping 与唯一 `progress.md` 追加后完成。
+  - [x] 记录限定两文件 `git diff --check` 结果；独立复审确认最终复审的 1 Important 与 1 Minor 均关闭后再勾选 Task 38 及其 checklist 项。
+
+- [ ] Task 39: 从当前仓库实态冻结本轮独立审查基线
+  - [ ] 记录当前分支、`HEAD`、父提交、index tree、staged／unstaged／untracked 路径及内容 hash；只读核验 `HEAD^` 是否为本次 Fusion 交付的原始基线，不沿用历史 package 的范围或 clean 结论。
+  - [ ] 分别建立产品改动、计划／规格／执行记录和明确排除项清单；产品范围覆盖从验证后的原始基线到当前工作树的全部 Fusion 文件，排除 `.trae/specs/**`、`docs/superpowers/**`、`.superpowers/**` 与 `.learnings/**`。
+  - [ ] 按 `bits-code-guard` 创建 `/tmp` 工作目录并生成 `diff_files.md`、`review_files.md` 与分组范围；所有审查制品留在 `/tmp`，不加入仓库或 Git index。
+  - [ ] 核对计划、设计、Ralph 规格、任务、清单与当前实现的 selected row、阻塞项、版本、测试数量、运行时结论和 Git 状态，不把已勾选项当作通过证据。
+
+- [ ] Task 40: 并行执行六域从零审查与候选新鲜度检查
+  - [ ] 需求与架构代理逐条映射 plan、design、spec、tasks、checklist 和完整产品范围，报告遗漏、冲突、过期结论、无归属行为与不可验证条件。
+  - [ ] 实现与生命周期代理读取完整实现、调用方和 `docs/defensive-patterns.md`，审查 acquisition、取消、反向释放、deadline、failure aggregation、进程树、profile 组合及 Web／headless／ACP 不变量。
+  - [ ] 测试与 CI 代理验证关键断言会在目标回归下失败，覆盖 Pet 授权、分层 HTML oracle、超时、取消、清理、CI shell 可达性与错误分支，并识别弱断言、竞态和假阳性。
+  - [ ] 安全代理从外部输入追踪到文件、网络、进程、依赖安装和浏览器副作用，审查授权、路径、环境、供应链、CDP 连接、资源耗尽和绕过路径。
+  - [ ] 文档代理按 `dsh-prose-standard`、`dsh-doc-standards` 与双语规则审查产品文档、Agent Note、计划、设计和规格，删除推理过程泄漏、重复事实、过期状态与无权威来源的数字。
+  - [ ] 运行时与交付代理核验真实入口、selected row、fixture 隔离、默认测试离线、Chrome CDP `9333`、TUI 条件、Git 边界和 cleanup；并用执行时 no-cache 元数据检查全部外部包家族是否存在晚于当前 cutoff 的候选。
+  - [ ] 主代理汇总、去重并技术核验全部 finding；每项保留位置、影响、证据、严重度、置信度和最小验收条件，误报必须写明驳回依据。
+
+- [ ] Task 41: 以 TDD 修复全部确认 finding 并独立复审
+  - [ ] 把每个确认的 Critical、Important、P0、P1、P2 或规格违背 finding 追加为具体子任务，写明失败证据、目标文件、最小测试和验收命令。
+  - [ ] 由单一写入代理逐项先运行或新增 RED 证据，再实施最小修复并运行 GREEN；不弱化测试、不修改 `packages/core/**`、不引入兼容 shim、不越过外部候选的首个失败门。
+  - [ ] 产品文档或 Agent Note 变更同步英文、中文和 i18n sidecar；先修改权威正文，再重录伴随记录，不手改生成物。
+  - [ ] 每批修复后由未参与实现的代理复审正确性、生命周期、安全、测试强度、文档语义和范围最小性；仍成立的 finding 返回本任务继续修复。
+  - [ ] 若审查未发现有效问题，保留零 finding 的证据并直接进入 Task 42，不制造代码或文档改动。
+
+- [ ] Task 42: 新鲜验证、最终独立验收与交付对账
+  - [ ] 按最终触达面运行小于一分钟的 focused tests、typecheck、build、零错误 lint、hygiene、必要文档叶级门禁和工作树／index diff checks；长任务后台启动并以小于一分钟的轮询读取结果。
+  - [ ] 使用系统 Chrome 通过 CDP `9333` 运行 Pet-only built acceptance、完整 Web driver 与 runtime-final oracle；不得调用 `chromium.launch()` 或 IDE 浏览器，并要求 console、page、network、target、listener、process、port 与临时目录清理干净。
+  - [ ] 若 Task 41 触达 TUI、共享 preset、core、session、subprocess 或 terminal，则运行真实 PTY fresh/resume、消息往返、支持退出和零残留检查；否则记录 `NOT RUN (not affected)`。
+  - [ ] 生成绑定原始基线、最终 `HEAD`、index 与工作树 hash 的最终产品审查包，证明范围和排除项；由独立代理完成 bits、DSH、安全、文档和 plan/design/spec/checklist 对齐复审。
+  - [ ] 所有复审 finding 关闭后逐项勾选本轮 checklist，确认未执行 commit、push、merge、rebase 或 reset，且 `.trae/specs/**`、`docs/superpowers/**`、`.superpowers/**` 与 `.learnings/**` 未进入新增 staged 产品集合。
+  - [ ] 向 `progress.md` append exactly one 本轮总结，记录完成任务、新鲜验证、修复、关键决定和文件；不得覆盖或重排既有记录。
 
 ## 任务依赖
 
@@ -248,4 +304,6 @@
 - Task 29 依赖 Task 28 的 final selected-row decision；Task 30 依赖 Task 28 与 Task 29 完成，最终顺序为 Task 28 -> Task 29 -> Task 30。
 - Task 31 依赖 Task 30 的交付状态；Task 32 的六个只读审查域依赖 Task 31，可并行执行。
 - Task 33 依赖 Task 32 的发现完成技术事实核验；实现保持单写入，独立复审可并行读取。
-- Task 34 依赖 Task 33 无未解决阻塞 finding；最终复审发现问题时回到 Task 33 修复并复验。
+- Task 34 依赖 Task 33 无未解决阻塞 finding；Task 35、Task 36 与 Task 37 已完成独立复审，Task 34 的最终 package、broad review、Git 对账和唯一 `progress.md` 追加均已完成。
+- Task 39 以当前仓库实态为起点，不依赖历史审查包的结论；Task 40 的六个只读审查域依赖 Task 39，可并行执行。
+- Task 41 依赖 Task 40 完成 finding 汇总和技术核验，并由单一写入代理串行修复；Task 42 依赖 Task 41 无未解决 finding。

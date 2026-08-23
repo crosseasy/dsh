@@ -559,3 +559,164 @@ Call the discovered `integrated_multi_agent_v2` tools directly when they are abs
 - Related Files: `.learnings/ERRORS.md`
 
 ---
+
+## [ERR-20260823-015] code_mode_regex_file_path_enotdir
+
+**Logged**: 2026-08-23
+**Priority**: low
+**Status**: resolved
+**Area**: tooling
+
+### Regex Search Failure
+
+`search_by_regex` failed with `spawn ENOTDIR` when a parallel call used a
+single file as `search_directory_or_file`.
+
+### Regex Search Resolution
+
+Use repository-directory searches or `rg` through `run_command` when the
+search target is a single file. Do not retry the same failing tool call.
+
+---
+
+## [ERR-20260823-016] completed_agent_status_stale
+
+**Logged**: 2026-08-23
+**Priority**: low
+**Status**: resolved
+**Area**: tooling
+
+### Agent Follow-Up Failure
+
+`list_agents` still reported a notified-complete agent as `running`, but
+`followup_task` rejected it because the target had finished.
+
+### Agent Follow-Up Resolution
+
+Treat completion notifications as authoritative and spawn a new focused fixer
+instead of relying on stale list status.
+
+---
+
+## [ERR-20260823-017] readonly_audit_used_write_tree
+
+**Logged**: 2026-08-23
+**Priority**: high
+**Status**: resolved
+**Area**: git
+
+### Read-Only Audit Violation
+
+A read-only verification pre-audit invoked `git write-tree`. The command
+returned the existing `HEAD^{tree}` object and did not change refs, the index,
+or the worktree, but it can write an object and therefore violates a strict
+read-only audit.
+
+### Read-Only Audit Resolution
+
+Fingerprint the index with `git ls-files -s | shasum -a 256` and use
+`git rev-parse HEAD^{tree}` only for the committed tree. Exclude
+`git write-tree` from verification procedures.
+
+---
+
+## [ERR-20260823-018] translation_pairing_extra_separator
+
+**Logged**: 2026-08-23
+**Priority**: low
+**Status**: resolved
+**Area**: documentation
+
+### Pairing Command Failure
+
+A named `verify-translation-pairing` invocation passed an extra `--`; the
+repository script rejected the unknown flag with exit code 2.
+
+### Pairing Command Resolution
+
+Pass the named document paths directly after the script name. The corrected
+command completed successfully.
+
+---
+
+## [ERR-20260823-019] process_probe_self_match_exposed_environment
+
+**Logged**: 2026-08-23
+**Priority**: high
+**Status**: resolved
+**Area**: security
+
+### Process Probe Failure
+
+A `ps ... | rg '<command pattern>'` probe matched its own shell wrapper. The
+internal tool output therefore included the wrapper's expanded environment.
+No output was written to workspace evidence or repeated to the user.
+
+### Process Probe Resolution
+
+The issue recurred with `pgrep -f` because the wrapper command line contained
+the search pattern. Use only a known PID, a listening-port owner, or exact
+process-name matching that does not inspect the wrapper's full command line.
+Never persist or quote self-matched shell command lines from process probes.
+
+---
+
+## [ERR-20260823-020] runtime_evidence_copy_quoting
+
+**Logged**: 2026-08-23
+**Priority**: low
+**Status**: resolved
+**Area**: tooling
+
+### Evidence Copy Failure
+
+A Task 35 auxiliary evidence-copy command had invalid nested shell quoting and
+failed during parsing before performing file operations.
+
+### Evidence Copy Resolution
+
+The runtime verifier used an equivalent command without nested quoting and
+copied the intended 33 evidence files. Runtime checks and cleanup were
+unaffected.
+
+---
+
+## [ERR-20260823-021] status_search_unescaped_group
+
+**Logged**: 2026-08-23
+**Priority**: low
+**Status**: resolved
+**Area**: tooling
+
+### Status Search Failure
+
+An `rg` alternation contained an unescaped literal opening parenthesis and
+failed with `regex parse error: unclosed group`.
+
+### Status Search Resolution
+
+Use repeated fixed-string `-e` patterns for status phrases that contain
+punctuation. The corrected search located every stale Task 35 status.
+
+---
+
+## [ERR-20260823-022] zsh_reserved_path_variable
+
+**Logged**: 2026-08-23
+**Priority**: low
+**Status**: resolved
+**Area**: tooling
+
+### Reconciliation Probe Failure
+
+A post-close helper used zsh's reserved `PATH` variable for a temporary path,
+invalidating the first excluded-drift probe. The issue later recurred with
+lowercase `path`, which is tied to `PATH` in zsh.
+
+### Reconciliation Probe Resolution
+
+Use neutral names such as `candidate_file` for scalar path variables in zsh.
+Both verifiers renamed the variable and reran the probes successfully; the
+failed outputs were not used as evidence.
+
+---

@@ -2,5 +2,5 @@
 # side as of the last confirmed-consistent state. Both languages carry equal authority;
 # after editing either side, bring the other along and re-record with:
 #   pnpm run verify-translation-pairing --write docs/superpowers/plans/fusion-regression-report.md
-fusion-regression-report.md: b905283d19e8b1c90b7ea4552049ce603bfa933d
-fusion-regression-report.zh.md: 9aa9410bc744a0e81d1f4ee7fa0282b062dfe9fa
+fusion-regression-report.md: 565cb3ecac907a614c3255220f8b7c5e8f3b7e56
+fusion-regression-report.zh.md: 5423b07e7e1d6eeb4b403f2d5bcb7860ca62ebed

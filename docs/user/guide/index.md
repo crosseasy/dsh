@@ -24,7 +24,7 @@ The agent can read and edit workspace files, run commands, delegate work, and ma
 
 ## Continue
 
-- [Assemble the Pet and Git Graph Fusion Web profile](./fusion-profile.md)
+- [Assemble the Pet-only Fusion Web profile](./fusion-profile.md)
 - [Fusion TUI delivery status](./fusion-tui-profile.md)
 - [Integrate a desktop shell](./desktop-shell-contract.md)
 - [Configure models](./providers.md)

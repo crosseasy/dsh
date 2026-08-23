@@ -2,5 +2,5 @@
 # side as of the last confirmed-consistent state. Both languages carry equal authority;
 # after editing either side, bring the other along and re-record with:
 #   pnpm run verify-translation-pairing --write .agents/notes/implemented/architecture/2026-08-19-fusion-profile-external-plugin-ownership.md
-2026-08-19-fusion-profile-external-plugin-ownership.md: e246d2b40edc00f763cf88ddb90846fb8b7f6d3d
-2026-08-19-fusion-profile-external-plugin-ownership.zh.md: c4e5e39ad559e852a06421a57d03108d700c3855
+2026-08-19-fusion-profile-external-plugin-ownership.md: daee798bd7a7e5034073ac609209b2c2145d8612
+2026-08-19-fusion-profile-external-plugin-ownership.zh.md: 74d1de5ff04cdd34043a12a03c64b0d54b3ad53d

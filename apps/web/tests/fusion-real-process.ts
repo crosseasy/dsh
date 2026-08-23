@@ -1,7 +1,17 @@
+import { createHash } from 'node:crypto'
 import type { SubprocessHandle, SubprocessOutcome, SubprocessRuntime, SubprocessSpawnSpec } from '@deepseek-ai/dsh-subprocess'
 import type { ContextSnapshotSection, ToolSchema } from '@deepseek-ai/dsh-llm'
+import { JSDOM } from 'jsdom'
 
 const DIAGNOSTIC_OUTPUT_MAX_BYTES = 64 * 1024
+const BOOT_ASSIGNMENT_PREFIX = 'window.__DSH_BOOT__ = '
+const PET_ENTRY_ID = '@linxin666/dsh-pet'
+const PET_INJECT = [
+  '@deepseek-ai/dsh-client-runtime',
+  '@deepseek-ai/dsh-client-connection',
+  '@deepseek-ai/dsh-client-ui-settings',
+  '@deepseek-ai/dsh-client-ui-conversation',
+] as const
 
 /** Total Vitest budget for the Fusion acceptance, including its final cleanup. */
 export const FUSION_ACCEPTANCE_TIMEOUT_MS = 600_000
@@ -107,6 +117,17 @@ export interface HttpResponseSnapshot {
   contentType: string
   location: string
   status: number
+}
+
+interface BootGraph {
+  entries: unknown[]
+  rev: string
+}
+
+interface ParsedBootGraph {
+  contentEnd: number
+  contentStart: number
+  graph: BootGraph
 }
 
 /** Stable fields passed into one scoped model request. */
@@ -438,6 +459,170 @@ export function assertSameHttpResponse(
   )
 }
 
+function failPetOnlyComparison(label: string, detail: string): never {
+  throw new Error(`${label} differs from the base + web-app response: ${detail}`)
+}
+
+function parseBootGraph(body: string, label: string): ParsedBootGraph {
+  const dom = new JSDOM(body, { includeNodeLocations: true })
+  try {
+    const scripts = [...dom.window.document.querySelectorAll('script')]
+      .filter(script => script.textContent?.includes('window.__DSH_BOOT__') ?? false)
+    if (scripts.length !== 1) {
+      return failPetOnlyComparison(
+        label,
+        `expected exactly one window.__DSH_BOOT__ assignment, found ${String(scripts.length)}`,
+      )
+    }
+    const script = scripts[0]!
+    const source = script.textContent ?? ''
+    if (!source.startsWith(BOOT_ASSIGNMENT_PREFIX)) {
+      return failPetOnlyComparison(label, 'window.__DSH_BOOT__ assignment is malformed')
+    }
+    let value: unknown
+    try {
+      value = JSON.parse(source.slice(BOOT_ASSIGNMENT_PREFIX.length))
+    } catch {
+      return failPetOnlyComparison(label, 'window.__DSH_BOOT__ assignment is not JSON')
+    }
+    if (
+      typeof value !== 'object'
+      || value === null
+      || Array.isArray(value)
+      || typeof (value as { rev?: unknown }).rev !== 'string'
+      || !Array.isArray((value as { entries?: unknown }).entries)
+    ) {
+      return failPetOnlyComparison(label, 'window.__DSH_BOOT__ payload is malformed')
+    }
+    const location: unknown = dom.nodeLocation(script)
+    if (
+      typeof location !== 'object'
+      || location === null
+      || !('startTag' in location)
+      || typeof location.startTag !== 'object'
+      || location.startTag === null
+      || !('endOffset' in location.startTag)
+      || typeof location.startTag.endOffset !== 'number'
+      || !('endTag' in location)
+      || typeof location.endTag !== 'object'
+      || location.endTag === null
+      || !('startOffset' in location.endTag)
+      || typeof location.endTag.startOffset !== 'number'
+    ) {
+      return failPetOnlyComparison(label, 'window.__DSH_BOOT__ source offsets are unavailable')
+    }
+    return {
+      contentStart: location.startTag.endOffset,
+      contentEnd: location.endTag.startOffset,
+      graph: value as BootGraph,
+    }
+  } finally {
+    dom.window.close()
+  }
+}
+
+function bootGraphRevision(entries: readonly unknown[]): string {
+  return createHash('sha1').update(JSON.stringify(entries)).digest('hex').slice(0, 12)
+}
+
+function assertValidGraphRevision(graph: BootGraph, label: string): void {
+  if (graph.rev !== bootGraphRevision(graph.entries)) {
+    failPetOnlyComparison(label, 'boot graph revision is not derived from its ordered entries')
+  }
+}
+
+function assertValidPetEntry(value: unknown, label: string): void {
+  if (typeof value !== 'object' || value === null || Array.isArray(value)) {
+    failPetOnlyComparison(label, 'Pet boot entry is malformed')
+  }
+  const entry = value as Record<string, unknown>
+  const keys = Object.keys(entry)
+  if (
+    keys.length !== 4
+    || !['id', 'url', 'rev', 'inject'].every(key => keys.includes(key))
+  ) {
+    failPetOnlyComparison(label, 'Pet boot entry has unexpected fields')
+  }
+  if (
+    entry.id !== PET_ENTRY_ID
+    || typeof entry.rev !== 'string'
+    || entry.rev.length !== 12
+    || entry.rev.split('').some(character => !'0123456789abcdef'.includes(character))
+    || entry.url !== `/plugins/${PET_ENTRY_ID}/client.js?rev=${entry.rev}`
+  ) {
+    failPetOnlyComparison(label, 'Pet boot entry has an invalid id, URL, or revision')
+  }
+  if (JSON.stringify(entry.inject) !== JSON.stringify(PET_INJECT)) {
+    failPetOnlyComparison(label, 'Pet boot entry has an invalid inject list')
+  }
+}
+
+/**
+ * Require the Fusion root response to differ from the stock root only by one valid Pet boot entry.
+ * @param baseline - Root response from the independently booted base and web-app profile.
+ * @param fusion - Root response from the Fusion profile.
+ * @param label - HTTP method and pathname used in diagnostics.
+ * @throws When response metadata, boot data, the Pet entry, revisions, shared entries, or remaining HTML differ.
+ */
+export function assertPetOnlyRootResponse(
+  baseline: HttpResponseSnapshot,
+  fusion: HttpResponseSnapshot,
+  label: string,
+): void {
+  if (
+    baseline.status !== fusion.status
+    || baseline.contentType !== fusion.contentType
+    || baseline.location !== fusion.location
+  ) {
+    failPetOnlyComparison(label, 'status, content type, or location changed')
+  }
+  const baselineBoot = parseBootGraph(baseline.body, `${label} baseline`)
+  const fusionBoot = parseBootGraph(fusion.body, `${label} Fusion`)
+  assertValidGraphRevision(baselineBoot.graph, `${label} baseline`)
+  assertValidGraphRevision(fusionBoot.graph, `${label} Fusion`)
+
+  const baselinePetEntries = baselineBoot.graph.entries.filter(entry =>
+    typeof entry === 'object'
+    && entry !== null
+    && !Array.isArray(entry)
+    && (entry as { id?: unknown }).id === PET_ENTRY_ID)
+  if (baselinePetEntries.length !== 0) {
+    failPetOnlyComparison(label, 'baseline boot graph contains Pet')
+  }
+  const petIndexes = fusionBoot.graph.entries.flatMap((entry, index) =>
+    typeof entry === 'object'
+    && entry !== null
+    && !Array.isArray(entry)
+    && (entry as { id?: unknown }).id === PET_ENTRY_ID
+      ? [index]
+      : [])
+  if (petIndexes.length !== 1) {
+    failPetOnlyComparison(
+      label,
+      `Fusion boot graph contains ${String(petIndexes.length)} Pet entries`,
+    )
+  }
+  const petIndex = petIndexes[0]!
+  assertValidPetEntry(fusionBoot.graph.entries[petIndex], label)
+  const sharedEntries = fusionBoot.graph.entries.filter((_entry, index) => index !== petIndex)
+  if (JSON.stringify(sharedEntries) !== JSON.stringify(baselineBoot.graph.entries)) {
+    failPetOnlyComparison(label, 'shared boot entries changed or were reordered')
+  }
+
+  const normalizedGraph = {
+    ...fusionBoot.graph,
+    rev: bootGraphRevision(sharedEntries),
+    entries: sharedEntries,
+  }
+  const normalizedBody = fusion.body.slice(0, fusionBoot.contentStart)
+    + BOOT_ASSIGNMENT_PREFIX
+    + JSON.stringify(normalizedGraph)
+    + fusion.body.slice(fusionBoot.contentEnd)
+  if (normalizedBody !== baseline.body) {
+    failPetOnlyComparison(label, 'HTML outside the allowed Pet boot delta changed')
+  }
+}
+
 /**
  * Require Fusion to preserve every model-visible field assembled for one agent.
  * @param baseline - Scoped request input from the base and web-app profile.
@@ -736,8 +921,16 @@ async function cleanupAfterFailure(
 
 /**
  * Spawn a managed process and return only after its readiness marker appears.
- * A readiness or spawn failure terminates the complete process tree and waits
- * for quiescence within the configured cleanup budget.
+ * The spawn and readiness signals are combined. Cancellation, readiness
+ * timeout, or spawn failure terminates the complete process tree and waits for
+ * quiescence within the configured cleanup budget.
+ * @param runtime - Process runtime used to spawn the managed tree.
+ * @param spec - Spawn request; its signal participates in cancellation.
+ * @param readiness - Marker, deadline, optional signal, and cleanup budget.
+ * @returns The live process after the readiness marker is observed.
+ * @throws The cancellation reason or readiness/spawn failure after bounded
+ * process-tree cleanup. A cleanup failure is aggregated with the primary
+ * failure.
  */
 export async function startManagedProcess(
   runtime: Pick<SubprocessRuntime, 'spawn'>,
@@ -779,8 +972,18 @@ export async function startManagedProcess(
 }
 
 /**
- * Run one managed command through completion. Its deadline covers the whole
- * tree; cleanup reports when quiescence exceeds the process cleanup budget.
+ * Run one managed command through completion. The caller signal, spawn signal,
+ * and command deadline cancel the complete process tree. Before rejecting, the
+ * command waits for bounded tree and outcome quiescence; cleanup failure is
+ * aggregated with the cancellation, timeout, or process failure.
+ * @param runtime - Process runtime used to spawn the managed tree.
+ * @param spec - Spawn request; its signal participates in cancellation.
+ * @param label - Command name used in timeout and cleanup diagnostics.
+ * @param timeoutMs - Deadline for command completion.
+ * @param signal - Optional caller cancellation signal.
+ * @returns The settled process outcome with bounded stdout and stderr tails.
+ * @throws The original cancellation reason, timeout, or process failure after
+ * bounded cleanup, or an aggregate containing independent cleanup failures.
  */
 export async function runManagedCommand(
   runtime: Pick<SubprocessRuntime, 'spawn'>,

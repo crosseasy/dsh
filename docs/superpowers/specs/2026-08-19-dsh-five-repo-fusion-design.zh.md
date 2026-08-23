@@ -2,10 +2,10 @@
 
 [English](2026-08-19-dsh-five-repo-fusion-design.md) | 中文
 
-- 日期：2026-08-19（v1）；2026-08-20（v2）；2026-08-21 整合 Task 12 证据；2026-08-22 整合 Task 18、Task 22 与 Task 26 证据；2026-08-23 整合 Task 28 与 Task 29 证据
-- 状态：历史设计已同步至完成的 Task 30，包括最终门禁、task review、V8 代码／安全复审、remediation、独立 plan/design/spec alignment、最终对账与 progress
-- 仓库策略：本 tracked 规划文档保留既有 Git index 条目；其本轮工作树修改保持 unstaged
-- 当前结果：staged 产品交付包含精确两行 Pet 与 Git Graph `0.2.9` profile；其当前组合的 fresh Web 回归对完整工作流、精确配置行检查、stock 行为、headless 与 ACP 隔离、诊断和清理通过 36/36 项断言；ModLens `3.24.0` 因服务端请求安全失败，上次截止后的唯一 Better Sidebar 发布版本精确 `0.15.2` 则在安全、生命周期、安装或运行时检查前因公共 rc.5 peer 闭包失败；Task 30 增加事务式外层资源所有权、acquisition 前 CI trap 所有权、Pet 完整私有包副本变异、显式 rejection settlement、带引用 identity 去重的正交 failure 聚合、单一共享 cleanup deadline，以及 deadline 到期后的已观察 best-effort 外层 disposal；Pet 与 Git Graph 四态授权矩阵、已选配置行和 TUI 公开交付的阶段 2 BLOCKED 结论均不变
+- 日期：2026-08-19（v1）；2026-08-20（v2）；2026-08-21 整合 Task 12 证据；2026-08-22 整合 Task 18、Task 22 与 Task 26 证据；2026-08-23 整合 Task 28 与 Task 29 证据及 Task 35 oracle 约定
+- 状态：历史设计已同步至完成的 Task 34、Task 35、Task 36、Task 37 与 Task 38
+- 交付策略：最终 V2 `exact-product-worktree` package 精确包含 43 个产品路径，package SHA-256 为 `74e694a7c5e5bc18452596b0ec70a7379de1d3459c2073d8f0e1eee9c7b34170`，patch SHA-256 为 `1f71831a467bd652af7eeedf1561b0e431c95088d7e3cc26c9dfc4e2d5921581`；其 bits 复审为 P0/P1/P2 `0/0/0`，安全复审 clean，产品文档与 plan/design/spec alignment 复审均为 Critical/Important/Minor `0/0/0`
+- 当前结果：产品交付选择唯一外部配置行，即精确 Pet `0.2.9`。系统 Chrome 151 经 CDP `9333` 的当前 built acceptance 通过 1/1，完整 Web driver 通过 39/39，runtime-final oracle 通过 50/50。console、page、network 与 cleanup 诊断干净，pre/post target、listener、process、port 与临时目录检查均无残留。Git Graph `0.2.9` 保持阻塞；Task 22 与 Task 29 两行结果继续作为已被取代的历史证据。TUI 为 `NOT RUN (not affected)`，公开交付保持阶段 2 BLOCKED。全量仓库 coverage 与实际 GitHub-hosted job 未在本地运行。HEAD 保持 `6e0f654` 且 index 为空；恢复 staged-only 交付或清理 commit history 需要用户另行授权。
 
 ---
 
@@ -17,13 +17,13 @@ Fusion 层把 DeepSeek Harness `0.1.0-rc.5` 与来自五个外部仓库的能力
 | --- | --- | --- |
 | `deepseek-harness-desktop` | Electron 桌面壳 | 仅定义约定；不修改外部仓库 |
 | `liustack/modlens` | 图像桥接 | 精确 `3.24.0` 服务端请求安全失败；Fusion 无配置行 |
-| `zhu1090093659/dsh-web-ui` | Web 能力包与 Liangshen 来源 | `0.2.6` 至 `0.2.9` 均已审计；准入 Pet 与 Git Graph `0.2.9`；保留 Liangshen `0.2.4` 来源；其他身份被阻塞或保持 `NOT SELECTED` |
+| `zhu1090093659/dsh-web-ui` | Web 能力包与 Liangshen 来源 | `0.2.6` 至 `0.2.9` 均已审计；准入 Pet `0.2.9`；Git Graph `0.2.9` 与其他影响决策的身份被阻塞；保留 Liangshen `0.2.4` 来源；其他身份保持 `NOT SELECTED` |
 | `ccch1mneyyy/dsh-TUI` | 终端 UI | 源码运行时选择精确版本 `0.7.1`；`0.8.7`／`0.8.8` 静态阻塞，运行时为 `NOT RUN` |
 | `omdsh-dev/DSH-better-sidebar` | 右侧工作台 | 精确 `0.15.2` 公共 rc.5 peer 闭包失败；不挂载 |
 
 Fusion 的职责是组合与取舍，不是重写。仓库代码拥有 patch bundle、经过安全适配的 Liangshen preset、Web profile 操作步骤、TUI 交付状态文档、测试和 durable 产品文档。外部包依赖树继续由 profile 持有。
 
-最终 Web 外部配置行集合包含 `pet` 与 `ui-git-graph`。
+最终 Web 外部配置行集合仅包含 `pet`。
 
 ---
 
@@ -75,13 +75,13 @@ v2 判据只在隔离安装、组合、真实启动、目标能力可见和诊�
 | SSH 入口和 hosts API | 无已接受所有者 | 全部 28 个 SSH 版本都把已接受的独立终端会话留在插件 dispose 之外 |
 | 移动端远程 UI | 无已接受 Fusion 所有者 | Remote Web UI 准入结果为 0/28；桌面端可保留自身实现 |
 | 宠物 UI | `@linxin666/dsh-pet@0.2.9` | 精确许可证、授权、生命周期、所有权、去重和 Chrome 检查均通过 |
-| 分支选择和提交拓扑 | `@linxin666/dsh-client-ui-git-graph@0.2.9` | 精确许可证、授权、生命周期、所有权、去重和 Chrome 检查均通过 |
+| 分支选择和提交拓扑 | 无已接受所有者 | Git Graph `0.2.9` 会在配置行 fiber dispose 后留下活跃 JSON 操作与子进程 |
 | 皮肤管理 | 无已接受所有者 | `0.1.12` 至 `0.2.9` 许可证冲突；`0.1.11` slot 不可见 |
 | 右侧工作台 | 无已接受所有者 | Better Sidebar `0.15.2` 的公共 rc.5 peer 闭包为 0/14；之后检查均为 `NOT RUN` |
 | Liangshen preset | 仓库 preset，来源为 `0.2.4` | `0.2.8`／`0.2.9` 保留不受约束的 Windows 自定义 Bash；TUI `0.8.7`／`0.8.8` 各自打包第二个所有者 |
 | 终端 UI | 源码运行时：dsh-TUI `0.7.1`；无公开交付 | `0.8.7`／`0.8.8` 各自打包 8 个 Liangshen 文件，新的完整公开 rc.5 闭包结果为 0/41 |
 
-ModLens、SSH、Remote Web UI 与 Task Board 在已发布版本通过首个失败的强制检查及全部后续检查前保持排除。Pet 与 Git Graph 固定为精确 `0.2.9`；更早存在授权缺陷或许可证冲突的版本继续保持拒绝。Files、editor、UI Terminal 和 Source Control 仍属于被阻塞的右侧工作台能力。
+ModLens、SSH、Remote Web UI、Task Board 与 Git Graph 在已发布版本通过首个失败的强制检查及全部后续检查前保持排除。Pet 固定为精确 `0.2.9`；更早存在授权缺陷或许可证冲突的版本继续保持拒绝。Files、editor、UI Terminal 和 Source Control 仍属于被阻塞的右侧工作台能力。
 
 ---
 
@@ -90,7 +90,7 @@ ModLens、SSH、Remote Web UI 与 Task Board 在已发布版本通过首个失�
 ```text
 L3  Desktop shell contract
 L2  Repository Fusion patch, shared Liangshen preset, profile recipes, tests, docs
-L1  Pet and Git Graph 0.2.9
+L1  Pet 0.2.9
 L0  DeepSeek Harness core, agent loop, and session format
 ```
 
@@ -104,9 +104,9 @@ Web profile 顺序为 `base -> web-app -> fusion`。TUI profile 顺序为 `base 
 
 ### 5.1 `@deepseek-ai/dsh-fusion`
 
-该包是纯 patch bundle。其 manifest 在 `profileDependencies` 中记录 Pet 与 Git Graph `0.2.9`，不把外部包声明为普通运行时依赖。其 patch 只插入 `pet` 与 `ui-git-graph`。
+该包是纯 patch bundle。其 manifest 在 `profileDependencies` 中记录 Pet `0.2.9`，不把外部包声明为普通运行时依赖。其 patch 只插入 `pet`。
 
-相应测试比较完整的两项依赖映射与配置行集合，拒绝阻塞包和重复能力包，并通过真实 profile 组合加载该 bundle。
+相应测试比较完整的单项依赖映射与配置行集合，拒绝包括 Git Graph 在内的阻塞包和重复能力包，并通过真实 profile 组合加载该 bundle。
 
 ### 5.2 共享 `liangshen` Preset
 
@@ -116,7 +116,7 @@ Web profile 顺序为 `base -> web-app -> fusion`。TUI profile 顺序为 `base 
 
 ### 5.3 `fusion` 与 `fusion-tui` Profile
 
-Web profile 是可复现的两行操作步骤，不是内置模板。它安装两个精确包与 React `18.3.1` peer，且没有原生构建许可。注册表无法重建已验证 rc.5 闭包时，Fusion TUI 没有受支持的公开操作步骤。
+Web profile 是可复现的单行操作步骤，不是内置模板。它安装精确 Pet 包与 React `18.3.1` peer，且没有原生构建许可。注册表无法重建已验证 rc.5 闭包时，Fusion TUI 没有受支持的公开操作步骤。
 
 Web profile 没有 `allowBuilds` 条目。
 
@@ -136,8 +136,8 @@ Web profile 没有 `allowBuilds` 条目。
 - 外部包缺失时必须在启动阶段快速失败。
 - 模型可见输入仍可从会话日志重建。
 - Runtime event id 保持为 `cordis/request-run`、`cordis/request-run-resolved`、`cordis/dynamic-package`、`cordis/dynamic-retract`、`cordis/inspect-query` 和 `cordis/inspect-query-resolved`；包 rescope 不得改写这些 id 或 locale id，也不得增加兼容 alias。
-- checked-in REAL composition gate 必须通过系统 Chrome CDP `9333` 启动精确两行 `base -> web-app -> fusion` profile；不得调用 `chromium.launch()` 或使用 IDE 浏览器。
-- 默认单测与覆盖率测试保持离线。fixture（测试前置数据）/profile 只包含精确 Pet 与 Git Graph `0.2.9`、React `18.3.1` peer，且不含外部构建许可。Task 22 不向仓库根新增 Pet、Git Graph 或 React 条目，根 `package.json`、lockfile 与 workspace 文件也没有 Task 22 diff。
+- checked-in REAL composition gate 必须通过系统 Chrome CDP `9333` 启动精确单行 `base -> web-app -> fusion` profile；不得调用 `chromium.launch()` 或使用 IDE 浏览器。
+- 默认单测与覆盖率测试保持离线。fixture（测试前置数据）/profile 只包含精确 Pet `0.2.9` 与 React `18.3.1` peer，且不含外部构建许可。仓库根不得增加 Pet 或 React 条目，根 `package.json`、lockfile 与 workspace 文件保持不变。
 - REAL process helper 为 stdout 和 stderr 各保留最多 64 KiB 的 byte-bounded diagnostic tail，同时识别跨 chunk 拆分的 readiness marker。
 
 Better Sidebar 保持阻塞，直到上游部署策略能够隐藏或禁用不安全设置、拒绝已持久化的启用尝试、阻止工具注册，并保留可用的 UI Terminal 和完整 Settings 体验。
@@ -153,7 +153,8 @@ Better Sidebar 保持阻塞，直到上游部署策略能够隐藏或禁用不�
 - **许可证身份：** `0.2.8` 波次有 10 个直接冲突；在 `0.2.9` 中，Chat Recovery 与 Skin Center 仍有直接冲突，Skins 与 `web-ui-all` 则继承冲突的依赖闭包。
 - **Describe Image 授权：** 精确 `0.2.8` 与 `0.2.9` 接受 `/describe-image` 上的非 loopback 跨站上传并触达 attachment 存储。
 - **Remote Web UI 授权：** 精确 `0.2.9` 在 `requirePairingForLan:false` 时跳过 `/remote` HTTP 与 WebSocket 路由的实时设备授权。
-- **Pet 与 Git Graph：** 精确 `0.2.9` 修复许可证身份、保留服务端授权，并通过实时负控、disposer／重挂、隔离 profile 检查和组合 Chrome 运行时 gate。
+- **Pet：** 精确 `0.2.9` 修复许可证身份、保留服务端授权，并通过实时负控、disposer／重挂、隔离 profile 检查和 Chrome 运行时 gate。
+- **Git Graph 生命周期：** 精确 `0.2.9` 修复许可证身份与授权，但活跃 `/git` JSON 操作及其子进程可越过配置行 fiber dispose。仅移除 route 不会结算 handler 或进程树。
 - **侧栏公共闭包：** 执行时无缓存 packument 包含 15 个可安装 manifest，且不存在高于 `0.15.2` 的发布版本。精确 Better Sidebar `0.15.2` 声明 14 个 `^0.1.0-rc.8` DSH peer；公共注册表对 14 个包提供精确 rc.5 的数量为 0。该首个失败后，安全、生命周期、隔离安装、组合、启动与 Chrome 均为 `NOT RUN`。
 - **Peer 漂移：** 已接受包可能声明后续 DSH 或不同 React peer。记录漂移并依赖精确运行时证据；任何依赖变更后都要重跑判据。
 - **Slot 漂移：** 客户端可能成功加载，却注册 rc.5 不存在的 slot；Skin Center `0.1.11` 已证明该问题。
@@ -171,9 +172,11 @@ Better Sidebar 保持阻塞，直到上游部署策略能够隐藏或禁用不�
 
 ### 8.2 精确配置行 Web 检查
 
-验证外部 Host 配置行与浏览器入口恰好为两项、Pet root 和 Git Graph chip 各一个、Pet 状态与 Git 分支探针返回实时数据，且没有外部模型工具；全部阻塞身份必须缺席，同时 stock Web 保持可见且诊断干净。
+验证外部 Host 配置行与浏览器入口恰好为一项、Pet root 唯一、Pet 状态返回实时数据，且没有外部模型工具；Git Graph 与其他全部阻塞身份必须缺席，同时 stock Web 保持可见且诊断干净。
 
-阻塞路由缺席判据把完整稳定的 `GET` 响应与独立启动的 `base + web-app` profile 作精确比较。挂载 JSON、redirect、含 stock title 的 route-owned HTML、404 与 405 控制响应必须因存在差异而失败；`POST /git/branches` 单独证明已准入的 Git 路由完成挂载。
+在每个 profile 内，每个 blocked `GET` 完整响应快照必须与该 profile 自身的 `GET /` 相同，包括 body 原始字节相等。每个非 fallback 完整响应快照必须在独立启动的 `base + web-app` 与 Fusion profile 间保持原始字节相等。
+
+每个根响应必须各有且仅有一个可解析的 `window.__DSH_BOOT__` 赋值。baseline 不含 Pet entry；Fusion 精确增加一个合法 Pet entry；每侧 graph revision 都由该 graph 的完整、有序 entries 计算。从 Fusion graph 删除 Pet entry 并按剩余完整、有序 entries 重算 revision 后，完整 Fusion HTML 必须与 baseline HTML 原始字节相等。额外 client entry、共享 entry 字段或顺序漂移、baseline 或 Fusion 的错误 graph revision、boot script 外 body 差异，以及 mounted JSON、redirect、含 stock title 的 route-owned HTML、404 或 405 控制响应都必须使 oracle 失败。
 
 ### 8.3 TUI 检查
 
@@ -181,7 +184,7 @@ Better Sidebar 保持阻塞，直到上游部署策略能够隐藏或禁用不�
 
 ### 8.4 证据层级
 
-包级证据不能证明组合行为。最终 Web oracle 必须通过系统 Chrome CDP `9333` 使用精确两行 `base -> web-app -> fusion` profile，最终 TUI 证据必须通过真实 PTY 使用可运行 profile。默认单测与覆盖率测试保持离线。
+包级证据不能证明组合行为。最终 Web oracle 必须通过系统 Chrome CDP `9333` 使用精确单行 `base -> web-app -> fusion` profile，最终 TUI 证据必须通过真实 PTY 使用可运行 profile。默认单测与覆盖率测试保持离线。
 
 ---
 
@@ -215,25 +218,25 @@ Round 5 没有候选通过或未通过 Chrome／PTY 验证。精确产物的强�
 
 ## 11. 2026-08-22 Task 22 结果
 
-Task 22 及其独立复审均已完成。Fusion 准入精确 Pet 与 Git Graph `0.2.9`；其他身份都在首个失败或未选择的强制检查停止。[兼容矩阵](../plans/fusion-compat-matrix.md)记录新鲜度截止时间、发布计数、有序检查、各身份停止点与组合运行时证据。
+Task 22 及其独立复审是已完成的历史证据。该任务曾准入精确 Pet 与 Git Graph `0.2.9`；Task 33 根据后续活跃操作生命周期发现取代了 Git Graph 准入结论。[兼容矩阵](../plans/fusion-compat-matrix.md)记录新鲜度截止时间、发布计数、有序检查、各身份停止点与组合运行时证据。
 
 ---
 
 ## 12. 2026-08-22 Task 26 结果
 
-Task 26 在不增加 shim 或修改核心的情况下审计精确 ModLens `3.24.0` 与 Better Sidebar `0.15.1`。两个 tarball 均通过身份、完整性、路径安全与 MIT 许可证检查。ModLens 有 77 个发布版本和 39 个 DSH 候选；其无 DSH 依赖闭包、隔离安装与单行组合通过，随后跨站 paste 请求在服务端安全检查失败。Better Sidebar 有 14 个可安装发布版本；其公共 rc.5 peer 闭包在安装完成前失败。之后的检查均为 `NOT RUN`，两行 Fusion 结果不变。
+Task 26 在不增加 shim 或修改核心的情况下审计精确 ModLens `3.24.0` 与 Better Sidebar `0.15.1`。两个 tarball 均通过身份、完整性、路径安全与 MIT 许可证检查。ModLens 有 77 个发布版本和 39 个 DSH 候选；其无 DSH 依赖闭包、隔离安装与单行组合通过，随后跨站 paste 请求在服务端安全检查失败。Better Sidebar 有 14 个可安装发布版本；其公共 rc.5 peer 闭包在安装完成前失败。之后的检查均为 `NOT RUN`，两行 Fusion 结果在该历史检查点保持不变。
 
 ---
 
 ## 13. 2026-08-23 Task 28 结果
 
-执行时无缓存 Better Sidebar packument 的 HTTP 截止时间为 `2026-08-22T17:01:07Z`，dist-tag 为 `latest: 0.15.2` 与 `beta: 0.12.0-beta.1`，time map 有 16 个版本键，并包含 15 个可安装 manifest。精确 `0.15.2` 发布于 `2026-08-22T15:35:41.933Z`，是上次截止后的唯一候选。其身份、SHA-1 与 SHA-512 SRI、tar 路径安全和 MIT 许可证检查均通过。公共 rc.5 闭包失败，因为全部 14 个 DSH peer 均要求 `^0.1.0-rc.8`，且精确 rc.5 只在 0/14 个包中可用。安全、生命周期、隔离安装、组合、启动与 Chrome 均为 `NOT RUN`；两行 Fusion 结果不变。
+执行时无缓存 Better Sidebar packument 的 HTTP 截止时间为 `2026-08-22T17:01:07Z`，dist-tag 为 `latest: 0.15.2` 与 `beta: 0.12.0-beta.1`，time map 有 16 个版本键，并包含 15 个可安装 manifest。精确 `0.15.2` 发布于 `2026-08-22T15:35:41.933Z`，是上次截止后的唯一候选。其身份、SHA-1 与 SHA-512 SRI、tar 路径安全和 MIT 许可证检查均通过。公共 rc.5 闭包失败，因为全部 14 个 DSH peer 均要求 `^0.1.0-rc.8`，且精确 rc.5 只在 0/14 个包中可用。安全、生命周期、隔离安装、组合、启动与 Chrome 均为 `NOT RUN`；两行 Fusion 结果在该历史检查点保持不变。
 
 ---
 
 ## 14. 2026-08-23 Task 29 结果
 
-精确 Pet 与 Git Graph `0.2.9` profile 在同一次 fresh assembled run 中通过系统 Chrome CDP `9333` 的 36/36 项断言。该运行覆盖对话渲染、工具卡片、New Session 创建或复用、会话列表、fork、resume、compact、两条 export 路径、Search、Settings、模型选择、Pet、Git Graph 与保持不变的 stock Web 行为。Fresh headless 与 ACP 检查继续与 Fusion 隔离。exit、console、page、network、slot、process、port、CDP target、临时目录、进程组与 cleanup 诊断均干净，独立复审没有 finding。历史零行、三行、四行与六行结果继续仅作为被取代证据保留。
+精确 Pet 与 Git Graph `0.2.9` profile 在同一次 fresh assembled run 中通过系统 Chrome CDP `9333` 的 36/36 项断言。该运行覆盖对话渲染、工具卡片、New Session 创建或复用、会话列表、fork、resume、compact、两条 export 路径、Search、Settings、模型选择、Pet、Git Graph 与保持不变的 stock Web 行为。Fresh headless 与 ACP 检查继续与 Fusion 隔离。exit、console、page、network、slot、process、port、CDP target、临时目录、进程组与 cleanup 诊断均干净，独立复审没有 finding。Task 33 在不改变 `36/36` 测量结果的前提下，取代了该两行运行的当前准入效力。
 
 ---
 
@@ -249,15 +252,15 @@ Remediation 集合覆盖事务式迟到 acquisition、CI trap、Pet 私有包副
 
 ## 16. 重新验证条件
 
-外部版本变化时，重跑许可证、安全、生命周期、包级和组合运行时检查，不得沿用 Pet 与 Git Graph `0.2.9` 的结论。只有修改状态的 route 执行适用的请求信任策略，且每个 route disposer 都属于其插件 fiber 后，才能重新考虑 ModLens。只有 dispose 关闭并等待每个已接受的终端与 SSH 资源后，才能重新考虑 SSH。只有实时设备授权不可关闭且完整资源清理通过后，才能重新考虑 Remote Web UI。只有一个已发布 Task Board 产物持有每个客户端 subscription 并通过同页卸载／HMR 验证后，才能重新考虑 Task Board。只有已发布产物具备一致许可证身份，并且注册 rc.5 可见的 Settings 入口后，才能重新考虑 Skin Center。只有已批准 Harness 基线具备完整公共依赖闭包，且包自有批准决策或不可变部署策略同时满足安全与完整工作台要求后，才能重新考虑 Better Sidebar。
+外部版本变化时，重跑许可证、安全、生命周期、包级和组合运行时检查，不得沿用 Pet `0.2.9` 的结论。只有新的精确 Git Graph 发布版本在 dispose 时拒绝新请求，于有界期限内取消并等待全部活跃 JSON／SSE 操作和完整进程树，并通过进行中 JSON 请求卸载与同 Context 重挂负控后，才能重新考虑 Git Graph。只有修改状态的 route 执行适用的请求信任策略，且每个 route disposer 都属于其插件 fiber 后，才能重新考虑 ModLens。只有 dispose 关闭并等待每个已接受的终端与 SSH 资源后，才能重新考虑 SSH。只有实时设备授权不可关闭且完整资源清理通过后，才能重新考虑 Remote Web UI。只有一个已发布 Task Board 产物持有每个客户端 subscription 并通过同页卸载／HMR 验证后，才能重新考虑 Task Board。只有已发布产物具备一致许可证身份，并且注册 rc.5 可见的 Settings 入口后，才能重新考虑 Skin Center。只有已批准 Harness 基线具备完整公共依赖闭包，且包自有批准决策或不可变部署策略同时满足安全与完整工作台要求后，才能重新考虑 Better Sidebar。
 
-历史零行 1/1 与 196/196、六行 156/156、四行 1/1 与 170/170、三行 1/1 与 174/174 结果都只作为被取代的证据保留。当前 Web 目标包含两个精确外部配置行。只有已批准 Harness 基线的一致公开闭包可用且保持一个 Liangshen 所有者后，才能重新考虑 TUI 公开交付；任一路径都需要完整重验安装、lock、所有权、PTY、恢复、退出、清理和公开命令。
+历史零行 1/1 与 196/196、六行 156/156、四行 1/1 与 170/170、三行 1/1 与 174/174，以及 Task 22/29 两行结果都只作为被取代的证据保留。当前 Web 目标包含一个精确外部配置行。只有已批准 Harness 基线的一致公开闭包可用且保持一个 Liangshen 所有者后，才能重新考虑 TUI 公开交付；任一路径都需要完整重验安装、lock、所有权、PTY、恢复、退出、清理和公开命令。
 
 ---
 
 ## 17. 执行交接
 
-Task 28 至 Task 30 已完成。Task 30 完成了最终门禁、task review、V8 package 绑定、broad code 与 security review、全部经验证的 remediation、独立 plan/design/spec alignment、最终 checklist／staging／Git 对账及唯一最终 progress 追加。规划与证据记录保持在 staged 产品集合之外。全量仓库 coverage 与实际 GitHub-hosted job 继续由 CI 持有，本地未运行。
+Task 34 至 Task 38 已完成。43 路径 V2 package 与全部最终复审均 clean；HEAD 保持 `6e0f654` 且 index 为空，恢复 staged-only 交付或清理 history 需要用户另行授权。
 
 ---
 

@@ -43,8 +43,8 @@ describe('Fusion external authorization fixtures', () => {
           graceMs: 50,
           stdio: {
             stdin: 'ignore',
-            stdout: 'ignore',
-            stderr: 'ignore',
+            stdout: 'pipe',
+            stderr: 'pipe',
           },
         })
         started.resolve(undefined)
