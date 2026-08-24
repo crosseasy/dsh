@@ -10,14 +10,12 @@ import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
 import { describe, expect, it, vi } from 'vitest'
 import { Context } from '@deepseek-ai/cordis'
-import type { ShellRunResult, CollectedOutput } from '@deepseek-ai/dsh-shell'
 import { SANDBOX_UNAVAILABLE, SandboxProvider, SandboxUnavailableError } from '@deepseek-ai/dsh-sandbox'
 import type { ConfinedArgv, SandboxExecutionPolicy, SandboxMode, SandboxPolicy } from '@deepseek-ai/dsh-sandbox'
 import { SandboxPolicyService } from '@deepseek-ai/dsh-sandbox-policy'
 import { SandboxBashExecutor } from '@deepseek-ai/dsh-bash-sandbox'
 import LocalSubprocessRuntime from '@deepseek-ai/dsh-subprocess-local'
 import type { SubprocessHandle, SubprocessOutputReader } from '@deepseek-ai/dsh-subprocess'
-import { classifyDenial, classifyRunnerFailure, isRunnerSpawnFailure } from '../src/helpers.ts'
 import type { Config } from '@deepseek-ai/dsh-bash-sandbox'
 
 const spillDir = mkdtempSync(join(tmpdir(), 'dsh-bash-sandbox-spec-'))
@@ -72,14 +70,6 @@ async function setup(
   await ctx.plugin(SandboxBashExecutor, { graceMs: 200, ...execConfig })
   const bash = ctx.shell as SandboxBashExecutor
   return { ctx, bash, calls }
-}
-
-function output(text: string): CollectedOutput {
-  return { text, truncated: false }
-}
-
-function runResult(exitCode: number | null, stderr: string): ShellRunResult {
-  return { exitCode, signal: null, timedOut: false, aborted: false, timeoutMs: 1000, stdout: output(''), stderr: output(stderr) }
 }
 
 function executionPolicy(mode: SandboxMode, workspaceRoot = resolve(process.cwd())): SandboxExecutionPolicy {
@@ -359,148 +349,6 @@ describe('per-call sandbox policy (the session and escalation carrier)', () => {
   })
 })
 
-describe('classifyDenial', () => {
-  it('never classifies a clean exit or a signal kill as a denial', () => {
-    expect(classifyDenial(runResult(0, 'Permission denied'), UNIX_SIGNATURES)).toBe(false)
-    expect(classifyDenial(runResult(null, 'Permission denied'), UNIX_SIGNATURES)).toBe(false)
-  })
-
-  it('classifies failed runs by the wrap\'s own dialect, conservatively', () => {
-    expect(classifyDenial(runResult(1, 'touch: cannot touch /x: Read-only file system'), UNIX_SIGNATURES)).toBe(true)
-    expect(classifyDenial(runResult(1, 'sh: /x: Permission denied'), UNIX_SIGNATURES)).toBe(true)
-    // Bare EPERM is not a Linux runner's dialect: mount/kill/ptrace fail with
-    // it unsandboxed too, and the mode vocabulary governs file effects only —
-    // claiming a file denial here would tell the model the sandbox blocked
-    // something it never governed.
-    expect(classifyDenial(runResult(1, 'mount: Operation not permitted'), UNIX_SIGNATURES)).toBe(false)
-    expect(classifyDenial(runResult(1, 'No such file or directory'), UNIX_SIGNATURES)).toBe(false)
-  })
-
-  it('matches exactly the active backend\'s dialect: EPERM classifies under Seatbelt, EACCES does not under bwrap', () => {
-    // The same stderr flips meaning with the backend: under Seatbelt, EPERM
-    // text IS how the kernel refuses a governed file write; under bwrap's
-    // EROFS-only dialect, `Permission denied` is ordinary DAC, not the
-    // sandbox — per-wrap signatures are what keep both classifications honest.
-    expect(classifyDenial(runResult(1, 'bash: /etc/x: Operation not permitted'), ['operation not permitted'])).toBe(true)
-    expect(classifyDenial(runResult(1, 'sh: /x: Permission denied'), ['read-only file system'])).toBe(false)
-  })
-})
-
-describe('isRunnerSpawnFailure', () => {
-  it.each(['EACCES', 'ENOENT'])(
-    'attributes executable-class spawn code %s to argv[0] once cwd ambiguity is eliminated',
-    (code) => {
-      const runner = join(spillDir, 'runner')
-      const error = Object.assign(new Error('spawn failed'), { code, syscall: `spawn ${runner}`, path: runner })
-      expect(isRunnerSpawnFailure(error, runner, process.cwd())).toBe(true)
-    },
-  )
-
-  it.each(['ENOEXEC', 'ENOTDIR', 'EPERM'])(
-    'keeps unproven executable code %s ordinary despite synthetic argv[0] fields',
-    (code) => {
-      const runner = join(spillDir, 'runner')
-      const error = Object.assign(new Error('spawn failed'), { code, syscall: `spawn ${runner}`, path: runner })
-      expect(isRunnerSpawnFailure(error, runner, process.cwd())).toBe(false)
-    },
-  )
-
-  it('requires a usable caller cwd before classifying absolute, bare, or relative runners', () => {
-    const missingWorkdir = join(spillDir, 'missing-workdir')
-    for (const [, runner] of RUNNER_FORMS) {
-      const error = Object.assign(new Error('spawn failed'), { code: 'ENOENT', syscall: `spawn ${runner}`, path: runner })
-      expect(isRunnerSpawnFailure(error, runner, missingWorkdir)).toBe(false)
-    }
-    const fileWorkdir = join(spillDir, 'not-a-workdir')
-    writeFileSync(fileWorkdir, '')
-    const error = Object.assign(new Error('spawn failed'), { code: 'ENOTDIR', syscall: 'spawn node', path: 'node' })
-    expect(isRunnerSpawnFailure(error, 'node', fileWorkdir)).toBe(false)
-  })
-
-  it('rejects resource, non-spawn, mismatched-program, and unstructured failures', () => {
-    const missingRunner = join(spillDir, 'definitely-missing-runner')
-    const spawnError = (code: unknown, syscall: unknown = `spawn ${missingRunner}`, path: unknown = missingRunner) =>
-      Object.assign(new Error('spawn failed'), { code, syscall, path })
-    const spawnErrorWithoutPath = (syscall: string) =>
-      Object.assign(new Error('spawn failed'), { code: 'ENOENT', syscall })
-
-    expect(isRunnerSpawnFailure(spawnError('EMFILE'), missingRunner, process.cwd())).toBe(false)
-    expect(isRunnerSpawnFailure(spawnError('ENOMEM'), missingRunner, process.cwd())).toBe(false)
-    expect(isRunnerSpawnFailure(spawnError(2), missingRunner, process.cwd())).toBe(false)
-    expect(isRunnerSpawnFailure(spawnError('ENOENT', 'open'), missingRunner, process.cwd())).toBe(false)
-    expect(isRunnerSpawnFailure(spawnError('ENOENT', 1), missingRunner, process.cwd())).toBe(false)
-    expect(isRunnerSpawnFailure(spawnError('ENOENT', 'spawn', process.execPath), missingRunner, process.cwd())).toBe(false)
-    expect(isRunnerSpawnFailure(spawnError('ENOENT', 'spawn', 1), missingRunner, process.cwd())).toBe(false)
-    expect(isRunnerSpawnFailure(spawnError('ENOENT', 'spawn', ''), missingRunner, process.cwd())).toBe(false)
-    expect(isRunnerSpawnFailure(spawnErrorWithoutPath('spawn'), missingRunner, process.cwd())).toBe(false)
-    expect(isRunnerSpawnFailure(spawnErrorWithoutPath('spawn other-runner'), missingRunner, process.cwd())).toBe(false)
-    expect(isRunnerSpawnFailure(undefined, missingRunner, process.cwd())).toBe(false)
-    expect(isRunnerSpawnFailure(null, missingRunner, process.cwd())).toBe(false)
-    expect(isRunnerSpawnFailure(spawnError('ENOENT'), undefined, process.cwd())).toBe(false)
-  })
-
-  it('accepts only syscall and error-path facts that identify the exact runner program', () => {
-    const runner = join(spillDir, 'runner with spaces')
-    const spawnError = (syscall: string, path?: string) =>
-      Object.assign(new Error('spawn failed'), { code: 'ENOENT', syscall, path })
-
-    expect(isRunnerSpawnFailure(spawnError('spawn', runner), runner, process.cwd())).toBe(true)
-    expect(isRunnerSpawnFailure(spawnError(`spawn ${runner}`, runner), runner, process.cwd())).toBe(true)
-    expect(isRunnerSpawnFailure(spawnError(`spawn ${runner}`), runner, process.cwd())).toBe(true)
-    expect(isRunnerSpawnFailure(spawnError('spawn other-runner', runner), runner, process.cwd())).toBe(false)
-  })
-})
-
-describe('classifyRunnerFailure', () => {
-  it('ignores empty and whitespace-only fatal signatures instead of treating exit status or notice text as evidence', () => {
-    const notice = 'landlock-run: partial enforcement (older Landlock ABI)'
-    const emptyRule = [{ allowedExitCodes: [125], fatalSignatures: ['', ' ', '\t'] }]
-    expect(classifyRunnerFailure(125, '', emptyRule)).toBeUndefined()
-    expect(classifyRunnerFailure(125, notice, emptyRule)).toBeUndefined()
-  })
-
-  it('keeps valid fatal signatures active beside an ignored empty entry', () => {
-    const notice = 'landlock-run: partial enforcement (older Landlock ABI)'
-    const fatal = 'landlock-run: ruleset creation failed'
-    const rules = [{
-      allowedExitCodes: [125],
-      fatalSignatures: ['', ' ', 'landlock-run: '],
-      informationalLines: [notice],
-    }]
-    expect(classifyRunnerFailure(125, `${notice}\nchild diagnostic\n${fatal}`, rules)).toEqual({ detail: fatal })
-  })
-
-  it('requires Landlock exit 125 plus a non-notice fatal line and returns that original line', () => {
-    const notice = 'landlock-run: partial enforcement (older Landlock ABI)'
-    const rules = [{ allowedExitCodes: [125], fatalSignatures: ['landlock-run: '], informationalLines: [notice] }]
-    expect(classifyRunnerFailure(1, notice, rules)).toBeUndefined()
-    expect(classifyRunnerFailure(2, notice, rules)).toBeUndefined()
-    expect(classifyRunnerFailure(125, notice, rules)).toBeUndefined()
-    expect(classifyRunnerFailure(125, notice.toUpperCase(), rules)).toBeUndefined()
-    expect(classifyRunnerFailure(125, `${notice}: extra detail`, rules))
-      .toEqual({ detail: `${notice}: extra detail` })
-    expect(classifyRunnerFailure(125, `${notice}\nlandlock-run: exec failed: No such file or directory`, rules))
-      .toEqual({ detail: 'landlock-run: exec failed: No such file or directory' })
-  })
-
-  it.each([
-    'landlock-run: usage error: missing `-- <argv>...` command',
-    'landlock-run: landlock is not enforced by this kernel (ABI unsupported or disabled)',
-    'landlock-run: cannot open rule path: /gone: No such file or directory',
-    'landlock-run: landlock ruleset error: Invalid argument',
-    'landlock-run: exec failed: Permission denied',
-    'landlock-run: out of memory',
-    'landlock-run: future fatal diagnostic',
-  ])('keeps known and future Landlock fatal diagnostics fail-closed: %s', (fatal) => {
-    const rules = [{
-      allowedExitCodes: [125],
-      fatalSignatures: ['landlock-run: '],
-      informationalLines: ['landlock-run: partial enforcement (older Landlock ABI)'],
-    }]
-    expect(classifyRunnerFailure(125, fatal, rules)).toEqual({ detail: fatal })
-  })
-})
-
 describe('result facts', () => {
   it.each([126, 127])('keeps a successfully launched wrapped child exit %i as an ordinary outcome', async (exitCode) => {
     const { bash } = await setup({}, argv => ({
@@ -638,15 +486,117 @@ describe('background sandbox facts', () => {
     expect(quick.sandbox).toEqual({ mode: 'read-only', denied: false, enforcement: 'full' })
   })
 
-  it('a signal-killed task is never a denial (null exit code)', async () => {
-    const { bash } = await setup()
-    const task = bash.start(bash.resolve({ command: 'echo "Permission denied" >&2; sleep 30' }))
-    // Let the stderr land before the kill so the classifier sees the
-    // signature and must still refuse it on the null exit code alone.
-    await vi.waitFor(() => { expect(task.readOutput().delta).toContain('Permission denied') })
-    task.kill()
-    await task.done
-    expect(task.sandbox).toEqual({ mode: 'read-only', denied: false, enforcement: 'full' })
+  it.each([
+    {
+      description: 'a caller-killed task when Bash exits 143',
+      outcome: { exitCode: 143, signal: null },
+      kill: true,
+      abort: false,
+      status: 'killed',
+      denied: false,
+    },
+    {
+      description: 'an AbortSignal-killed task when Bash exits 143',
+      outcome: { exitCode: 143, signal: null },
+      kill: false,
+      abort: true,
+      status: 'killed',
+      denied: false,
+    },
+    {
+      description: 'a signal-killed task',
+      outcome: { exitCode: null, signal: 'SIGTERM' },
+      kill: false,
+      abort: false,
+      status: 'killed',
+      denied: false,
+    },
+    {
+      description: 'a naturally exited task when Bash exits 143',
+      outcome: { exitCode: 143, signal: null },
+      kill: false,
+      abort: false,
+      status: 'completed',
+      denied: true,
+    },
+  ] as const)('classifies $description against its lifecycle status', async ({ outcome: settled, kill, abort, status, denied }) => {
+    const { ctx, bash } = await setup()
+    try {
+      const controller = new AbortController()
+      const outcome = Promise.withResolvers<{
+        exitCode: number | null
+        signal: NodeJS.Signals | null
+      }>()
+      const emptyReader: SubprocessOutputReader = {
+        readFrom: () => ({ text: '', nextOffset: 0, lossy: false }),
+      }
+      const denialReader: SubprocessOutputReader = {
+        readFrom: () => ({ text: 'bash: /x: Permission denied\n', nextOffset: 31, lossy: false }),
+      }
+      vi.spyOn(ctx.subprocess, 'spawn').mockReturnValue({
+        pid: 42,
+        stdin: undefined,
+        stdout: undefined,
+        stderr: undefined,
+        collected: { stdout: emptyReader, stderr: denialReader },
+        done: outcome.promise,
+        terminate: vi.fn(),
+        waitForExit: async () => true,
+      } satisfies SubprocessHandle)
+
+      const task = bash.start(bash.resolve({
+        command: 'ignored',
+        ...(abort ? { signal: controller.signal } : {}),
+      }))
+      if (kill) expect(task.kill()).toBe(true)
+      if (abort) controller.abort()
+      outcome.resolve(settled)
+      await task.done
+
+      expect(task.status).toBe(status)
+      expect(task.exitCode).toBe(settled.exitCode)
+      expect(task.signal).toBe(settled.signal)
+      expect(task.sandbox).toEqual({ mode: 'read-only', denied, enforcement: 'full' })
+    } finally {
+      await ctx.fiber.dispose()
+    }
+  })
+
+  it('keeps an EMFILE spawn rejection with denial text killed and unattributed', async () => {
+    const { ctx, bash } = await setup()
+    try {
+      const outcome = Promise.withResolvers<{
+        exitCode: number | null
+        signal: NodeJS.Signals | null
+      }>()
+      const emptyReader: SubprocessOutputReader = {
+        readFrom: () => ({ text: '', nextOffset: 0, lossy: false }),
+      }
+      vi.spyOn(ctx.subprocess, 'spawn').mockReturnValue({
+        pid: -1,
+        stdin: undefined,
+        stdout: undefined,
+        stderr: undefined,
+        collected: { stdout: emptyReader, stderr: emptyReader },
+        done: outcome.promise,
+        terminate: vi.fn(),
+        waitForExit: async () => true,
+      } satisfies SubprocessHandle)
+
+      const task = bash.start(bash.resolve({ command: 'ignored' }))
+      outcome.reject(Object.assign(new Error('Permission denied'), {
+        code: 'EMFILE',
+        syscall: 'spawn bash',
+        path: 'bash',
+      }))
+      await task.done
+
+      expect(task.status).toBe('killed')
+      expect(task.readOutput().delta).toContain('spawn failed: Error: Permission denied')
+      expect(task.sandbox).toEqual({ mode: 'read-only', denied: false, enforcement: 'full' })
+    } finally {
+      await ctx.fiber.dispose()
+    }
   })
 
   it('disposal kills wrapped background jobs (inherited HMR safety)', async () => {

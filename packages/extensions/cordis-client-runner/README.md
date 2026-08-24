@@ -2,11 +2,11 @@
 
 English | [中文](README.zh.md)
 
-Browser half of dynamic dual-half plugin packages. The host-side runner holds every definition's code in process memory and asks the open pages, over a `cordis/request-run` event, whether to run one; this package answers that request, turns the definition into a live browser plugin, and turns a `dynamicCordisRunner/retract` event back into a clean page.
+Browser half of dynamic dual-half plugin packages. The host-side runner holds every definition's code in process memory and asks the open pages, over a `cordis/request-run` event, whether to run one; this package answers that request, turns the definition into a live browser plugin, and turns a `cordis/dynamic-retract` event back into a clean page.
 
 ## What it does
 
-1. **Event subscription** — the four announcements are forwarded host cordis events, so this package consumes `cordis/request-run`, `cordis/request-run-resolved`, and `dynamicCordisRunner/retract` through `ctx.remote.$on`, whose key set IS the api-remotes allowlist.
+1. **Event subscription** — the forwarded announcements are host Cordis events, so this package consumes `cordis/request-run`, `cordis/request-run-resolved`, `cordis/dynamic-retract`, `cordis/inspect-query`, and `cordis/inspect-query-resolved` through `ctx.remote.$on`, whose key set is the api-remotes allowlist.
 2. **Closure evaluation** — the browser half's source runs as an async function body whose parameters are its symbol surface (`React`, `console`, `styles`, `host`, plus teaching traps shadowing `setTimeout`/`fetch`/`require`). No JSX, no TypeScript, no module imports.
 3. **Guard facade** — `apply` receives a whitelisting proxy over the real fiber ctx: lifecycle verbs plus the services the returned plugin declared in its own `inject` (so the object form `{ inject: ['slots'], apply(ctx) {} }` is what reaches a service; a plain function has no declaration site and reaches none). The `slots` seat assigns the shadowing priority (registering IS shadowing, newest run wins); the `theme` seat pins the override layer's source to the package id and hangs its disposer on the fiber.
 4. **Loader entries** — the guarded plugin is seated in the module table and mounted through `loader.create`, so a dynamic package rides the same activation gating, fiber-effect cleanup, and status projection as a static one. Unload is entry removal plus factory invalidation plus style removal.

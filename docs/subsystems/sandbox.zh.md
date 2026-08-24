@@ -149,7 +149,7 @@ interface ConfinedArgv {
 }
 ```
 
-[本地提供方](../../packages/sandbox/sandbox-local/README.zh.md)拥有运维配置，并将其 runner 方言映射到这些规则。[沙箱化 bash 消费方](../../packages/shell/bash-sandbox/README.zh.md)拥有 spawn 与结果归因。
+[本地提供方](../../packages/sandbox/sandbox-local/README.zh.md)拥有运维配置，并将其 runner 方言映射到这些规则。`@deepseek-ai/dsh-shell` 拥有供 [Bash](../../packages/shell/bash-sandbox/README.zh.md) 与 [PowerShell](../../packages/shell/pwsh-sandbox/README.zh.md) 沙箱提供方共用的 spawn 来源归因、runner 失败和拒绝分类；两个提供方各自保留命令方言与进程生命周期。
 
 ## 提供方与 fail-closed 错误
 

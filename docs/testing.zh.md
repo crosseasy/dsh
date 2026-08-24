@@ -2,7 +2,9 @@
 
 [English](testing.md) | 中文
 
-本文说明本仓库的分层测试方式，以及保持绿色测试套件有意义的规则。命令见根目录 [AGENTS.md](../AGENTS.md)；相关 Agent Note 承载设计动机。
+本文规定测试层级及保持绿色结果有效的规则。命令见根目录 [AGENTS.md](../AGENTS.md)；相关 Agent Note 承载设计动机。
+
+<a id="tiers"></a>
 
 ## 层级
 
@@ -11,6 +13,7 @@
 - **真实 API e2e**（`pnpm run test:e2e`）：带密钥测试调用真实提供方 API，包括 DeepSeek 模型以及各提供方特有的冒烟测试；这些测试各自由自己的密钥控制（`EXA_API_KEY`、`PERPLEXITY_API_KEY` 等），缺少密钥时套件会自动跳过，使 keyless CI 保持绿色（[真实 API e2e Agent Note](../.agents/notes/implemented/testing/2026-06-19-real-api-e2e-ci.zh.md)）。
 - **快照**（`pnpm run test:snapshot`）：无密钥预期输出覆盖对外行为（传输约定与呈现），持久化日志则固定组装后的后端行为。ACP 启动真实的自动化服务器示例、回放录制会话，并对归一化 JSON-RPC 与重新持久化的日志执行 diff（[ACP 快照 Agent Note](../.agents/notes/implemented/testing/2026-06-19-acp-snapshot-tests.zh.md)）；headless 后端场景通过未导出的 JSONL 测试 driver 启动各自显式的示例组装，而 `apps/cli` 则单独负责产品 CLI（命令行界面）`dsh --profile headless` 的验收。当模型 transcript（文本记录）发生变化时使用 `pnpm run test:snapshot:record`，回放输入仍然有效时使用 `pnpm run test:snapshot:refresh`；请审查每一处 JSONL 与预期输出差异。一个 ACP 场景（`text-turn`）固定完整的系统提示词与工具 schema 内容；其他 fixture（测试前置数据）将其 token 化，因此修改只会扰动一行（[pinned-header Agent Note](../.agents/notes/archived/testing/2026-07-06-pin-request-header-content-in-one-scenario.md)）。
 - **Web 浏览器快照**（`pnpm run test:web`；必需的 Linux PR（Pull Request）门禁）：Chromium 将回放后的浏览器输出与 `apps/web/tests/snapshots/` 比较。CI 强制只读的 `DSH_SNAPSHOT=replay`，绝不写入预期输出；record/refresh 留在本地，每处 diff 都须评审（[web e2e 车道](../.agents/notes/implemented/testing/2026-07-24-web-gui-browser-e2e-lane.zh.md)、[CI 门禁决策](../.agents/notes/implemented/testing/2026-07-30-web-browser-snapshot-ci-gate.zh.md)）。`test:web` 会[先构建](../.agents/notes/implemented/bug-fix/2026-07-28-themed-scrollbars-and-reserved-gutter.zh.md)以交付插件 CSS。
+- **Fusion 外部 profile 验收**（`pnpm run test:fusion:acceptance`；独立的必需 Linux PR 作业 `fusion / external-profile snapshot`）：通过已安装 route 和系统 Chrome CDP `9333` 检查 profile-local/private-copy 授权；cleanup 在一个共享截止时间内达到完全停稳（[CI 手册](../.agents/notes/implemented/process/2026-07-26-ci-failover-runbook.zh.md)）。
 
 会话 fixture 保留 header 与 payload，但省略正文序号／时间 envelope。回放会合成这些字段；运行时持久化不变。fixture 使用规范打包行；[迁移器](../scripts/migrate-packed-session-fixtures.ts)会改写旧布局。
 

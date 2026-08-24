@@ -30,7 +30,7 @@ export default class PartialLandlockSandboxProvider extends SandboxProvider {
         ...argv,
       ],
       enforcement: 'partial',
-      denialSignatures: ['permission denied'],
+      denialSignatures: ['', ' ', '\t', 'permission denied'],
       runnerFailureRules: [{
         allowedExitCodes: [125],
         fatalSignatures: ['landlock-run: '],

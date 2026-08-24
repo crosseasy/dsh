@@ -34,6 +34,6 @@ Status: implemented
 
 ## 后果
 
-DeepSeek Harness 不再提供终端 UI 包。现有 import 和依赖该包的 `cordis.yml` 条目会直接失败，不会得到兼容转换。Web 仍是已交付的交互界面；ACP、JSON-RPC 与一次性 CLI 仍是 Web 之外的入口。
+DeepSeek Harness 不交付第一方终端 UI 包。外部 `@deepseek-harness-tui/dsh-tui@0.7.1` 已在纯 rc.5 源码闭包下通过运行时验证，但公开 profile 组装仍为阶段 2 BLOCKED：历史公开安装尝试在其直接查询的子集中发现 23 个缺失包，新的完整查询则在历史源码验证闭包的 41 个包中找到 0 个精确 rc.5；交付细节与重新验证条件由 [Fusion 外部插件所有权](../architecture/2026-08-19-fusion-profile-external-plugin-ownership.zh.md)负责。这不会恢复 `packages/ui/tui`，也不会使 TUI 归安装本体持有。现有 import 和依赖已删除包的 `cordis.yml` 条目会直接失败，不会得到兼容转换。Web 仍是由安装本体持有的交互界面；ACP、JSON-RPC 与一次性 CLI 仍是 Web 之外的入口。
 
 提供方无关的命令、用户交互、审批、工具呈现、PTY 与会话投影能力仍可供其他宿主使用。重新引入终端前端时，必须为其提供具名产品或部署、显式包边界、具体交互提供方，以及组装后的生命周期与 transcript（文本记录）验收。

@@ -1,15 +1,11 @@
 /**
- * Internal sandbox-result classification helpers — deliberate call-for-call
- * mirror of `@deepseek-ai/dsh-bash-sandbox/src/helpers.ts` (the pwsh twin of
- * the bash consumer shares the identical classification dialect).
- *
- * @module @deepseek-ai/dsh-pwsh-sandbox/helpers
+ * Shared classification for sandbox-consuming shell providers.
+ * @module @deepseek-ai/dsh-shell/sandbox
  */
 
-/* jscpd:ignore-start */
 import { accessSync, constants, statSync } from 'node:fs'
-import type { ShellRunResult } from '@deepseek-ai/dsh-shell'
 import type { RunnerFailureRule } from '@deepseek-ai/dsh-sandbox'
+import type { ShellRunResult } from './types.ts'
 
 /** Node-local spawn codes proven to identify executable resolution or permission failure. */
 const EXECUTABLE_SPAWN_CODES = new Set(['EACCES', 'ENOENT'])
@@ -26,11 +22,20 @@ function isUsableWorkdir(path: string): boolean {
 }
 
 /**
- * Attribute only Node ENOENT/EACCES failures with positive argv[0] provenance
- * after independently ruling out the caller-owned cwd. A supplied error path
- * must exactly identify the runner; without one, the syscall must. With a
- * usable cwd, these codes describe resolution or execute permission for that
- * argv[0] or its shebang interpreter.
+ * Fatal runner evidence retained for infrastructure-error detail.
+ */
+interface SandboxRunnerFailureMatch {
+  /** The original stderr line that matched a fatal signature. */
+  detail: string
+}
+
+/**
+ * Attributes a Node spawn rejection to the sandbox runner only when the
+ * caller-owned workdir is usable and the error reports `ENOENT` or `EACCES`.
+ * A present `path` must equal the runner program and pair with `spawn` or the
+ * exact `spawn <runner>` syscall; without `path`, the syscall must be that
+ * exact runner-specific value.
+ *
  * The workdir is checked at classification time, not atomically with spawn;
  * concurrent path replacement may change attribution but cannot permit an
  * unconfined execution.
@@ -39,7 +44,7 @@ function isUsableWorkdir(path: string): boolean {
  * @param workdir - the caller-owned spawn cwd, checked independently for usability.
  * @returns whether the rejection has executable-specific runner evidence.
  */
-export function isRunnerSpawnFailure(
+export function isSandboxRunnerSpawnFailure(
   error: unknown,
   runnerProgram: string | undefined,
   workdir: string,
@@ -55,37 +60,35 @@ export function isRunnerSpawnFailure(
   return syscall === 'spawn' || syscall === exactSyscall
 }
 
-/** Fatal runner evidence retained for infrastructure-error detail. */
-interface RunnerFailureMatch {
-  /** The original stderr line that matched a fatal signature. */
-  detail: string
-}
-
 /**
- * Classify a failed run against the selected backend's denial dialect.
+ * Classifies a nonzero foreground run by matching stderr against only the
+ * selected sandbox backend's denial dialect. Matching is case-insensitive,
+ * ignores signatures that are empty after trimming, and otherwise preserves
+ * each signature's original whitespace.
  * @param result - settled foreground run.
- * @param signatures - case-insensitive denial substrings from the active wrap.
+ * @param signatures - denial substrings from the active wrap.
  * @returns whether the failed run matches that denial dialect.
  */
-export function classifyDenial(result: ShellRunResult, signatures: readonly string[]): boolean {
-  return matchesSignature(result.exitCode, result.stderr.text, signatures)
+export function classifySandboxDenial(result: ShellRunResult, signatures: readonly string[]): boolean {
+  return matchesSandboxSignature(result.exitCode, result.stderr.text, signatures)
 }
 
 /**
- * Classify one settled process against the selected backend's structured
- * runner-failure rules. Each rule requires a nonzero exit, its optional
- * exit-code gate, and a fatal signature on one stderr line after exact
- * informational lines are excluded.
+ * Classifies a settled process against the selected sandbox backend's
+ * structured runner-failure rules. A match requires a nonzero numeric exit,
+ * the rule's optional exit-code gate, and a case-insensitive fatal signature
+ * on one stderr line after case-insensitive exact informational lines are
+ * excluded. Empty or whitespace-only fatal signatures are ignored.
  * @param exitCode - process exit code; null means signal termination.
  * @param stderr - collected stderr text, left unchanged.
  * @param rules - structured runner-failure rules from the active wrap.
  * @returns the first matching fatal line, or undefined when evidence is insufficient.
  */
-export function classifyRunnerFailure(
+export function classifySandboxRunnerFailure(
   exitCode: number | null,
   stderr: string,
   rules: readonly RunnerFailureRule[],
-): RunnerFailureMatch | undefined {
+): SandboxRunnerFailureMatch | undefined {
   if (exitCode === null || exitCode === 0) return undefined
   const lines = stderr.split(/\r?\n/)
   for (const rule of rules) {
@@ -106,15 +109,20 @@ export function classifyRunnerFailure(
 }
 
 /**
- * Match a non-zero exit against case-insensitive stderr signatures.
+ * Matches a nonzero numeric exit against case-insensitive stderr signatures.
+ * Signatures that are empty after trimming are ignored; every other signature
+ * is matched as its original, untrimmed substring.
  * @param exitCode - process exit code; null means signal termination.
  * @param stderr - collected stderr text.
- * @param signatures - substrings identifying the selected backend's dialect.
- * @returns whether this is a non-zero exit whose stderr matches a signature.
+ * @param signatures - substrings identifying the selected sandbox backend's dialect.
+ * @returns whether this is a nonzero exit whose stderr matches a signature.
  */
-export function matchesSignature(exitCode: number | null, stderr: string, signatures: readonly string[]): boolean {
+export function matchesSandboxSignature(
+  exitCode: number | null,
+  stderr: string,
+  signatures: readonly string[],
+): boolean {
   if (exitCode === null || exitCode === 0) return false
   const lowered = stderr.toLowerCase()
-  return signatures.some(signature => lowered.includes(signature.toLowerCase()))
+  return signatures.some(signature => signature.trim().length > 0 && lowered.includes(signature.toLowerCase()))
 }
-/* jscpd:ignore-end */

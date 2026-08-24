@@ -45,6 +45,8 @@
     "test:web:refresh": "npm run build && DSH_SNAPSHOT=refresh vitest run --config vitest.web.config.ts",
     "test:web:built": "vitest run --config vitest.web.config.ts",
     "test:web:ci": "tsx scripts/run-web-snapshots.ts",
+    "test:fusion:acceptance": "npm run build && npm run test:fusion:acceptance:built",
+    "test:fusion:acceptance:built": "vitest run --config vitest.fusion-acceptance.config.ts",
     "test:web:perf": "npm run build && npm run test:web:perf:built",
     "test:web:perf:built": "DSH_SNAPSHOT=replay vitest run --config vitest.web.perf.config.ts",
     "test:web:stress": "npm run build && vitest run --config vitest.web-stress.config.ts",
@@ -182,6 +184,7 @@
     "tsx": "^4.22.4",
     "typescript": "^6.0.3",
     "vite-tsconfig-paths": "^6.1.1",
-    "vitest": "^4.1.8"
+    "vitest": "^4.1.8",
+    "yaml": "2.9.0"
   }
 }

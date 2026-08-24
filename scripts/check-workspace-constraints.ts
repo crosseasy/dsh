@@ -141,6 +141,11 @@ function workspaceManifests(): WorkspaceManifest[] {
 }
 
 const packageFileExtras: Readonly<Record<string, readonly string[]>> = {
+  // Profile bundles publish their dsh.bundle.patch layer beside the lib.
+  '@deepseek-ai/dsh-base': ['cordis.patch.yml'],
+  '@deepseek-ai/dsh-fusion': ['cordis.patch.yml'],
+  '@deepseek-ai/dsh-web-app': ['cordis.patch.yml'],
+  '@deepseek-ai/dsh-headless': ['cordis.patch.yml'],
   // Statically linked client libraries keep their stylesheets next to the emitted
   // JavaScript, which imports them by relative path: the compile shell runs
   // them through its own CSS pipeline, so the sheets are published artifacts.

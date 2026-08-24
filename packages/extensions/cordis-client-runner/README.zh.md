@@ -2,11 +2,11 @@
 
 [English](README.md) | 中文
 
-动态双半插件包的浏览器半。host 侧 runner 把每个定义的代码留在进程内存里，并经一条 `cordis/request-run` 事件向打开的页面发问「要不要运行它」；本包回答这个请求、把定义变成活的浏览器插件，并把 `dynamicCordisRunner/retract` 事件变回干净的页面。
+动态双半插件包的浏览器半。host 侧 runner 把每个定义的代码留在进程内存里，并经一条 `cordis/request-run` 事件向打开的页面发问「要不要运行它」；本包回答这个请求、把定义变成活的浏览器插件，并把 `cordis/dynamic-retract` 事件变回干净的页面。
 
 ## 它做什么
 
-1. **事件订阅** —— 四条公告是转发的 host cordis 事件，所以本包经 `ctx.remote.$on` 消费 `cordis/request-run`、`cordis/request-run-resolved` 与 `dynamicCordisRunner/retract`，而 `$on` 的键面就是 api-remotes 的白名单。
+1. **事件订阅** —— 转发公告是 host Cordis 事件，所以本包经 `ctx.remote.$on` 消费 `cordis/request-run`、`cordis/request-run-resolved`、`cordis/dynamic-retract`、`cordis/inspect-query` 与 `cordis/inspect-query-resolved`，而 `$on` 的键面就是 api-remotes 的白名单。
 2. **闭包求值** —— 浏览器半的源码作为一个 async 函数体运行，其参数即符号面（`React`、`console`、`styles`、`host`，外加遮蔽 `setTimeout`/`fetch`/`require` 的教学陷阱）。无 JSX、无 TypeScript、不能 import 模块。
 3. **guard 门面** —— `apply` 收到的是真 fiber ctx 之上的白名单代理：生命周期动词，加上**返回的 plugin 自己在 `inject` 里声明**的服务（所以要用对象形态 `{ inject: ['slots'], apply(ctx) {} }` 才拿得到服务；裸函数没有声明位，拿不到任何服务）。`slots` 座位分配遮蔽 priority（注册即遮蔽，最新一次运行者胜出）；`theme` 座位把覆盖层的 source 钉成包 id，并把它的 disposer 挂到 fiber 上。
 4. **loader entry** —— 加了 guard 的插件被塞进模块表，再经 `loader.create` 挂载，于是动态包与静态包共享同一套激活门控、fiber effect 清理与状态投影。卸载 = 移除 entry + 失效 factory + 撤下样式。
