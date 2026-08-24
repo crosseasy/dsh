@@ -271,3 +271,84 @@
 - **关键决定／残余**：TUI 为 `NOT RUN (not affected)`，公开 TUI 交付保持阶段 2 BLOCKED；实际 GitHub-hosted job 与全量 coverage 未在本地运行。HEAD 保持 `6e0f654` 且 index 为空；恢复 staged-only 交付或清理 history 需要用户另行授权。
 - **文件／Git 边界**：本轮 root agent 与全部子代理均未执行 reset、rebase、新建 commit、push 或 merge。只读预审曾误执行 `git write-tree`，但未改变 ref、index 或 worktree；该事件记录为工具错误，不属于上述 operator attestation 的五类操作，也未被隐瞒。最终 bookkeeping 仅修改授权的 Ralph spec/tasks/checklist/progress、plan/design 英中及 sidecar，并新增最终报告；未修改 43 个产品文件、V2 package、compat matrix、regression 或 Agent Notes。
 - **Post-close 修正**：reviewer 发现并已修复 checklist 中 TUI `NOT RUN (not affected)` 与 Task 34 完成状态两处措辞；Task 38 独立复审为 Critical/Important/Minor `0/0/0`，43 个产品文件与 V2 package 均未变化。
+
+## Task 42 Final Acceptance (2026-08-23)
+
+- **完成任务**：Task 42（新鲜验证、最终独立验收与交付对账）完成；Task 0–41 此前均已完成。基线冻结 `HEAD=a5e6deb6f9fbf17d31e8a593722cb0063969549a`、空 index、44 个产品/支持路径（43 产品路径 + `.gitignore`）；当前 Web 外部集合精确一行 `include:pet -> @linxin666/dsh-pet@0.2.9`，七个 blocker（Git Graph、ModLens、SSH、Remote Web UI、Task Board、Skin Center、Better Sidebar）保持未挂载。
+- **新鲜验证**：focused tests 通过（fusion-real-process + fusion-external-auth + ci-workflow 3 files/153 tests）；build 退出 0；typecheck 退出 0；lint 在 2467 文件 0 warnings/0 errors；hygiene 叶级门禁 agent-note-format 542、translation-pairing、rescope-vendor:check（4473 文件）、md-links 1911、md-wrap 1874、doc-budgets 9、cordis-config 124、package-invariants 220、project-doc-site 41/41 与 `git diff --check` 全部通过。系统 Chrome 151/CDP `9333` 的 Pet-only built acceptance（内含 built gate + 完整 Web driver + runtime-final oracle 单一 lifecycle）通过 1/1；运行后无残留临时目录、进程或 Fusion CDP page target。未调用 `chromium.launch()` 或 IDE 浏览器。
+- **TUI**：`NOT RUN (not affected)`——Task 41 产品改动仅限 Fusion 测试、`scripts/ci-workflow.spec.ts` 与 owning Agent Note，未触达 TUI、共享 preset、core、session、subprocess 或 terminal；公开 TUI 交付保持阶段 2 BLOCKED。
+- **独立复审**：六域并行只读复审——代码/生命周期无未解决 finding（Task 41 五项修复均正确落地）；安全无可利用 finding；测试/负控无 HIGH/MEDIUM（5 项 LOW 硬化提示，判定为非缺陷、按 Simplicity/Surgical 不扩范围）；plan/design/spec/checklist 对齐一致。
+- **发现与修复**：文档复审发现 1 项 MINOR——已发布产品指南 `docs/user/guide/fusion-tui-profile.{md,zh.md}` 的“当前发布证据”仍为陈旧事实（19 版本 / `0.8.7`、`0.8.8` / `2026-08-21T02:11:00Z` 截止）。已按权威 owning Agent Note 修正为 20 个可安装版本 / `0.9.0`（单一 Liangshen 所有权失败，后续 security/closure/install/profile/PTY `NOT RUN`）/ `2026-08-23T11:18:55Z` 截止；重录 i18n sidecar，named translation pairing、md-links、md-wrap、project-doc-site 41/41 与限定 `git diff --check` 通过。
+- **并发写入观察**：本轮期间另一并发进程持续编辑执行记录（tasks.md、compat-matrix、plan/design/regression 及 sidecar），并新增 Task 42.1（T42-WEB-COMPACT-001，Web driver `/compact` 竞态修复）与 Task 42.2（T42-DOC-MATRIX-001，兼容矩阵状态）。按 Ralph 守则未回滚这些改动；本代理的独立 tracked-gate 验收 1/1 与其 runtime PASS 互为印证。
+- **关键决定与 Git 边界**：本轮未执行 commit、push、merge、rebase 或 reset；HEAD 仍为 `a5e6deb`，index 为空。`.trae/specs/**`、`docs/superpowers/**`、`.superpowers/**` 与 `.learnings/**` 未进入新增 staged 产品集合；全量仓库 coverage 与实际 GitHub-hosted job 未在本地运行。`packages/core/**`、agent-loop 与 session 格式保持零改动。
+- **文件变更**：`docs/user/guide/fusion-tui-profile.md`、`docs/user/guide/fusion-tui-profile.zh.md`、`docs/user/guide/fusion-tui-profile.i18n.yaml`（陈旧当前态修复）；`.trae/specs/fuse-five-repositories/{tasks.md,checklist.md,progress.md}`（本轮账本）。
+
+## Task 43.6 Final Correction (2026-08-24)
+
+- **完成任务**：Task 42、Task 43、Task 43.6 与 Task 43.6.6 已收口。最终审查包重建为显式 47 路径 `exact-product-worktree` package，路径为 `.superpowers/sdd/fusion-final-47/review-package.md`，SHA-256 为 `177ee237ae7a232ba7f9012167bf1c3c3dce5a403dcb0f951b1917d177cdc564`，产品 binary diff SHA-256 保持 `5702846d37d25a615aac8c22b9145b4dc568da0a0a10b22a52a24b7a87212405`。
+- **新鲜验证**：`doc-sync` 已由生成器修复并重新通过 28/28；之后 `typecheck`、`build`、零错误 `lint`、`hygiene`、`git diff --check`、`git diff --cached --check` 和 review-package SHA 校验均通过。验证代理记录 focused Vitest 3 files / 250 tests 通过，系统 Chrome CDP `9333` 的 `test:fusion:acceptance:built` 通过 1/1，且未使用 `chromium.launch()` 或 IDE 浏览器。
+- **复审结果**：bits 复审为 P0/P1/P2 `0/0/0`；安全复审 approved；文档/规格对齐 approved；重建 package 后的代码/生命周期复审为 PASS；最终 alignment evidence 复审为 PASS。旧代码/生命周期 P1 仅由 stale package 导致，已由重建包和复审核销。
+- **问题处理**：旧 `doc-sync` stale catalog 根因为生成产物未刷新；已运行 `gen-config-catalog`、`gen-cordis-catalog` 和 config catalog pairing 修复。`pnpm run test:fusion:acceptance -- built` 被确认是错误命令形式，正确 built lane 为 `pnpm run test:fusion:acceptance:built`。
+- **关键决定与边界**：当前 Git index 仍包含被排除的执行记录和非 Fusion shell/sandbox/runtime-simplification 改动，因此不能称为干净 Fusion-only staged package；最终验收只绑定显式 47 路径 allowlist package。未执行 commit、push、merge、rebase、reset、stage、unstage 或新的 `git write-tree`。既有三次 `git write-tree` 违规已在 plan、design、spec、tasks 和 checklist 中记录，且无证据显示其改变 HEAD、index 或 worktree。
+- **文件变更**：`.superpowers/sdd/fusion-final-47/{review-package.md,review-package.sha256,reconciliation.md,final-verification-addendum.md}`、`docs/config-catalog.{md,zh.md,i18n.yaml}`、`packages/extensions/tool-cordis/src/api-catalog.ts`、`docs/subsystems/typert.{md,zh.md,i18n.yaml}`、`docs/superpowers/plans/2026-08-19-dsh-five-repo-fusion.{md,zh.md,i18n.yaml}`、`docs/superpowers/specs/2026-08-19-dsh-five-repo-fusion-design.{md,zh.md,i18n.yaml}`、`.trae/specs/fuse-five-repositories/{spec.md,tasks.md,checklist.md,progress.md}`。
+
+## Round 2
+
+- **Verdict**: FAIL
+- **Scope reviewed**: Broad; five-repository Fusion spec/tasks/checklist/progress, original plan/design, Fusion bundle and profile metadata, REAL acceptance support tests, CI lifecycle checks, documentation gates, and Git delivery boundary.
+- **Verification results**:
+  - Build/Runtime: PASS for executable gates; `pnpm run typecheck`, `pnpm run build`, `pnpm run lint:contracts-ready`, `pnpm run hygiene`, `pnpm run doc-sync`, `pnpm run docs:check`, `git diff --check`, `git diff --cached --check`, and `pnpm run test:fusion:acceptance:built` all exited 0. Built Fusion acceptance used system Chrome CDP `9333` and passed 1/1.
+  - Tests/Coverage: PASS for relevant focused coverage; `pnpm exec vitest run apps/web/tests/fusion-real-process.spec.ts apps/web/tests/fusion-external-auth.spec.ts scripts/ci-workflow.spec.ts scripts/rescope-vendor.spec.ts` passed 4 files / 316 tests, including adversarial rescope, cleanup, timeout, CI lifecycle, and Pet authorization probes. Full repository coverage was not run because the local acceptance plan requires focused gates and CI owns the exhaustive coverage lane.
+  - Checklist audit: 146/147 passed, 1 failed; the new unchecked checkpoint records the Git index delivery-boundary gap.
+- **Risks and issues**: P1 - the current Git index contains execution/spec paths (`.trae/specs/**`, `docs/superpowers/**`, `.learnings/**`) and staged non-Fusion shell/sandbox/runtime-simplification paths, so the original task cannot be called fully complete as a clean Fusion-only staged delivery even though runtime and repository gates pass.
+
+## Round 3
+
+- Task 44 completed: rebuilt the Git index to an audited Fusion-only delivery boundary with 26 staged paths, all belonging to `.superpowers/sdd/fusion-final-47/product-paths.txt`; execution records and non-Fusion shell/sandbox/runtime-simplification paths remain only in the working tree.
+- Issue fixed: the first staging pass included `packages/extensions/tool-cordis/src/api-catalog.ts`; a follow-up single-writer unstage removed it, and the independent boundary review passed.
+- Key decision: no product file content was edited for Task 44; only the Git index boundary changed through `git restore --staged` and `git add`; no commit, push, merge, rebase, reset, or new `git write-tree` was executed.
+- Files changed: `.trae/specs/fuse-five-repositories/tasks.md`, `.trae/specs/fuse-five-repositories/checklist.md`, and `.trae/specs/fuse-five-repositories/progress.md`.
+
+## Round 4
+
+- **Verdict**: FAIL
+- **Scope reviewed**: Broad; five-repository Fusion spec/tasks/checklist/progress, original plan/design, staged 26-path Fusion delivery boundary, Fusion bundle/profile metadata, REAL acceptance, CI lifecycle tests, Pet authorization/process/rescope tests, documentation gates, and root Git/worktree boundaries.
+- **Verification results**:
+  - Build/Runtime: FAIL overall; `pnpm run typecheck`, `pnpm run build`, `pnpm run lint:contracts-ready`, `pnpm run doc-sync`, `pnpm run docs:check`, `git diff --check`, `git diff --cached --check`, and `pnpm run test:fusion:acceptance:built` all exited 0. The built Fusion acceptance used system Chrome CDP `9333` and passed 1/1. `pnpm run hygiene` exited 1 at `rescope-vendor:check` with `ENOENT` opening `packages/shell/bash-sandbox/src/helpers.ts`, which is deleted in the current unstaged worktree.
+  - Tests/Coverage: PASS for relevant focused coverage; `pnpm exec vitest run apps/web/tests/fusion-real-process.spec.ts apps/web/tests/fusion-external-auth.spec.ts scripts/ci-workflow.spec.ts scripts/rescope-vendor.spec.ts` passed 4 files / 316 tests, including adversarial rescope, cleanup, timeout, CI lifecycle, and Pet authorization probes. `pnpm exec vitest run packages/bundle/fusion/tests/fusion.spec.ts` passed 1 file / 1 test. Full repository coverage was not run because the local acceptance plan uses focused gates and CI owns exhaustive coverage.
+  - Checklist audit: 147/148 passed, 1 failed; the new unchecked checkpoint records the current-worktree hygiene failure.
+- **Risks and issues**: P1 - root hygiene cannot pass from the current worktree because `rescope-vendor:check` reads a tracked path that is currently deleted outside the staged Fusion allowlist. The staged Fusion delivery boundary itself passed: 26 staged paths are all contained in `.superpowers/sdd/fusion-final-47/product-paths.txt`, and no staged path matches `.trae/specs/**`, `docs/superpowers/**`, `.superpowers/**`, `.learnings/**`, or the non-Fusion shell/sandbox/runtime-simplification prefixes.
+
+## Round 5
+
+- Task 45 completed: `rescope-vendor` now filters generic tracked-file traversal to files that exist in the current worktree, so deleted tracked shell helper files no longer make `rescope-vendor:check` fail with `ENOENT`.
+- The exact-edit path remains strict: declared exact-edit targets and file-specific postconditions still fail loudly when missing, preserving the rescope safety contract.
+- Verification passed: focused RED/GREEN coverage for deleted tracked files, `pnpm run rescope-vendor:check`, `pnpm run hygiene`, and independent reviewer re-run of the same checks all exited 0.
+- Files changed: `scripts/rescope-vendor.ts`, `scripts/rescope-vendor.spec.ts`, `.trae/specs/fuse-five-repositories/tasks.md`, `.trae/specs/fuse-five-repositories/checklist.md`, `.trae/specs/fuse-five-repositories/progress.md`.
+
+## Round 6
+
+- **Verdict**: FAIL
+- **Scope reviewed**: Broad; five-repository Fusion spec/tasks/checklist/progress, original plan/design current-status text, staged Fusion delivery boundary, Fusion bundle/profile metadata, REAL acceptance support tests, CI lifecycle checks, documentation gates, hygiene, and Git index boundaries.
+- **Verification results**:
+  - Build/Runtime: FAIL overall; executable gates passed: `pnpm run typecheck`, `pnpm run build`, `pnpm run lint:contracts-ready`, `pnpm run doc-sync`, `pnpm run docs:check`, `pnpm run hygiene`, `git diff --check`, `git diff --cached --check`, and `pnpm run test:fusion:acceptance:built` all exited 0. Built Fusion acceptance used system Chrome CDP `9333` and passed 1/1. The failing scope is documentation-state: live index evidence is `cached_count=26`, `cached_excluded_count=0`, and `cached_not_in_allowlist_count=0`, but the plan, design, and Ralph spec current-status text still say the current Git index is contaminated.
+  - Tests/Coverage: PASS for relevant focused coverage; `pnpm exec vitest run apps/web/tests/fusion-real-process.spec.ts apps/web/tests/fusion-external-auth.spec.ts scripts/ci-workflow.spec.ts scripts/rescope-vendor.spec.ts packages/bundle/fusion/tests/fusion.spec.ts` passed 5 files / 318 tests, including adversarial rescope, cleanup, timeout, CI lifecycle, and Pet authorization probes. Full repository coverage was not run because the local acceptance plan uses focused gates and CI owns exhaustive coverage.
+  - Checklist audit: 148/149 passed, 1 failed.
+- **Risks and issues**: P2 - plan, design, and Ralph spec still describe the current Git index as contaminated after Task 44/45 cleanup, while live `git diff --cached` evidence shows the staged set is Fusion-only and allowlisted. This does not block runtime behavior, but it means the original plan/design/spec synchronization task is not complete.
+
+## Round 7
+
+- Task 46 completed: plan, design, and Ralph spec now record the live Git index as an audited 26-path Fusion allowlist staged delivery with no excluded execution records and no unrelated or non-Fusion staged paths; Task 46 and the final checklist item are checked.
+- Issue fixed: the checked Task 46 row initially kept the stale phrase that plan/design/spec still claimed index contamination; the fix rewrote it to completed/current-state wording and the independent recheck approved it.
+- Key decision: execution records and unrelated/non-Fusion work remain outside the index, while the staged Fusion allowlist remains intact; no product code or Git index operation was needed.
+- Files changed: `docs/superpowers/plans/2026-08-19-dsh-five-repo-fusion.{md,zh.md,i18n.yaml}`, `docs/superpowers/specs/2026-08-19-dsh-five-repo-fusion-design.{md,zh.md,i18n.yaml}`, `.trae/specs/fuse-five-repositories/{spec.md,tasks.md,checklist.md,progress.md}`.
+
+## Round 8
+
+- **Verdict**: PASS
+- **Scope reviewed**: Broad; five-repository Fusion spec/tasks/checklist/progress, original plan/design current-status text, staged Fusion allowlist boundary, Fusion bundle/profile metadata, Pet authorization and process lifecycle tests, CI lifecycle tests, rescope-vendor behavior, documentation gates, diff hygiene, and built runtime acceptance through system Chrome CDP `9333`.
+- **Verification results**:
+  - Build/Runtime: PASS; prior Round 8 checkpoint commands `pnpm run typecheck`, `pnpm run build`, `pnpm run lint:contracts-ready`, and `pnpm run hygiene` exited 0. Continued verification ran `pnpm run doc-sync` with 28/28 gates passed, `pnpm run docs:check` with VitePress build and fragment verification passed, `git diff --check` and `git diff --cached --check` exited 0, staged allowlist audit reported 26 staged paths with 0 excluded and 0 not allowed, and `pnpm run test:fusion:acceptance:built` passed 1/1 using the real CLI and system Chrome CDP `9333`.
+  - Tests/Coverage: PASS for relevant focused coverage; `pnpm exec vitest run apps/web/tests/fusion-real-process.spec.ts apps/web/tests/fusion-external-auth.spec.ts scripts/ci-workflow.spec.ts scripts/rescope-vendor.spec.ts packages/bundle/fusion/tests/fusion.spec.ts` passed 5 files / 318 tests, including adversarial rescope, cleanup, timeout, CI lifecycle, and Pet authorization probes. `docs:check` added 2 files / 46 doc-site tests. Full repository coverage was not run because the local acceptance plan uses focused gates and CI owns exhaustive coverage.
+  - Checklist audit: 149/149 passed, 0 failed; tasks audit was 47/47 checked, 0 unchecked.
+- **Risks and issues**: No in-scope blocking issues found. Residual external gaps remain as documented: GitHub-hosted Fusion CI and full repository coverage were not run locally, and public TUI delivery remains phase 2 BLOCKED / `NOT RUN (not affected)`.

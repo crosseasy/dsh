@@ -40,7 +40,7 @@ NODE
 
 ## 固定 profile 依赖
 
-已接受包及其 React peer 由 profile 持有，不需要原生构建许可。请精确保留新发布版本例外：
+已接受包及其 React 对等依赖（peer dependency）由 profile 持有，不需要原生构建许可。请精确保留新发布版本例外：
 
 ```sh
 cat > "$FUSION_PROFILE/pnpm-workspace.yaml" <<'YAML'
@@ -103,10 +103,10 @@ NODE
 dsh --profile fusion --port 3080
 ```
 
-打开命令打印的 URL。页面保留 stock Web 界面，包括左侧 `ui-sidebar`、Settings 与 New Session 入口。Pet 显示为唯一的全局 dock。在新会话的 agent preset 选择器中选择**梁神模式**。Web API 返回的 preset roster 使用 id `liangshen`；该 preset 由仓库持有，不属于 Fusion 外部配置行。
+打开命令打印的 URL。页面保留 stock Web 界面，包括左侧 `ui-sidebar`、Settings 与 New Session 入口。Pet 显示为唯一的全局 dock。在新会话的 agent（智能体） preset 选择器中选择**梁神模式**。Web API 返回的 preset roster 使用 id `liangshen`；该 preset 由仓库持有，不属于 Fusion 外部配置行。
 
-checked-in 浏览器验收通过系统 Chrome CDP `9333` 启动该单行配方。它会验证精确包与配置行身份、唯一 Pet root、Pet 状态探针返回实时数据、阻塞包缺失、stock Web 可见性、干净诊断与清理。
+确认页面保持上述状态，且浏览器控制台没有错误。仓库验证使用 [Fusion 外部 profile 验收](../../testing.md#tiers)；拥有该决策的 [Agent Note](../../../.agents/notes/implemented/architecture/2026-08-19-fusion-profile-external-plugin-ownership.md) 记录持久准入与验证要求。
 
 ## 已知限制
 
-- 该 profile 包含一条外部配置行。Git Graph `0.2.9` 因活跃 JSON 操作及其子进程可越过配置行 fiber dispose 而仍不可用。图像理解、SSH、移动端远程 UI、Task Board、Skin Center，以及右侧 Files、editor、终端和 Source Control 工作台也不可用。请勿通过安装其他候选包或增加 profile 配置行绕过准入。拥有该决策的 [Agent Note](../../../.agents/notes/implemented/architecture/2026-08-19-fusion-profile-external-plugin-ownership.md) 定义已接受集合、各包的具体阻塞原因与重验要求。
+- 该 profile 包含一条外部配置行。Git Graph `0.2.9` 因活跃 JSON 操作及其子进程可越过配置行 fiber dispose（资源释放）而仍不可用。图像理解、SSH、移动端远程 UI、Task Board、Skin Center，以及右侧 Files、editor、终端和 Source Control 工作台也不可用。请勿通过安装其他候选包或增加 profile 配置行绕过准入。拥有该决策的 [Agent Note](../../../.agents/notes/implemented/architecture/2026-08-19-fusion-profile-external-plugin-ownership.md) 定义已接受集合、各包的具体阻塞原因与重验要求。

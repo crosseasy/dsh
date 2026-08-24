@@ -2,5 +2,5 @@
 # side as of the last confirmed-consistent state. Both languages carry equal authority;
 # after editing either side, bring the other along and re-record with:
 #   pnpm run verify-translation-pairing --write docs/superpowers/plans/fusion-compat-matrix.md
-fusion-compat-matrix.md: 084976e035d80eeecb8ac0419b50fe7f9cd57b21
-fusion-compat-matrix.zh.md: 7f97c9211c061c18d5ff5cbd96c4beecc3bfb571
+fusion-compat-matrix.md: 0a0d1d83a6e61200e29c1b13d514796373856f8f
+fusion-compat-matrix.zh.md: de946d4624c17e7616f32db9546bbfe8986c4006

@@ -1,9 +1,9 @@
 import { createHash } from 'node:crypto'
 import { existsSync } from 'node:fs'
-import { link, mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
+import { chmod, link, mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
 import type { IncomingMessage } from 'node:http'
 import { tmpdir } from 'node:os'
-import { join } from 'node:path'
+import { dirname, join } from 'node:path'
 import { Readable } from 'node:stream'
 import { Context } from '@deepseek-ai/cordis'
 import type { WebRoute } from '@deepseek-ai/dsh-host-webserver'
@@ -89,7 +89,7 @@ describe('Fusion external authorization fixtures', () => {
     await expect(child!.waitForExit(AbortSignal.timeout(2_000))).resolves.toBe(true)
   })
 
-  it('keeps a hard-linked installed package unchanged when private mutation is cancelled', async () => {
+  it('preserves a single private package callback failure and the installed entry', async () => {
     const root = await mkdtemp(join(tmpdir(), 'dsh-fusion-private-package-'))
     roots.push(root)
     const profile = join(root, 'profile')
@@ -119,5 +119,49 @@ describe('Fusion external authorization fixtures', () => {
     expect(await sha256(peerMain)).toBe(before)
     expect(privateRoot).toBeDefined()
     expect(existsSync(privateRoot!)).toBe(false)
+  })
+
+  it.skipIf(process.platform === 'win32')('aggregates private package callback, removal, and integrity failures in order', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'dsh-fusion-private-package-'))
+    roots.push(root)
+    const profile = join(root, 'profile')
+    const packageRoot = join(profile, 'node_modules', '@example', 'pet')
+    const installedMain = join(packageRoot, 'lib', 'index.js')
+    await mkdir(join(packageRoot, 'lib'), { recursive: true })
+    await writeFile(join(packageRoot, 'package.json'), '{"name":"@example/pet","main":"lib/index.js"}\n')
+    await writeFile(installedMain, 'export const guarded = true\n')
+    const callbackFailure = new Error('private mutation callback failed')
+    let privateParent: string | undefined
+
+    try {
+      const failure = await withPrivatePackageCopy(
+        packageRoot,
+        profile,
+        new AbortController().signal,
+        async (copyRoot) => {
+          privateParent = dirname(copyRoot)
+          await writeFile(installedMain, 'export const guarded = false\n')
+          await chmod(profile, 0o500)
+          throw callbackFailure
+        },
+      ).then(
+        () => new Error('expected private package mutation to reject'),
+        (error: unknown) => error,
+      )
+
+      expect(failure).toBeInstanceOf(AggregateError)
+      expect((failure as AggregateError).errors).toEqual([
+        callbackFailure,
+        expect.objectContaining({ code: 'EACCES' }),
+        expect.objectContaining({
+          message: `profile-installed package entry changed during private mutation: ${installedMain}`,
+        }),
+      ])
+    } finally {
+      await chmod(profile, 0o700)
+      if (privateParent !== undefined) {
+        await rm(privateParent, { recursive: true, force: true })
+      }
+    }
   })
 })

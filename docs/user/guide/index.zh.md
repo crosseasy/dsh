@@ -20,7 +20,7 @@
 
 > Summarize this repository and identify its main packages.
 
-agent 可以读取和编辑工作区文件、运行命令、委派工作并维护计划。当操作在当前权限策略下需要审批时，Web UI 会先询问你。
+agent（智能体）可以读取和编辑工作区文件、运行命令、委派工作并维护计划。当操作在当前权限策略下需要审批时，Web UI 会先询问你。
 
 ## 继续使用
 
@@ -29,5 +29,5 @@ agent 可以读取和编辑工作区文件、运行命令、委派工作并维�
 - [集成桌面壳](./desktop-shell-contract.md)
 - [配置模型](./providers.md)
 - [使用 Python SDK](./python-sdk.md)
-- [使用其他 CLI 模式](../../../apps/cli/README.md)
+- [使用其他 CLI（命令行界面）模式](../../../apps/cli/README.md)
 - [开发插件](../develop/basic/)

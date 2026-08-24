@@ -1,6 +1,7 @@
 import { connect, createServer } from 'node:net'
 import { createHash } from 'node:crypto'
-import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
+import { existsSync } from 'node:fs'
+import { mkdir, mkdtemp, readFile, realpath, rm, writeFile } from 'node:fs/promises'
 import { createServer as createHttpServer } from 'node:http'
 import { spawnSync } from 'node:child_process'
 import { tmpdir } from 'node:os'
@@ -16,6 +17,10 @@ import type {
 } from '@deepseek-ai/dsh-subprocess'
 import {
   acceptanceEnvironment,
+  assertFusionCompactLifecycle,
+  assertFusionExcludedFromComposition,
+  assertFusionExportLedger,
+  assertFusionForkSelection,
   assertPetOnlyRootResponse,
   assertSameHttpResponse,
   assertSameModelInput,
@@ -28,6 +33,8 @@ import {
   readHttpResponse,
   runAcceptanceLifecycle,
   runManagedCommand,
+  setupFusionAcceptanceProfile,
+  withOwnedTemporaryRoot,
   spawnSpec,
   startManagedProcess,
   stopTree,
@@ -77,9 +84,8 @@ function responseWithBoot(
   graph: unknown,
   options: { afterScript?: string; assignment?: string; duplicate?: boolean } = {},
 ): {
-  body: string
-  contentType: string
-  location: string
+  body: Buffer
+  headers: Array<readonly [string, readonly string[]]>
   status: number
 } {
   const assignment = options.assignment
@@ -87,9 +93,8 @@ function responseWithBoot(
   const script = `<script>${assignment}</script>`
   return {
     status: 200,
-    contentType: 'text/html; charset=utf-8',
-    location: '',
-    body: `<!doctype html><html><head>${script}${options.duplicate === true ? script : ''}</head><body>stock</body></html>${options.afterScript ?? ''}`,
+    headers: [['content-type', ['text/html; charset=utf-8']]],
+    body: Buffer.from(`<!doctype html><html><head>${script}${options.duplicate === true ? script : ''}</head><body>stock</body></html>${options.afterScript ?? ''}`),
   }
 }
 
@@ -260,6 +265,42 @@ async function portAcceptsConnections(port: number): Promise<boolean> {
   })
 }
 
+async function withHttpSnapshots(
+  routes: Record<string, { body: Buffer; headers?: Record<string, string | string[]> }>,
+  run: (baseUrl: string) => Promise<void>,
+): Promise<void> {
+  const server = createHttpServer((request, response) => {
+    const route = routes[request.url ?? '/']
+    if (route === undefined) {
+      response.writeHead(404)
+      response.end()
+      return
+    }
+    response.writeHead(200, {
+      'content-type': 'application/octet-stream',
+      ...route.headers,
+    })
+    response.end(route.body)
+  })
+  await new Promise<void>((resolve, reject) => {
+    server.once('error', reject)
+    server.listen(0, '127.0.0.1', resolve)
+  })
+  const address = server.address()
+  if (address === null || typeof address === 'string') throw new Error('test server has no TCP port')
+  try {
+    await run(`http://127.0.0.1:${String(address.port)}`)
+  } finally {
+    server.closeAllConnections()
+    await new Promise<void>((resolve, reject) => {
+      server.close((error) => {
+        if (error === undefined) resolve()
+        else reject(error)
+      })
+    })
+  }
+}
+
 async function waitForPidFile(path: string): Promise<number> {
   for (let attempt = 0; attempt < 100; attempt += 1) {
     try {
@@ -285,11 +326,95 @@ async function waitForGone(pid: number): Promise<void> {
   throw new Error(`process ${String(pid)} remained alive`)
 }
 
+async function termTrappingProcessTree(
+  root: string,
+  ready = false,
+  descendantDelayMs = 0,
+): Promise<{
+  argv: string[]
+  descendantPidFile: string
+}> {
+  const descendantPidFile = join(root, 'descendant.pid')
+  const descendantScript = join(root, 'descendant.cjs')
+  await writeFile(descendantScript, [
+    "const { writeFileSync } = require('node:fs')",
+    'process.on("SIGTERM", () => {})',
+    `setTimeout(() => writeFileSync(process.argv[2], String(process.pid)), ${String(descendantDelayMs)})`,
+    'setInterval(() => {}, 1000)',
+    '',
+  ].join('\n'))
+  return {
+    argv: [
+      '/bin/bash',
+      '-c',
+      `trap '' TERM; "${process.execPath}" "${descendantScript}" "${descendantPidFile}" & ${ready ? 'echo READY; ' : ''}wait`,
+    ],
+    descendantPidFile,
+  }
+}
+
 afterEach(async () => {
   vi.useRealTimers()
   await Promise.allSettled(fibers.splice(0).map(fiber => fiber.dispose()))
   await Promise.all(roots.splice(0).map(root => rm(root, { recursive: true, force: true })))
   delete process.env.FUSION_ACCEPTANCE_SECRET_TOKEN
+})
+
+describe('Fusion profile fixture setup', () => {
+  it('starts the frozen install without fixture node_modules and verifies the Pet entry', async () => {
+    const root = await temporaryRoot()
+    const source = join(root, 'source')
+    const target = join(root, 'target')
+    const trackedFiles = {
+      'cordis.patch.yml': '[]\n',
+      'package.json': '{"dependencies":{"@linxin666/dsh-pet":"0.2.9"}}\n',
+      'pnpm-lock.yaml': 'lockfileVersion: 9.0\n',
+      'pnpm-workspace.yaml': 'packages:\\n  - .\\n',
+    }
+    await Promise.all([
+      ...Object.entries(trackedFiles).map(async ([path, contents]) => {
+        await mkdir(source, { recursive: true })
+        await writeFile(join(source, path), contents)
+      }),
+      mkdir(join(source, 'node_modules', '@linxin666', 'dsh-pet', 'lib'), { recursive: true })
+        .then(async () => {
+          await writeFile(
+            join(source, 'node_modules', '@linxin666', 'dsh-pet', 'package.json'),
+            '{"name":"@linxin666/dsh-pet","version":"0.0.0-tampered"}\n',
+          )
+          await writeFile(
+            join(source, 'node_modules', '@linxin666', 'dsh-pet', 'lib', 'index.js'),
+            'throw new Error("tampered fixture entry")\n',
+          )
+        }),
+    ])
+
+    let installSawCleanProfile = false
+    const mainPath = await setupFusionAcceptanceProfile(source, target, async () => {
+      installSawCleanProfile = !existsSync(join(target, 'node_modules'))
+      const packageRoot = join(target, 'node_modules', '@linxin666', 'dsh-pet')
+      await mkdir(join(packageRoot, 'lib'), { recursive: true })
+      await writeFile(join(packageRoot, 'package.json'), JSON.stringify({
+        name: '@linxin666/dsh-pet',
+        version: '0.2.9',
+        type: 'module',
+        main: 'lib/index.js',
+        exports: {
+          '.': './lib/index.js',
+          './package.json': './package.json',
+        },
+      }))
+      await writeFile(join(packageRoot, 'lib', 'index.js'), 'export const installed = true\n')
+    })
+
+    expect(installSawCleanProfile).toBe(true)
+    expect(JSON.parse(await readFile(join(target, 'package.json'), 'utf8')))
+      .toMatchObject({ dependencies: { '@linxin666/dsh-pet': '0.2.9' } })
+    expect(mainPath).toBe(
+      await realpath(join(target, 'node_modules', '@linxin666', 'dsh-pet', 'lib', 'index.js')),
+    )
+    await expect(readFile(mainPath, 'utf8')).resolves.toBe('export const installed = true\n')
+  })
 })
 
 describe('Fusion REAL managed processes', () => {
@@ -910,6 +1035,97 @@ await new Promise(resolve => setTimeout(resolve, 25))
     expect(JSON.parse(result.stdout)).toEqual({ home: join(root, 'home') })
   })
 
+  it('removes nested ACP temp directories after the outer deadline stops the runner', async () => {
+    process.env.FUSION_ACCEPTANCE_SECRET_TOKEN = 'must-not-leak'
+    let temporaryRoot: string | undefined
+    let nestedRoot: string | undefined
+    const lifecycle = runAcceptanceLifecycle({
+      testSignal: new AbortController().signal,
+      operationTimeoutMs: 2_000,
+      cleanupTimeoutMs: 2_000,
+      operation: async (signal, resources) => {
+        temporaryRoot = await resources.acquire(
+          'nested ACP temporary root',
+          async () => await mkdtemp(join(tmpdir(), 'dsh-fusion-acp-lifecycle-')),
+          async (ownedRoot) => {
+            await rm(ownedRoot, { recursive: true, force: true })
+          },
+        )
+        const env = withOwnedTemporaryRoot({
+          ...acceptanceEnvironment(
+            join(temporaryRoot, 'home'),
+            join(temporaryRoot, 'agents'),
+          ),
+          DSH_EXAMPLE_MODE: 'lib',
+          TSX_TSCONFIG_PATH: undefined,
+        }, temporaryRoot)
+        const runner = await startManagedProcess(
+          await runtime(),
+          spawnSpec([
+            process.execPath,
+            '--eval',
+            [
+              "const { mkdtempSync } = require('node:fs')",
+              "const { tmpdir } = require('node:os')",
+              "const { join } = require('node:path')",
+              "const root = mkdtempSync(join(tmpdir(), 'acp-e2e-'))",
+              'process.stdout.write(`ACP_READY=${JSON.stringify({ root, tmpdir: process.env.TMPDIR, tmp: process.env.TMP, temp: process.env.TEMP, mode: process.env.DSH_EXAMPLE_MODE, secret: process.env.FUSION_ACCEPTANCE_SECRET_TOKEN ?? null })}\\n`)',
+              'setInterval(() => {}, 1000)',
+            ].join(';'),
+          ], temporaryRoot, env, 50),
+          {
+            label: 'nested ACP temp runner',
+            pattern: /ACP_READY=(\{[^\n]+\})/u,
+            timeoutMs: 1_000,
+            cleanupTimeoutMs: 1_000,
+            signal,
+          },
+        )
+        const ready = JSON.parse(runner.ready) as {
+          mode: unknown
+          root: unknown
+          secret: unknown
+          temp: unknown
+          tmp: unknown
+          tmpdir: unknown
+        }
+        nestedRoot = String(ready.root)
+        expect(ready).toEqual({
+          root: nestedRoot,
+          tmpdir: temporaryRoot,
+          tmp: temporaryRoot,
+          temp: temporaryRoot,
+          mode: 'lib',
+          secret: null,
+        })
+        expect(nestedRoot.startsWith(join(temporaryRoot, 'acp-e2e-'))).toBe(true)
+        expect(existsSync(nestedRoot)).toBe(true)
+
+        const command = runManagedCommand(
+          { spawn: () => runner.handle },
+          spawnSpec(['/already-running-nested-acp'], temporaryRoot, env, 50),
+          'nested ACP temp runner',
+          10_000,
+          signal,
+        )
+        const rejection = command.then(
+          () => new Error('expected nested ACP temp runner to reject'),
+          (error: unknown) => error,
+        )
+        throw await rejection
+      },
+      cleanup: async () => {},
+    })
+
+    const failure = await rejectionWithin(lifecycle, 5_000)
+
+    expect(failure).toMatchObject({ name: 'TimeoutError' })
+    expect(temporaryRoot).toBeDefined()
+    expect(nestedRoot).toBeDefined()
+    expect(existsSync(temporaryRoot!)).toBe(false)
+    expect(existsSync(nestedRoot!)).toBe(false)
+  })
+
   it('keeps stdout and stderr independently at the exact diagnostic byte limit', async () => {
     const expectedStdout = 'o'.repeat(DIAGNOSTIC_OUTPUT_MAX_BYTES)
     const expectedStderr = 'e'.repeat(DIAGNOSTIC_OUTPUT_MAX_BYTES)
@@ -1270,24 +1486,40 @@ await new Promise(resolve => setTimeout(resolve, 25))
   })
 
   it('does not return from a command timeout until the process is gone', async () => {
+    const root = await temporaryRoot()
+    const tree = process.platform === 'win32'
+      ? {
+        argv: [process.execPath, '-e', 'setInterval(() => {}, 1000)'],
+        descendantPidFile: undefined,
+      }
+      : await termTrappingProcessTree(root, false, 750)
     const service = await runtime()
-    let spawned: SubprocessHandle | undefined
-    const spawn = service.spawn.bind(service)
-    service.spawn = (spec) => {
-      spawned = spawn(spec)
-      return spawned
-    }
-    await expect(runManagedCommand(
-      service,
-      spawnSpec([process.execPath, '-e', 'setInterval(() => {}, 1000)'], process.cwd(), {}, 50),
+    const spawned = service.spawn(spawnSpec(tree.argv, root, {}, 50))
+    const descendant = tree.descendantPidFile === undefined
+      ? undefined
+      : await waitForPidFile(tree.descendantPidFile)
+    const operation = runManagedCommand(
+      { spawn: () => spawned },
+      spawnSpec(['/already-running'], root, {}, 50),
       'slow command',
-      100,
-    )).rejects.toThrow('slow command timed out after 100ms')
-    await expect(spawned!.waitForExit()).resolves.toBe(true)
-    await expect(spawned!.done).resolves.toMatchObject({ signal: 'SIGTERM' })
+      500,
+    )
+    const rejection = expect(operation).rejects
+      .toThrow('slow command timed out after 500ms')
+
+    await rejection
+    await expect(spawned.waitForExit(AbortSignal.abort())).resolves.toBe(true)
+    if (descendant !== undefined) await expect(waitForGone(descendant)).resolves.toBeUndefined()
   })
 
   it('cancels a managed command and settles its process tree before rejecting', async () => {
+    const root = await temporaryRoot()
+    const tree = process.platform === 'win32'
+      ? {
+        argv: [process.execPath, '-e', 'setInterval(() => {}, 1000)'],
+        descendantPidFile: undefined,
+      }
+      : await termTrappingProcessTree(root)
     const service = await runtime()
     let spawned: SubprocessHandle | undefined
     const spawn = service.spawn.bind(service)
@@ -1299,20 +1531,30 @@ await new Promise(resolve => setTimeout(resolve, 25))
     const reason = new Error('acceptance deadline elapsed')
     const operation = runManagedCommand(
       service,
-      spawnSpec([process.execPath, '-e', 'setInterval(() => {}, 1000)'], process.cwd(), {}, 50),
+      spawnSpec(tree.argv, root, {}, 50),
       'cancelled command',
       5_000,
       abort.signal,
     )
+    const descendant = tree.descendantPidFile === undefined
+      ? undefined
+      : await waitForPidFile(tree.descendantPidFile)
     abort.abort(reason)
-    const failure = await rejectionWithin(operation, 500)
+    const failure = await rejectionWithin(operation, 2_000)
     if (failure !== reason) spawned?.terminate()
-    await expect(spawned!.waitForExit(AbortSignal.timeout(2_000))).resolves.toBe(true)
-    await expect(spawned!.done).resolves.toMatchObject({ signal: 'SIGTERM' })
     expect(failure).toBe(reason)
+    await expect(spawned!.waitForExit(AbortSignal.abort())).resolves.toBe(true)
+    if (descendant !== undefined) await expect(waitForGone(descendant)).resolves.toBeUndefined()
   })
 
   it('cancels readiness and settles its process tree before rejecting', async () => {
+    const root = await temporaryRoot()
+    const tree = process.platform === 'win32'
+      ? {
+        argv: [process.execPath, '-e', 'setInterval(() => {}, 1000)'],
+        descendantPidFile: undefined,
+      }
+      : await termTrappingProcessTree(root)
     const service = await runtime()
     let spawned: SubprocessHandle | undefined
     const spawn = service.spawn.bind(service)
@@ -1324,7 +1566,7 @@ await new Promise(resolve => setTimeout(resolve, 25))
     const reason = new Error('acceptance deadline elapsed')
     const operation = startManagedProcess(
       service,
-      spawnSpec([process.execPath, '-e', 'setInterval(() => {}, 1000)'], process.cwd(), {}, 50),
+      spawnSpec(tree.argv, root, {}, 50),
       {
         label: 'cancelled readiness',
         pattern: /never-ready/u,
@@ -1333,35 +1575,26 @@ await new Promise(resolve => setTimeout(resolve, 25))
         signal: abort.signal,
       },
     )
+    const descendant = tree.descendantPidFile === undefined
+      ? undefined
+      : await waitForPidFile(tree.descendantPidFile)
     abort.abort(reason)
-    const failure = await rejectionWithin(operation, 500)
+    const failure = await rejectionWithin(operation, 2_000)
     if (failure !== reason) spawned?.terminate()
-    await expect(spawned!.waitForExit(AbortSignal.timeout(2_000))).resolves.toBe(true)
-    await expect(spawned!.done).resolves.toMatchObject({ signal: 'SIGTERM' })
     expect(failure).toBe(reason)
+    await expect(spawned!.waitForExit(AbortSignal.abort())).resolves.toBe(true)
+    if (descendant !== undefined) await expect(waitForGone(descendant)).resolves.toBeUndefined()
   })
 
   it.skipIf(process.platform === 'win32')('stops a TERM-trapping descendant before returning', async () => {
     const root = await temporaryRoot()
-    const pidFile = join(root, 'descendant.pid')
-    const descendantScript = join(root, 'descendant.cjs')
-    await writeFile(descendantScript, [
-      "const { writeFileSync } = require('node:fs')",
-      'process.on("SIGTERM", () => {})',
-      'writeFileSync(process.argv[2], String(process.pid))',
-      'setInterval(() => {}, 1000)',
-      '',
-    ].join('\n'))
+    const tree = await termTrappingProcessTree(root, true)
     const processTree = await startManagedProcess(
       await runtime(),
-      spawnSpec([
-        '/bin/bash',
-        '-c',
-        `trap '' TERM; "${process.execPath}" "${descendantScript}" "${pidFile}" & echo READY; wait`,
-      ], root, {}, 100),
+      spawnSpec(tree.argv, root, {}, 100),
       { label: 'TERM trap probe', pattern: /READY/u, timeoutMs: 2_000 },
     )
-    const descendant = await waitForPidFile(pidFile)
+    const descendant = await waitForPidFile(tree.descendantPidFile)
     await stopTree(processTree.handle, 'TERM trap probe', 2_000)
     await expect(processTree.handle.waitForExit(AbortSignal.abort())).resolves.toBe(true)
     await expect(waitForGone(descendant)).resolves.toBeUndefined()
@@ -1417,9 +1650,8 @@ describe('Fusion CDP page cleanup', () => {
 describe('Fusion external route probes', () => {
   const baseline = {
     status: 200,
-    contentType: 'text/html; charset=utf-8',
-    location: '',
-    body: '<!doctype html><title>DeepSeek Harness</title><div id="root"></div>',
+    headers: [['content-type', ['text/html; charset=utf-8']]] as Array<readonly [string, readonly string[]]>,
+    body: Buffer.from('<!doctype html><title>DeepSeek Harness</title><div id="root"></div>'),
   }
 
   it.each([
@@ -1427,52 +1659,47 @@ describe('Fusion external route probes', () => {
       label: 'body-only difference',
       response: {
         ...baseline,
-        body: '<!doctype html><title>DeepSeek Harness</title><p>route-owned</p>',
+        body: Buffer.from('<!doctype html><title>DeepSeek Harness</title><p>route-owned</p>'),
       },
     },
     {
       label: 'JSON',
       response: {
         status: 200,
-        contentType: 'application/json',
-        location: '',
-        body: '{"branches":[]}',
+        headers: [['content-type', ['application/json']]] as Array<readonly [string, readonly string[]]>,
+        body: Buffer.from('{"branches":[]}'),
       },
     },
     {
       label: 'redirect',
       response: {
         status: 302,
-        contentType: '',
-        location: '/',
-        body: '',
+        headers: [['location', ['/']]] as Array<readonly [string, readonly string[]]>,
+        body: Buffer.alloc(0),
       },
     },
     {
       label: 'route-owned HTML containing the stock title',
       response: {
         status: 200,
-        contentType: 'text/html; charset=utf-8',
-        location: '',
-        body: '<!doctype html><title>DeepSeek Harness</title><p>route-owned</p>',
+        headers: [['content-type', ['text/html; charset=utf-8']]] as Array<readonly [string, readonly string[]]>,
+        body: Buffer.from('<!doctype html><title>DeepSeek Harness</title><p>route-owned</p>'),
       },
     },
     {
       label: 'mounted 404 handler',
       response: {
         status: 404,
-        contentType: 'text/plain',
-        location: '',
-        body: 'mounted not found',
+        headers: [['content-type', ['text/plain']]] as Array<readonly [string, readonly string[]]>,
+        body: Buffer.from('mounted not found'),
       },
     },
     {
       label: 'mounted 405 handler',
       response: {
         status: 405,
-        contentType: 'text/plain',
-        location: '',
-        body: 'mounted method refusal',
+        headers: [['content-type', ['text/plain']]] as Array<readonly [string, readonly string[]]>,
+        body: Buffer.from('mounted method refusal'),
       },
     },
   ])('rejects a mounted $label response that differs from the baseline', ({ response }) => {
@@ -1494,6 +1721,82 @@ describe('Fusion external route probes', () => {
       /assertSameHttpResponse\(\s*fusionFallback,\s*await readHttpResponse/u,
     )
   })
+
+  it('rejects a semantic header-only response difference', async () => {
+    await withHttpSnapshots({
+      '/baseline': { body: Buffer.from('same') },
+      '/changed': {
+        body: Buffer.from('same'),
+        headers: { 'x-mounted-plugin': 'true' },
+      },
+    }, async (baseUrl) => {
+      const baselineResponse = await readHttpResponse(new URL('/baseline', baseUrl))
+      const changedResponse = await readHttpResponse(new URL('/changed', baseUrl))
+
+      expect(() => {
+        assertSameHttpResponse(baselineResponse, changedResponse, 'GET /blocked')
+      }).toThrow('GET /blocked differs from the base + web-app response')
+    })
+  })
+
+  it('preserves unique lowercase keys and ordered raw header values', async () => {
+    await withHttpSnapshots({
+      '/headers': {
+        body: Buffer.from('same'),
+        headers: {
+          'set-cookie': ['first=1', 'second=2'],
+          'x-comma': 'one, two',
+          'x-repeat': ['one', 'two'],
+        },
+      },
+    }, async (baseUrl) => {
+      const response = await readHttpResponse(new URL('/headers', baseUrl))
+
+      expect(response.headers).toEqual([
+        ['content-type', ['application/octet-stream']],
+        ['set-cookie', ['first=1', 'second=2']],
+        ['x-comma', ['one, two']],
+        ['x-repeat', ['one', 'two']],
+      ])
+    })
+  })
+
+  it('distinguishes repeated headers from one comma-containing header', async () => {
+    await withHttpSnapshots({
+      '/repeated': {
+        body: Buffer.from('same'),
+        headers: { 'x-repeat': ['one', 'two'] },
+      },
+      '/comma': {
+        body: Buffer.from('same'),
+        headers: { 'x-repeat': 'one, two' },
+      },
+    }, async (baseUrl) => {
+      const repeated = await readHttpResponse(new URL('/repeated', baseUrl))
+      const comma = await readHttpResponse(new URL('/comma', baseUrl))
+
+      expect(() => {
+        assertSameHttpResponse(repeated, comma, 'GET /repeat')
+      }).toThrow('GET /repeat differs from the base + web-app response')
+    })
+  })
+
+  it.each([
+    ['UTF-8 BOM', Buffer.from([0xef, 0xbb, 0xbf, 0x61]), Buffer.from([0x61])],
+    ['invalid UTF-8 byte', Buffer.from([0xff]), Buffer.from([0xfe])],
+  ])('rejects a %s-only response difference', async (_label, baselineBody, changedBody) => {
+    await withHttpSnapshots({
+      '/baseline': { body: baselineBody },
+      '/changed': { body: changedBody },
+    }, async (baseUrl) => {
+      const baselineResponse = await readHttpResponse(new URL('/baseline', baseUrl))
+      const changedResponse = await readHttpResponse(new URL('/changed', baseUrl))
+
+      expect(() => {
+        assertSameHttpResponse(baselineResponse, changedResponse, 'GET /blocked')
+      }).toThrow('GET /blocked differs from the base + web-app response')
+    })
+  })
 })
 
 describe('Fusion Pet-only root response', () => {
@@ -1508,8 +1811,17 @@ describe('Fusion Pet-only root response', () => {
 
   it.each([
     ['status', { ...fusion, status: 201 }],
-    ['content type', { ...fusion, contentType: 'text/plain' }],
-    ['location', { ...fusion, location: '/elsewhere' }],
+    ['content type', {
+      ...fusion,
+      headers: [['content-type', ['text/plain']]] as Array<readonly [string, readonly string[]]>,
+    }],
+    ['location', {
+      ...fusion,
+      headers: [
+        ...fusion.headers,
+        ['location', ['/elsewhere']] as const,
+      ],
+    }],
   ])('rejects a %s difference', (_label, changedFusion) => {
     expect(() => {
       assertPetOnlyRootResponse(baseline, changedFusion, 'GET /')
@@ -1594,7 +1906,7 @@ describe('Fusion Pet-only root response', () => {
   it.each([
     ['missing assignment', {
       ...baseline,
-      body: '<!doctype html><html><head></head><body>stock</body></html>',
+      body: Buffer.from('<!doctype html><html><head></head><body>stock</body></html>'),
     }],
     ['duplicate assignment', responseWithBoot(bootGraph(STOCK_BOOT_ENTRIES), {
       duplicate: true,
@@ -1662,6 +1974,25 @@ describe('Fusion Pet-only root response', () => {
         'GET /',
       )
     }).toThrow()
+  })
+
+  it('rejects distinct raw bytes outside the boot payload that decode to the same text', () => {
+    const baselineWithReplacement = {
+      ...baseline,
+      body: Buffer.concat([Buffer.from([0xef, 0xbf, 0xbd]), baseline.body]),
+    }
+    const fusionWithInvalidByte = {
+      ...fusion,
+      body: Buffer.concat([Buffer.from([0xff]), fusion.body]),
+    }
+
+    expect(() => {
+      assertPetOnlyRootResponse(
+        baselineWithReplacement,
+        fusionWithInvalidByte,
+        'GET /',
+      )
+    }).toThrow('HTML outside the allowed Pet boot delta changed')
   })
 })
 
@@ -1804,5 +2135,373 @@ describe('Fusion scoped model-input comparison', () => {
         system: `${baseline.system}\n\nexternal prompt contribution`,
       })
     }).toThrow('Fusion scoped model input differs from the base + web-app baseline')
+  })
+})
+
+describe('Fusion Web regression oracles', () => {
+  const exportUrl = 'http://127.0.0.1:43123/api/session.export?sessionId=source&includeDescendants=true'
+  const exportLedger = [
+    {
+      action: 'header' as const,
+      completed: true,
+      downloadUrl: exportUrl,
+      headRequestId: 'request-header',
+      headStatus: 200,
+      headUrl: exportUrl,
+      zipSha256: 'a'.repeat(64),
+    },
+    {
+      action: 'slash' as const,
+      completed: true,
+      downloadUrl: exportUrl,
+      headRequestId: 'request-slash',
+      headStatus: 200,
+      headUrl: exportUrl,
+      zipSha256: 'b'.repeat(64),
+    },
+  ]
+  const exportFailures = [
+    {
+      requestId: 'request-header',
+      method: 'HEAD',
+      url: exportUrl,
+      errorText: 'net::ERR_ABORTED',
+    },
+    {
+      requestId: 'request-slash',
+      method: 'HEAD',
+      url: exportUrl,
+      errorText: 'net::ERR_ABORTED',
+    },
+  ]
+
+  it('accepts reverse-order export aborts paired by request identity', () => {
+    expect(() => {
+      assertFusionExportLedger(
+        exportLedger,
+        [...exportFailures].reverse(),
+        [exportUrl, exportUrl],
+      )
+    }).not.toThrow()
+  })
+
+  it.each([
+    ['duplicate header abort with missing slash abort', [
+      exportFailures[0]!,
+      { ...exportFailures[0]! },
+    ], [exportUrl, exportUrl]],
+    ['missing abort', [exportFailures[0]!], [exportUrl, exportUrl]],
+    ['unrelated abort', [
+      ...exportFailures,
+      { ...exportFailures[0]!, requestId: 'request-unrelated' },
+    ], [exportUrl, exportUrl]],
+    ['extra download', exportFailures, [exportUrl, exportUrl, exportUrl]],
+  ])('rejects export ledger mutation: %s', (_label, failures, downloads) => {
+    expect(() => {
+      assertFusionExportLedger(exportLedger, failures, downloads)
+    }).toThrow()
+  })
+
+  it.each([
+    ['duplicate request id', [
+      exportLedger[0]!,
+      { ...exportLedger[1]!, headRequestId: exportLedger[0]!.headRequestId },
+    ]],
+    ['wrong HEAD status', [
+      { ...exportLedger[0]!, headStatus: 201 },
+      exportLedger[1]!,
+    ]],
+    ['wrong download URL', [
+      { ...exportLedger[0]!, downloadUrl: `${exportUrl}&wrong=true` },
+      exportLedger[1]!,
+    ]],
+    ['invalid ZIP hash', [
+      { ...exportLedger[0]!, zipSha256: 'not-a-sha256' },
+      exportLedger[1]!,
+    ]],
+    ['incomplete download', [
+      { ...exportLedger[0]!, completed: false },
+      exportLedger[1]!,
+    ]],
+  ])('rejects export entry mutation: %s', (_label, ledger) => {
+    expect(() => {
+      assertFusionExportLedger(ledger, exportFailures, [exportUrl, exportUrl])
+    }).toThrow()
+  })
+
+  it('binds the uniquely selected fork row to the returned child id', () => {
+    expect(() => {
+      assertFusionForkSelection(1, 'Fusion fork session-child', 'session-child')
+    }).not.toThrow()
+    expect(() => {
+      assertFusionForkSelection(2, 'Fusion fork session-child', 'session-child')
+    }).toThrow()
+    expect(() => {
+      assertFusionForkSelection(1, 'Fusion fork session-wrong', 'session-child')
+    }).toThrow()
+  })
+
+  function compactEvents(): Array<{
+    type: string
+    seq: number
+    data: Record<string, unknown>
+    sourceEventSeqs?: number[]
+    surfaceOp?: { op: 'replace'; start: number; end: number }
+  }> {
+    return [
+      {
+        type: 'user/message',
+        seq: 1,
+        data: { content: [{ type: 'text', text: 'source question' }] },
+      },
+      {
+        type: 'assistant/message',
+        seq: 2,
+        data: { content: [{ type: 'text', text: 'source answer' }] },
+      },
+      {
+        type: 'command/run',
+        seq: 10,
+        data: { commandId: 'compact-command', name: 'compact' },
+      },
+      {
+        type: 'compaction/start',
+        seq: 11,
+        data: { compactionId: 'compaction', sourceCommandId: 'compact-command' },
+      },
+      {
+        type: 'compaction/summary',
+        seq: 12,
+        data: {
+          compactionId: 'compaction',
+          sourceCommandId: 'compact-command',
+          summary: [{
+            type: 'text',
+            text: 'Fusion compact summary: the tracked Pet-only regression remains complete.',
+          }],
+          provider: 'deepseek-official',
+          model: 'deepseek-v4-flash',
+          shadowedRange: { start: 1, end: 2 },
+          shadowedSeqs: [1, 2],
+          shadowedTokenCount: 42,
+        },
+      },
+      {
+        type: 'user/message',
+        seq: 13,
+        data: {
+          content: [{ type: 'text', text: '<context_checkpoint>summary</context_checkpoint>' }],
+          source: {
+            kind: 'plugin',
+            plugin: 'compact',
+            compactionId: 'compaction',
+            sourceCommandId: 'compact-command',
+          },
+        },
+        surfaceOp: { op: 'replace', start: 1, end: 2 },
+        sourceEventSeqs: [11, 12, 1, 2],
+      },
+      {
+        type: 'compaction/end',
+        seq: 14,
+        data: { compactionId: 'compaction', sourceCommandId: 'compact-command' },
+      },
+      {
+        type: 'command/done',
+        seq: 15,
+        data: {
+          commandId: 'compact-command',
+          kind: 'success',
+          text: 'Compacted 2 history items (~42 tokens).',
+          sourceEventSeq: 12,
+        },
+      },
+    ]
+  }
+
+  it('accepts one fully paired compact lifecycle', () => {
+    expect(assertFusionCompactLifecycle(compactEvents())).toBe('compact-command')
+  })
+
+  it.each([
+    ['missing command/done', (events: ReturnType<typeof compactEvents>) =>
+      events.filter(event => event.type !== 'command/done')],
+    ['failed command/done', (events: ReturnType<typeof compactEvents>) =>
+      events.map(event => event.type === 'command/done'
+        ? { ...event, data: { ...event.data, kind: 'error' } }
+        : event)],
+    ['wrong sourceCommandId', (events: ReturnType<typeof compactEvents>) =>
+      events.map(event => event.type === 'compaction/start'
+        ? { ...event, data: { ...event.data, sourceCommandId: 'wrong-command' } }
+        : event)],
+    ['different compactionId', (events: ReturnType<typeof compactEvents>) =>
+      events.map(event => event.type === 'compaction/end'
+        ? { ...event, data: { ...event.data, compactionId: 'wrong-compaction' } }
+        : event)],
+    ['missing summary sourceEventSeq', (events: ReturnType<typeof compactEvents>) =>
+      events.map(event => event.type === 'command/done'
+        ? { ...event, data: { commandId: 'compact-command', kind: 'success' } }
+        : event)],
+    ['end error', (events: ReturnType<typeof compactEvents>) =>
+      events.map(event => event.type === 'compaction/end'
+        ? { ...event, data: { ...event.data, error: 'failed after summary' } }
+        : event)],
+    ['wrong lifecycle order', (events: ReturnType<typeof compactEvents>) =>
+      events.map(event => event.type === 'command/done'
+        ? { ...event, seq: 9 }
+        : event)],
+    ['wrong summary content', (events: ReturnType<typeof compactEvents>) =>
+      events.map(event => event.type === 'compaction/summary'
+        ? {
+          ...event,
+          data: {
+            ...event.data,
+            summary: [{ type: 'text', text: 'unrelated summary' }],
+          },
+        }
+        : event)],
+    ['wrong summary provider', (events: ReturnType<typeof compactEvents>) =>
+      events.map(event => event.type === 'compaction/summary'
+        ? { ...event, data: { ...event.data, provider: 'wrong-provider' } }
+        : event)],
+    ['wrong summary model', (events: ReturnType<typeof compactEvents>) =>
+      events.map(event => event.type === 'compaction/summary'
+        ? { ...event, data: { ...event.data, model: 'wrong-model' } }
+        : event)],
+    ['wrong shadowed range', (events: ReturnType<typeof compactEvents>) =>
+      events.map(event => event.type === 'compaction/summary'
+        ? { ...event, data: { ...event.data, shadowedRange: { start: 1, end: 1 } } }
+        : event)],
+    ['wrong shadowed seqs', (events: ReturnType<typeof compactEvents>) =>
+      events.map(event => event.type === 'compaction/summary'
+        ? { ...event, data: { ...event.data, shadowedSeqs: [1] } }
+        : event)],
+    ['wrong shadowed token count', (events: ReturnType<typeof compactEvents>) =>
+      events.map(event => event.type === 'compaction/summary'
+        ? { ...event, data: { ...event.data, shadowedTokenCount: 41 } }
+        : event)],
+    ['missing replacement', (events: ReturnType<typeof compactEvents>) =>
+      events.filter(event => event.surfaceOp?.op !== 'replace')],
+    ['non-adjacent replacement', (events: ReturnType<typeof compactEvents>) =>
+      events.map(event => event.surfaceOp?.op === 'replace'
+        ? { ...event, seq: 14 }
+        : event.type === 'compaction/end'
+          ? { ...event, seq: 15 }
+          : event.type === 'command/done'
+            ? { ...event, seq: 16 }
+            : event)],
+    ['replacement with wrong sourceEventSeqs', (events: ReturnType<typeof compactEvents>) =>
+      events.map(event => event.surfaceOp?.op === 'replace'
+        ? { ...event, sourceEventSeqs: [11, 12, 1] }
+        : event)],
+  ])('rejects compact lifecycle mutation: %s', (_label, mutate) => {
+    expect(() => {
+      assertFusionCompactLifecycle(mutate(compactEvents()))
+    }).toThrow()
+  })
+
+  it.each(['compaction/start', 'compaction/summary', 'compaction/end'])(
+    'rejects a compact lifecycle missing %s',
+    (type) => {
+      expect(() => {
+        assertFusionCompactLifecycle(compactEvents().filter(event => event.type !== type))
+      }).toThrow()
+    },
+  )
+
+  it('accepts clean stock profile and ACP composition text', () => {
+    expect(() => {
+      assertFusionExcludedFromComposition(
+        'stock profiles',
+        '@deepseek-ai/dsh-base\n@deepseek-ai/dsh-web-app\n@deepseek-ai/dsh-headless\n',
+      )
+    }).not.toThrow()
+  })
+
+  it.each([
+    '@deepseek-ai/dsh-fusion',
+    '@linxin666/dsh-pet',
+    '@liustack/modlens',
+    '@linxin666/dsh-client-ui-git-graph',
+    '@linxin666/dsh-ssh',
+    '@linxin666/dsh-remote-web-ui',
+    '@linxin666/dsh-client-ui-task-board',
+    '@linxin666/dsh-client-ui-skin-center',
+    'dsh-better-sidebar',
+    'git-graph',
+    'modlens',
+    'dsh-ssh',
+    'remote-web-ui',
+    'ui-task-board',
+    'skin-center',
+    'better-sidebar',
+    'web-ui-all',
+    'describe-image',
+    'aionui-panel',
+    'liangshen',
+  ])('rejects excluded composition token %s', (token) => {
+    expect(() => {
+      assertFusionExcludedFromComposition('isolated profile', `rows:\n  - name: ${token}\n`)
+    }).toThrow(token)
+  })
+})
+
+describe('Fusion Web regression tracked wiring', () => {
+  it('binds the active New Session response id to its listed and selected row', async () => {
+    const acceptance = await readFile(
+      new URL('./fusion-real-composition.acceptance.ts', import.meta.url),
+      'utf8',
+    )
+
+    expect(acceptance).toContain('const activeSessionId =')
+    expect(acceptance).toContain('const activeTitle = `Fusion active ${activeSessionId}`')
+    expect(acceptance).toContain('item.sessionId === activeSessionId')
+    expect(acceptance).toContain('selectedActive.getByText(activeTitle')
+  })
+
+  it('reads ACP resolved runtime inventory through the real Loader composition', async () => {
+    const acceptance = await readFile(
+      new URL('./fusion-real-composition.acceptance.ts', import.meta.url),
+      'utf8',
+    )
+
+    expect(acceptance.match(/runAcpResolvedComposition\(/gu)).toHaveLength(2)
+    expect(acceptance).toContain('PLUGIN_INVENTORY_BUILT')
+    expect(acceptance).toContain('pluginInventory.list()')
+    expect(acceptance).toContain('assertFusionExcludedFromComposition')
+  })
+
+  it('forces the nested ACP smoke through the built bin without source fallback', async () => {
+    const acceptance = await readFile(
+      new URL('./fusion-real-composition.acceptance.ts', import.meta.url),
+      'utf8',
+    )
+
+    expect(acceptance).toMatch(/DSH_EXAMPLE_MODE:\s*'lib'/u)
+    expect(acceptance).toContain('ACP_BUILT_BIN')
+    expect(acceptance).toContain('TSX_TSCONFIG_PATH: undefined')
+    expect(acceptance).toMatch(
+      /withOwnedTemporaryRoot\(\{[\s\S]*?DSH_EXAMPLE_MODE:\s*'lib'[\s\S]*?\}, temporaryRoot\)/u,
+    )
+  })
+
+  it('keeps the complete workflow in the tracked CDP acceptance', async () => {
+    const acceptance = await readFile(
+      new URL('./fusion-real-composition.acceptance.ts', import.meta.url),
+      'utf8',
+    )
+
+    expect(acceptance).not.toMatch(
+      /\.superpowers\/|driver\.mts|run-driver\.sh|chromium\.launch\(/u,
+    )
+    expect(acceptance).toContain('chromium.connectOverCDP')
+    for (const helper of [
+      'runFusionWebRegression',
+      'runFreshProfileIsolation',
+      'runHeadlessTurn',
+      'runAcpStdioSmoke',
+    ]) {
+      expect(acceptance.match(new RegExp(`${helper}\\(`, 'gu'))).toHaveLength(2)
+    }
   })
 })

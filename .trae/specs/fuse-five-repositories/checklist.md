@@ -183,18 +183,25 @@
 
 ## Ralph Loop 当前工作树从零复审
 
-- [ ] 当前分支、`HEAD`、父提交、index tree、staged／unstaged／untracked 路径与内容 hash 已冻结；原始基线经过独立核验，未直接信任历史审查包。
-- [ ] 产品范围覆盖从原始基线到当前工作树的全部 Fusion 改动；`.trae/specs/**`、`docs/superpowers/**`、`.superpowers/**` 与 `.learnings/**` 被单独记录并排除于产品审查包。
-- [ ] plan、design、spec、tasks 与 checklist 对 selected row、七个 decision-bearing blocker、外部版本、历史证据适用范围、TUI 状态和 Git 实态一致。
-- [ ] 需求与架构、实现与生命周期、测试与 CI、安全、文档语义、运行时与交付六个只读审查域均由独立代理完成，全部 finding 已汇总、去重并核验技术事实。
-- [ ] 执行时 no-cache 候选检查覆盖 ModLens、17 个 Web UI 身份、Better Sidebar 与 dsh-TUI；新候选完成顺序准入，或有可复算的无新增结论。
-- [ ] 所有确认的 Critical、Important、P0、P1、P2 和规格违背 finding 均有 RED 证据、最小修复、GREEN 验证和未参与实现代理的独立复审；若为零 finding，则有明确的零 finding 报告。
-- [ ] 实现审查确认 acquisition、取消、反向释放、共享 deadline、failure aggregation、进程树与 profile 组合满足所有者和停稳要求，且 Web、headless 与 ACP 既有语义不变。
-- [ ] 测试审查确认 Pet 授权、分层 root HTML oracle、超时、取消、清理、CI shell 可达性及所有关键负控能拒绝目标回归，不依赖实现自述或历史成功数字。
-- [ ] 安全审查确认外部输入到文件、网络、进程、依赖安装与浏览器副作用的授权和隔离完整，不存在 shim、核心绕过、路径逃逸、环境泄漏或未受控资源。
-- [ ] 产品文档、Agent Note、plan、design 与 Ralph 规格符合 prose、文档层级和双语规则；当前状态没有推理过程泄漏、重复事实、过期结论或无权威来源的数字。
-- [ ] focused tests、typecheck、build、零错误 lint、hygiene、必要文档叶级门禁和 working-tree／index diff checks 均有本轮新鲜成功证据。
-- [ ] 系统 Chrome CDP `9333` 的 Pet-only built acceptance、完整 Web driver 与 runtime-final oracle 均通过；console、page、network、target、listener、process、port 和临时目录无残留，且未使用 `chromium.launch()` 或 IDE 浏览器。
-- [ ] 若本轮触达 TUI、共享 preset、core、session、subprocess 或 terminal，真实 PTY fresh/resume、消息往返、支持退出和零残留均通过；否则准确记录 `NOT RUN (not affected)`。
-- [ ] 最终产品审查包绑定原始基线、最终 `HEAD`、index 和工作树 hash；bits、DSH、安全、文档与 plan/design/spec/checklist 独立复审均无未解决 finding。
-- [ ] 本轮未执行 commit、push、merge、rebase 或 reset；规划与执行记录未进入新增 staged 产品集合，`progress.md` 只追加一次本轮总结。
+- [x] 当前分支、`HEAD`、父提交、index tree、staged／unstaged／untracked 路径与内容 hash 已冻结；原始基线经过独立核验，未直接信任历史审查包。
+- [x] 产品范围覆盖从原始基线到当前工作树的全部 Fusion 改动；`.trae/specs/**`、`docs/superpowers/**`、`.superpowers/**` 与 `.learnings/**` 被单独记录并排除于产品审查包。
+- [x] plan、design、spec、tasks 与 checklist 对 selected row、七个 decision-bearing blocker、外部版本、历史证据适用范围、TUI 状态和 Git 实态一致。
+- [x] 需求与架构、实现与生命周期、测试与 CI、安全、文档语义、运行时与交付六个只读审查域均由独立代理完成，全部 finding 已汇总、去重并核验技术事实。
+- [x] 执行时 no-cache 候选检查覆盖 ModLens、17 个 Web UI 身份、Better Sidebar 与 dsh-TUI；新候选完成顺序准入，或有可复算的无新增结论。
+- [x] 所有确认的 Critical、Important、P0、P1、P2 和规格违背 finding 均有 RED 证据、最小修复、GREEN 验证和未参与实现代理的独立复审；若为零 finding，则有明确的零 finding 报告。
+- [x] 实现审查确认 acquisition、取消、反向释放、共享 deadline、failure aggregation、进程树与 profile 组合满足所有者和停稳要求，且 Web、headless 与 ACP 既有语义不变。
+- [x] 测试审查确认 Pet 授权、分层 root HTML oracle、超时、取消、清理、CI shell 可达性及所有关键负控能拒绝目标回归，不依赖实现自述或历史成功数字。
+- [x] 安全审查确认外部输入到文件、网络、进程、依赖安装与浏览器副作用的授权和隔离完整，不存在 shim、核心绕过、路径逃逸、环境泄漏或未受控资源。
+- [x] 产品文档、Agent Note、plan、design 与 Ralph 规格符合 prose、文档层级和双语规则；当前状态没有推理过程泄漏、重复事实、过期结论或无权威来源的数字。
+- [x] focused tests、typecheck、build、零错误 lint、hygiene、必要文档叶级门禁和 working-tree／index diff checks 均有本轮新鲜成功证据。
+- [x] 系统 Chrome CDP `9333` 的 Pet-only built acceptance、完整 Web driver 与 runtime-final oracle 均通过；console、page、network、target、listener、process、port 和临时目录无残留，且未使用 `chromium.launch()` 或 IDE 浏览器。
+- [x] 若本轮触达 TUI、共享 preset、core、session、subprocess 或 terminal，真实 PTY fresh/resume、消息往返、支持退出和零残留均通过；否则准确记录 `NOT RUN (not affected)`。
+- [x] 最终产品审查包绑定原始基线、最终 `HEAD`、index 和工作树 hash；旧 44 路径 package 已被并发加入的 `docs/user/guide/fusion-tui-profile*` 三联路径和 Task 42 最终复审 findings 取代，已按 47 路径重建并重新完成 bits、DSH、安全、文档与 plan/design/spec/checklist 独立复审。
+- [x] 本轮如实记录 Round 6/Task 38、Task 42 与 Task 43.6.1 独立 reviewer 各一次 `git write-tree` 违反 plan 禁令；三次调用均返回既有 `HEAD` tree `d381ff301022d8c57d4da9ffc98a4bbcaed2cc95`，后续 HEAD、index 与 status 对比未发现这些命令造成的变化。后续不再执行该命令，规划与执行记录不进入新增 staged 产品集合，`progress.md` 仅在最终收口时追加 correction。
+- [x] Pet `/api/pet/pets` 与 `/api/pet/diagnostics` 的 selective guard-bypass mutation 分别被真实 `apply` 注册路径拒绝；四态授权、service-access 计数、安装入口 hash 与 dispose/remount 约束均通过。
+- [x] Fusion Agent Note 的 baseline 加 product patch 独立持有 Pet、七个 blocker、TUI、验证、覆盖缺口与重验事实，不依赖 execution-excluded 兼容矩阵或回归报告；未选择身份只陈述不进入 Fusion。
+- [x] CI failover Agent Note 只保留持久路由与启用约定，并准确保留两个变量、新 workflow run、已排队作业不变、standby green 前提、切回和临时 runner 清理。
+- [x] plan、design、spec 与 checklist 如实记录三次 `git write-tree` 调用：Round 6/Task 38、Task 42 与 Task 43.6.1 独立 reviewer；三次均返回既有 tree `d381ff301022d8c57d4da9ffc98a4bbcaed2cc95` 且没有改变后续 HEAD、index 或 status，后续调用仍被禁止。
+- [x] Git index 中不存在 `.trae/specs/**`、`docs/superpowers/**`、`.superpowers/**` 或 `.learnings/**` 执行记录，且最终 staged delivery 不混入非 Fusion shell/sandbox/runtime-simplification 路径。
+- [x] `pnpm run hygiene` 在当前工作树中退出 0；不得因删除 `packages/shell/bash-sandbox/src/helpers.ts` 或其它非 Fusion 工作树改动阻断 `rescope-vendor:check`。
+- [x] plan、design 与 Ralph spec 的当前 Git index 状态记录与 live `git diff --cached` 证据一致，不再把已清理的 staged delivery 误写为 contaminated。

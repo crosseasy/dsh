@@ -1,166 +1,66 @@
-# Fusion Phase 1 Regression Report
+# Fusion Regression Report
 
 English | [中文](fusion-regression-report.zh.md)
 
 Date: 2026-08-23
 
-Status: `DONE`
+Status: `TASK_41_REVIEW_COMPLETE_TASK_42_REOPENED_TASK_43_PENDING`
 
-Scope: the historical Task 5 matrix, Task 12 and zero-row supplements, Task 22 admission, Task 29 two-row regression, and the current Task 35 one-row regression.
+## Current Scope
 
-Current result: the Fusion Web external set contains exact Pet `0.2.9`. System Chrome 151 through CDP `9333` passes the current built acceptance 1/1, the full Web driver 39/39, and the runtime-final oracle 50/50. Console, page, network, and cleanup diagnostics are clean, and pre/post target, listener, process, port, and temporary-directory checks leave no residue. Git Graph `0.2.9` remains blocked; the [compatibility matrix](fusion-compat-matrix.md) owns the per-version results, and the [Fusion ownership decision](../../../.agents/notes/implemented/architecture/2026-08-19-fusion-profile-external-plugin-ownership.md) owns admission and revalidation. Task 22 admission and Task 29's 36/36 two-row regression remain superseded historical evidence for their exact runs. Task 35 does not affect TUI, so TUI is `NOT RUN (not affected)` and public delivery remains phase 2 BLOCKED.
+Fusion Web selects one external row, exact `@linxin666/dsh-pet@0.2.9`. Git Graph, ModLens, SSH, Remote Web UI, Task Board, Skin Center, and Better Sidebar remain unmounted blockers. The public Fusion TUI remains phase 2 `BLOCKED`.
 
-## Historical Task 5 Result
+Task 39 froze `HEAD=a5e6deb6f9fbf17d31e8a593722cb0063969549a`, an empty index, and 44 product/support paths relative to the verified Fusion baseline. That historical scope consists of 43 product paths plus `.gitignore`, which owns support policy for excluded execution artifacts. Adding the `docs/user/guide/fusion-tui-profile.*` triplet makes the current scope 47 paths and invalidates the old package and reviews. Task 41 independent reviews are complete; Task 42 final review reopened acceptance for the Task 43 findings. Final verification, the 47-path package, independent reviews, and delivery bookkeeping remain pending.
 
-The Task 5 matrix contained 24 PASS and 4 BLOCKED rows. That evidence run changed no product code and used system Google Chrome 151 through CDP `http://127.0.0.1:9333`.
+## Task 42 Verification Evidence
 
-| Area | Status | Evidence |
-| --- | --- | --- |
-| Conversation rendering | PASS | Live seeded fusion session rendered both turns and `FIRST_DONE`; `browser/fusion-regression-final-pass.json`. |
-| Tool cards | PASS | Live DOM reported one bash card and two read cards; `browser/fusion-regression-final-pass.json`, `browser/conversation-tool-cards.png`. |
-| New Session | PASS | Live control accessible name `新建会话`; blank composer returned with no extra materialized row; `browser/fusion-regression-final.json`. |
-| Session list | PASS | Live tree `未分组` contained selected row `NavScenario: first run bash to`; `browser/fusion-regression-final-pass.json`. |
-| Fork | PASS | Keyless assembled Web replay passed `message-actions.e2e.ts`; live focused continuation is covered by the composite-CDP BLOCKED row below. |
-| Resume | PASS | The live cold seeded session rendered persisted history without a model request; `browser/session-history-final.response.json`. |
-| Compact | PASS | Keyless assembled Web replay passed the compact history and command paths; live focused continuation is covered by the composite-CDP BLOCKED row. |
-| Export | PASS | Keyless assembled Web replay passed header and `/export` ZIP paths; live focused continuation is covered by the composite-CDP BLOCKED row. |
-| Search | PASS | Keyless assembled Web replay passed `navigation-panes.e2e.ts`; live focused continuation is covered by the composite-CDP BLOCKED row. |
-| Settings | PASS | Live General, Models, Plugins, Escape, and close-button flow passed; plugin inventory contained 165 rows; `browser/fusion-regression-final-pass.json`. |
-| Model selection | PASS | Live picker switched DeepSeek-V4-Pro to DeepSeek-V4-Flash and updated the accessible current-model name; `browser/fusion-regression-final-pass.json`. |
-| Editor | BLOCKED | Live fusion DOM and accessibility trees contain no Web Editor. Plugin inventory contains only disabled `@deepseek-ai/dsh-tool-str-replace-editor`, which is not a Web Editor. Stock Web source/tests expose file-open and native settings-document actions, not an Editor. Files/editor/terminal/Git belong to better-sidebar in Task 7. Reviewer must resolve the phase 1 specification contradiction. |
-| `describe_image` absent | PASS | Runtime Loader inventory has no `@linxin666/dsh-tool-describe-image`; Liangshen focused test's exact standard/phase tool lists contain no `describe_image`. Third-party identity is row `describe-image`, tool `describe_image`; `third-party/describe-image/`. |
-| AionUI panel absent | PASS | Runtime Loader inventory has no `@linxin666/dsh-client-ui-aionui-panel`. Its real row is `ui-dsh-aionui-panel`; its slots are `conversation.input.dock` ids `aionui-drag-file`/`aionui-mermaid-chat` and `web-ui.plugin.item` id `aionui-panel`; `third-party/aionui-panel/`. |
-| `web-ui-all` absent | PASS | Structured composed dump and live Loader inventory contain no aggregate row; `dump-config.analysis.json`, `browser/fusion-regression-final-pass.json`. |
-| Remote implementation unique | PASS | Exactly one live row `include:remote-web-ui`, one accessible `移动端远程控制` button, one client resource, and `/m/` HTTP 200; `browser/fusion-regression-final-pass.json`, `browser/mobile-route.headers.txt`. Pair-token issue is not exercised on loopback because the plugin requires `--host 0.0.0.0` or `publicBaseUrl`. |
-| Liangshen unique | PASS | Loader rows contain no Liangshen plugin; `agentPreset.list` contains exactly one id `liangshen`, and the live picker selected `梁神模式`; `browser/fusion-regression-final.json`. |
-| Slot/service conflicts | PASS | Boot remained healthy; live `[data-slot-error]` was empty; startup logs contain no duplicate/conflict/service-registration match. |
-| Composite live CDP exit 0 | BLOCKED | Focused live steps and diagnostics are saved, but no single composite run reached exit 0. The final failed run had clean console/network/page diagnostics and passed conversation, tools, Settings, model selection, New Session, inventory, Liangshen, Editor absence, and remote uniqueness; Search helper timing then prevented the dependent live fork/export/compact sequence. These product paths passed in keyless assembled Web replay. |
-| Stock Web isolation | PASS | Fresh-home default dump has 129 rows and no fusion identities; real stock server reached HTTP 200. The final inventory helper remained blocked by a helper RPC-envelope mismatch, so the structured Loader dump plus real boot are the isolation evidence. |
-| Headless isolation | PASS | Fresh-home dump has 81 rows and no Host/browser/fusion rows; built-bin focused test passed 1/1. |
-| Headless behavior | BLOCKED | The requested real command exited 1 with `MISSING_CREDENTIAL`; this is not counted as behavior success. |
-| ACP isolation | PASS | Real stdio keyless focused test passed framed JSON-RPC and `session/new` 2/2 in an independent home. |
-| Fusion owning test | PASS | 1/1. |
-| Liangshen focused test | PASS | 1/1 with `vitest.e2e.config.ts`. The research command without the e2e config found no tests; both outputs are retained. |
-| `pnpm run test:gui` | PASS | 272 files, 3757 passed, 1 skipped. |
-| `DSH_SNAPSHOT=replay pnpm run test:web` | BLOCKED | 74 files and 252 tests passed; one `workspace-management` hover-action click timed out. Relevant Task 5 files, including navigation and message actions, passed. Focused prerequisite + rename rerun passed 2/2; related source/test paths have no current diff. |
-| ACP focused test | PASS | 2 passed, 1 unrelated skipped. |
+Before the final review reopened acceptance, the Task 42 focused suite passed 200/200 tests across six files. `pnpm run typecheck`, `pnpm run build`, zero-error `pnpm run lint`, `pnpm run hygiene`, `pnpm run doc-sync` with 28/28 gates, `pnpm run docs:check` with 46/46 tests, working-tree and index diff checks, protected-product-scope checks, and the empty-index check all exited `0`. TUI was `NOT RUN (not affected)` because those reviewed changes did not touch TUI, shared preset, core, session, subprocess, or terminal product paths. These results do not replace Task 43.6 final verification.
 
-## Historical Task 5 Six-Row Runtime Inventory
+## Tracked Runtime Evidence
 
-The Task 5 composed Fusion dump had 135 entries. Its six active Fusion rows were:
+The Task 42 formal runtime evidence is the Pet-only built acceptance invoked through a tracked command and tracked source paths. The Task 42 working-tree source and fixture lock are identified by their content hashes.
 
-| Row id | Module |
-| --- | --- |
-| `modlens` | `@liustack/modlens@3.22.0` |
-| `ui-task-board` | `@linxin666/dsh-client-ui-task-board@0.2.4` |
-| `ssh` | `@linxin666/dsh-ssh@0.2.4` |
-| `remote-web-ui` | `@linxin666/dsh-remote-web-ui@0.2.4` |
-| `pet` | `@linxin666/dsh-pet@0.2.4` |
-| `ui-skin-center` | `@linxin666/dsh-client-ui-skin-center@0.2.4` |
+| Evidence | UTC interval | Command | Input identity | Recorded result |
+| --- | --- | --- | --- | --- |
+| Built acceptance | `2026-08-23T13:55:49Z` to `2026-08-23T13:56:02Z` | `DSH_SNAPSHOT=replay pnpm run test:fusion:acceptance:built` | `HEAD=a5e6deb6f9fbf17d31e8a593722cb0063969549a`; Task 42 `apps/web/tests/fusion-real-composition.acceptance.ts` SHA-256 `2c55d78201c17e66c3e66507b407449b9d576f7267dcb25988163379973f48e8`; Task 42 `apps/web/tests/fixtures/fusion-profile/pnpm-lock.yaml` SHA-256 `fd49d8cd89abe36dd8caa05bbb71b144c74bbc178387f3958c8ef847ff215000` | exit `0`; 1/1 |
 
-The Task 5 live Plugins inventory exposed `modlens, 已挂载, 已启用`, `ui-task-board, 已挂载, 已启用`, `ssh, 已挂载, 已启用`, `remote-web-ui, 已挂载, 已启用`, `pet, 已挂载, 已启用`, and `ui-skin-center, 已挂载, 已启用`.
+The Task 42 full driver and oracle provide local supporting evidence. The ignored harness command `sh .superpowers/sdd/ralph-round6-task34-web/run-driver.sh` passed 39/39 twice consecutively, from `2026-08-23T14:16:36Z` to `2026-08-23T14:17:04Z` and from `2026-08-23T14:17:16Z` to `2026-08-23T14:17:37Z`. `TASK34_PHASE=task42-compact-fix node --import tsx .superpowers/sdd/ralph-round6-task34-web/driver-oracles.test.mts` passed 50/50 from `2026-08-23T14:18:02Z` to `2026-08-23T14:18:03Z`. Because `.superpowers/` is ignored, these harness inputs are unavailable from a clean checkout; their results cannot replace the tracked built acceptance or Task 43.6 final verification.
 
-## Historical Task 5 Commands
+The first system Chrome driver run passed 26 assertions before a `/compact` synchronization race: the UI summary was visible and `compaction/end` preceded the matching successful `command/done` by 6 ms, so the driver's single history read arrived too early. The local driver now uses its bounded conditional wait to reread fresh history until the known compact command id has both successful `command/done` and `compaction/end`, then applies the unchanged lifecycle assertion. No fixed sleep was added, and the two consecutive 39/39 runs above passed after the fix.
 
-```text
-pnpm exec vitest run packages/bundle/fusion/tests/fusion.spec.ts
-pnpm exec vitest run --config vitest.e2e.config.ts apps/cli/tests/web-agent-presets.e2e.ts -t 'anchors `liangshen`, promotes it to Code Mode, and re-anchors after compaction'
-pnpm run test:gui
-DSH_SNAPSHOT=replay pnpm run test:web
-DSH_SNAPSHOT=replay pnpm exec vitest run --config vitest.web.config.ts apps/web/tests/workspace-management.e2e.ts -t 'adds two workspaces|renames a workspace'
-pnpm exec vitest run --config vitest.e2e.config.ts examples/acp-agent/tests/acp.e2e.ts -t 'emits only framed JSON-RPC|session/new succeeds over real stdio'
-pnpm exec vitest run --config vitest.e2e.config.ts apps/cli/tests/built-bin.e2e.ts -t 'prints the headless profile without Host or browser layers'
-```
+Across both consecutive runs, console, page, HTTP, and slot error counts were `0`. The only network failures were two expected export `HEAD` requests per run: each received HTTP 200 before `net::ERR_ABORTED` and matched the export ledger. Cleanup left no server target, listener, process, process-group descendant, service or mock-provider port, temporary directory, or cleanup error.
 
-## Historical Task 5 Diagnostics And Cleanup
+## Tracked Review And Scope Metadata
 
-The accepted live fusion step evidence has empty console warnings, console errors, page errors, failed requests, non-2xx responses, and slot errors. A deliberately attempted loopback pair issue produced HTTP 409 in an earlier rejected run; the final acceptance does not treat that interaction as passing because the plugin requires a reachable bind or public base.
+The Task 34 V2 package and its review inputs were local-only. Their hashes and verdict counts are omitted because the package cannot be reconstructed from a clean checkout; that review does not establish the current 47-path result.
 
-Servers on ports `43350` and `43351` were stopped and have no listeners. Task-created localhost targets were closed. The pre-existing Chrome process on CDP 9333 remains running; user-owned pages were not closed. No cookies, storage, or tokens were read. No Git staging, commit, push, merge, rebase, or reset was performed.
+The Task 39 freeze records source `108b96a10a34941d93ad99b35c3a1f2cee16a9e2`, destination `a5e6deb6f9fbf17d31e8a593722cb0063969549a`, and the historical 44-path scope. Its local manifest and patch construction are not tracked as reproducible commands, so their hashes are omitted. Task 40 reviewed that scope and confirmed VAL-001 through VAL-009. The added TUI guide triplet and Task 43 findings invalidate the old package and verdicts; Task 43.6 owns the final 47-path package and reviews.
 
-## Historical Task 5 Self-review
+## Historical Results
 
-- Correctness: runtime identities come from structured dump, live Loader inventory, accessibility trees, and exact third-party packages, not grep-only absence claims.
-- Scope: no Task 6-9 implementation and no product code changes.
-- Simplicity: evidence helpers are untracked Task 5 artifacts; no reusable product abstraction was added.
-- Security: browser actions stayed on known localhost URLs and did not inspect browser credentials.
-- Reviewer decisions: phase 1 Editor remains contradictory; phase 1 must not be declared fully green while the four BLOCKED rows remain.
+The local commands and complete inputs for the historical stages below are not tracked. Their detailed counts are omitted, and none is current acceptance evidence:
 
-## Historical Task 5 Final Supplement
+| Stage | External rows | Recorded result | Current meaning |
+| --- | --- | --- | --- |
+| Six-row Web | ModLens, Task Board, SSH, Remote Web UI, Pet, Git Graph | Local success report only | Superseded by Pet and Git Graph authorization findings |
+| Four-row Web | ModLens, Task Board, SSH, Remote Web UI | Local success report only | Superseded by Task Board lifecycle |
+| Three-row Web | ModLens, SSH, Remote Web UI | Local success report only | Superseded by package lifecycle findings |
+| Zero-row Web | none | Local success report only | Superseded by later Pet admission |
+| Two-row Web | Pet and Git Graph `0.2.9` | Local success report only | Superseded by Git Graph active-operation lifecycle |
+| One-row Web | Pet `0.2.9` | Task 42 tracked built acceptance passed 1/1; the ignored local driver and oracle are supporting evidence only | Task 43.6 final 47-path package and independent reviews pending |
 
-This append-only supplement records the final evidence and reviewer decision. The original `DONE_WITH_CONCERNS` status and 24 PASS / 4 BLOCKED matrix above remain the historical result before the focused fixes; they are not rewritten. The corrected [design §8.1](../specs/2026-08-19-dsh-five-repo-fusion-design.md#81-existing-web-behavior) and [Task 5 plan](2026-08-19-dsh-five-repo-fusion.md#task-5-regress-existing-web-behavior-and-deduplication) assign Files/Web Editor/Terminal/Git to Task 7 rather than Task 5.
+## Current Acceptance Contracts
 
-- **Search:** the seeded result opened, the query cleared, the normal session tree returned, and the browser target closed.
-- **Fork:** `/api/session.fork` returned HTTP 200, added one row, selected the new session, and closed the browser target.
-- **Compact:** the UI reported `已压缩 7 条历史记录（约 423 tokens）`; the persisted event chain contained `compaction/summary`, `compaction/end`, and successful `command/done`. Assembled cold resume passed. The final review treated earlier helper-level `accepted: false` records as stale indexes rather than contrary runtime evidence.
-- **Header export:** the header action returned HTTP 200 with a non-empty 7,273-byte ZIP.
-- **`/export`:** the slash command separately returned HTTP 200 with a non-empty 7,372-byte ZIP and closed its browser target.
-- **Keyless headless:** the focused product path exited `0`, passed one test, and produced `CLI tool round trip complete: CLI_TOOL_ROUND_TRIP`.
-- **Runtime tool catalog:** the assembled Fusion catalog reported `describe_image: 0` and `modlens_read_image: 1` from `context.tools.schemas()` for `@liustack/modlens@3.22.0`.
+- The shared profile setup copies only the four tracked fixture files, rejects pre-installation `node_modules`, performs the frozen install, and verifies the Pet `0.2.9` manifest and resolved entry.
+- HTTP snapshots compare status, a normalized complete multimap built from Node HTTP(S) raw header pairs, and original body bytes. Per-request connection and framing headers are explicitly excluded; Pet root normalization replaces only the located boot payload bytes in the captured `Buffer`.
+- Command timeout, caller cancellation, and readiness cancellation settle only after the complete process tree stops within the cleanup budget.
+- The CI EXIT trap preserves a non-zero acceptance status while terminating and waiting for the Chrome process group and removing its profile.
+- Private-package mutation settles callback, removal, and installed-entry integrity checks independently; one failure is rethrown unchanged and multiple failures form an ordered `AggregateError`.
 
-The final independent review is `APPROVED` for both specification compliance and evidence quality. Task 5 therefore concludes `APPROVED`: the four earlier blockers are resolved, the unrelated full-Web hover timeout remains non-blocking, and no Task 5 acceptance gap remains.
+## TUI
 
-## 2026-08-21 Task 12 Convergence
+The source-validation `dsh-tui@0.7.1` run remains historical PASS evidence under its 41-package rc.5 source closure. The public package series has 20 installable versions through the no-cache response cutoff `2026-08-23T11:18:55Z`. Exact `0.9.0`, published at `2026-08-23T05:35:34.508Z`, passes artifact and license checks, then fails single Liangshen ownership because it packages eight Liangshen files with no supported opt-out. Security, public closure, isolated installation, profile composition, and PTY checks are `NOT RUN` after that first failure. Task 42 recorded TUI as `NOT RUN (not affected)`.
 
-The Task 11 PASS and the later six-row runtime PASS are superseded as current final results by the Task 12 security findings; they remain valid historical evidence for the versions and checks they covered.
+## Remaining Acceptance
 
-- **Historical six-row composition:** 156/156 runtime assertions covered the six exact rows, existing Web paths, deduplication, exact locks and build approvals, clean diagnostics, compaction of seven items and 402 tokens, and restart resume of the same durable session. Those checks did not cover the later Pet or Git Graph authorization findings and cannot close final acceptance.
-- **Historical four-row composition:** the selected set was ModLens `3.22.1`, Task Board `0.1.11`, SSH `0.2.5`, and Remote Web UI `0.1.11`. Its REAL gate passed 1/1 through system Chrome CDP `9333`; the complete oracle passed 170/170, compacted seven items and 401 tokens, reduced projected tokens from 448 to 160, and resumed the same durable session. The Task Board lifecycle finding supersedes this evidence.
-- **Historical three-row composition:** the selected set was ModLens `3.22.1`, SSH `0.2.5`, and Remote Web UI `0.1.11`. Its REAL gate passed 1/1 through system Chrome CDP `9333` with fixture-local dependencies, lock data, and build approvals; the complete oracle passed 174/174, compacted seven items and 402 tokens, reduced projected message tokens from 449 to 155, and retained 155 after restart. Its independent rereview was `EVIDENCE PASS / RUNTIME PASS`. The ModLens, SSH, and Remote Web UI lifecycle reviews supersede this admission evidence.
-- **Pet:** historical `0.1.11` `/api/pet/*` routes permit unpaired remote state reads and persistent mutations. That exact version remains excluded.
-- **Git Graph:** historical `0.1.11` `/git/*` remains reachable after Remote Web UI device revocation. That exact version remains excluded.
-- **Skin Center:** published `0.1.12` through `0.2.5` fail license identity; `0.1.11` installs, composes, boots, and loads its client, but its Settings card is invisible on rc.5.
-- **Better Sidebar:** optional `terminal_*` model tools bypass session sandboxing, approval, and environment scrubbing. No acceptable deployment switch preserves the complete workbench, so the row remains unmounted.
-- **TUI and Liangshen:** exact `0.7.1` passes fresh/resume PTY runtime under a 41-package pure rc.5 source closure. The npm registry lacks 23 required rc.5 packages, so no supported public command can reproduce that closure and TUI public delivery remains phase 2 BLOCKED. Liangshen retains exact source `0.2.4` and the repository security adaptation.
-
-The historical three-row checked-in REAL composition gate used system Chrome CDP `9333`, contained no browser launch fallback, and left default unit, coverage, Web, and CI collections offline. Its fixture/profile dependencies, lock data, and `allowBuilds` did not modify the root dependencies, root lockfile, or root `allowBuilds`.
-
-Task 12.1 through Task 12.17 have task-level evidence or authoritative audits. The top-level Task 12 cross-domain review and Task 13 acceptance are complete. At that superseded stage, the zero-row REAL gate passed 1/1 and the complete oracle passed 196/196 with independent `EVIDENCE PASS / RUNTIME PASS`.
-
-## 2026-08-21 Zero-Row Convergence
-
-This section records the superseded zero-row stage.
-
-- **ModLens:** every audited DSH candidate was blocked because target routes were absent or their disposers were discarded.
-- **SSH:** all 26 releases audited at that stage left accepted terminal and SSH sessions active after plugin disposal.
-- **Remote Web UI:** all 26 releases audited at that stage were blocked. Version `0.1.11` passed route unload/remount but failed open SSE, tunnel quiescence, client subscription, and failed-pair root cleanup; versions `0.1.12+` also conflicted on manifest/LICENSE identity.
-- **Product convergence:** Task 12.17 made the Fusion patch, profile dependency map, REAL fixture, and external build approvals empty and recorded all eight blockers.
-- **Historical gate:** the zero-row REAL gate passed 1/1 through system Chrome CDP `9333`; the complete oracle passed 196/196, all three negative controls blocked at 195/196 with exit 1, compact recorded seven items/401 tokens and 448 to 155 projected message tokens, and restart retained 155.
-- **Independent review:** the zero-row evidence and runtime review records `EVIDENCE PASS / RUNTIME PASS` with no blocking finding.
-
-## 2026-08-22 Task 22 Two-Row Admission (Superseded by Task 33)
-
-At the Task 22 checkpoint, exact Pet and Git Graph `0.2.9` were admitted after the recorded freshness, ordered stop-point, lifecycle, security, and independent-review checks. Task 33 later superseded that admission; the current selection is Pet-only, and the [compatibility matrix](fusion-compat-matrix.md) and [Fusion ownership decision](../../../.agents/notes/implemented/architecture/2026-08-19-fusion-profile-external-plugin-ownership.md) describe the current result and revalidation conditions.
-
-At that checkpoint, `packages/bundle/fusion/cordis.patch.yml` contained exactly `pet` and `ui-git-graph`, `packages/bundle/fusion/package.json` pinned both packages to `0.2.9`, and `apps/web/tests/fusion-real-composition.acceptance.ts` compared the complete ordered model input and blocked-route responses with an independently booted `base + web-app` profile while checking live Pet-state and Git-branches data, visible controls, diagnostics, and cleanup. Those files are Pet-only at HEAD after Task 33 and do not prove the checkpoint contents.
-
-## 2026-08-23 Task 29 Two-Row Web Regression (Superseded by Task 33)
-
-The one-shot Task 29 driver completed with exit `0`, empty stderr, and 36/36 PASS assertions against system Google Chrome 151 through CDP `http://127.0.0.1:9333`. It used exact profile-local Pet and Git Graph `0.2.9`, repository commit `108b96a10a34941d93ad99b35c3a1f2cee16a9e2`, driver SHA-256 `6afc44191217200cfbe0630b4e5e445d9109f284c71b9343ef34d082691bf2d0`, oracle SHA-256 `4b2e8684f7506f92924bec641a289da300e2fa70dec869e5d3df7e8d4069e112`, oracle-test SHA-256 `cfcfd643678c00d22bd977e1c2ae8ae5525cd211603c51d76b208ffdb462d37e`, and fixture-lock SHA-256 `5459fff341481642aacb7f9fb31c9caf114cc4ae737927550bb05d04a96f68c9`.
-
-- **Existing Web workflows:** conversation rendering, the read tool card, blank-session reuse, active-session creation, session list and rename projection, Search, fork, cold resume, `/compact`, header export, `/export`, and model selection all passed in one fresh assembled run.
-- **Fork and compact identity:** the selected row carried the unique title derived from the returned child id. The compact `command/run`, successful `command/done`, and start/summary/end events shared one command id and compaction id; `done.sourceEventSeq` equaled `summary.seq`, and `end.error` was absent.
-- **Settings:** General, Models, and Plugins navigation passed, as did Escape and Close dismissal. The 161-row DOM inventory exactly matched the live `pluginInventory/list` RPC snapshot; its complete external set was exactly `@linxin666/dsh-pet@0.2.9` and `@linxin666/dsh-client-ui-git-graph@0.2.9`, both enabled and active.
-- **Export semantics:** both ZIPs contained the root `session.jsonl` and expected fork descendant log. Header and slash ledgers each bound the trigger, unique HEAD Request identity, HTTP 200 response, Download URL/completion, and ZIP SHA-256; the abort request-id set and global download URL multiset exactly matched those two operations.
-- **Composition and isolation:** Pet remained unique, Git Graph exposed live `task29` branch data on blank sessions and hid after conversation start, and fresh stock Web, headless, headless behavior, and ACP checks contained no Fusion leakage.
-- **Diagnostics and cleanup:** console warnings/errors, page errors, HTTP failures, slot errors, and unexpected network failures were empty. Both Fusion service PGIDs have persisted startup trees and empty final snapshots; both ports, the model-provider port, Task-created CDP targets, the profile link, and the temporary directory were removed. A controlled child proved leader-only cleanup can miss a descendant while the PGID oracle detects it; all 10 oracle controls passed.
-- **Append-only scope:** the cumulative index-to-worktree diff includes Task 22 historical prose cleanup that predates Task 29. Task 29 facts occur only in this final section; the header identifies the Task 29 two-row result as superseded by Task 33, and links to untracked `.superpowers/**` evidence remain removed so the tracked report has no clean-checkout dead links.
-
-The exact long-running command was started in the background and polled in intervals shorter than one minute:
-
-```text
-sh .superpowers/sdd/round5-task29/run-driver.sh
-```
-
-The complete RED/GREEN analysis, command ledger, provenance, diagnostics, screenshots, accessibility snapshots, RPC and DOM inventories, and cleanup records are under `.superpowers/sdd/round5-task29/`; the consolidated report is `.superpowers/sdd/round5-task29-report.md`.
-
-## 2026-08-23 Task 35 Current One-Row Regression
-
-The current exact Pet `0.2.9` composition completed against the existing system Chrome `151.0.7922.172` through CDP `127.0.0.1:9333`. The runtime report and independent review are `.superpowers/sdd/ralph-round6-task35-runtime-report.md` and `.superpowers/sdd/ralph-round6-task35-runtime-review.md`.
-
-- **Built acceptance:** `DSH_SNAPSHOT=replay pnpm run test:fusion:acceptance:built` exited `0` and passed 1/1.
-- **Full Web driver:** the fresh fixture-local install exposed exactly `include:pet -> @linxin666/dsh-pet@0.2.9`; the driver exited `0` and passed 39/39 across the Pet-only oracle, existing Web workflows, stock Web, headless, and ACP isolation.
-- **Runtime-final oracle:** `TASK34_PHASE=runtime-final` exited `0` and passed 50/50 with empty stderr and an empty final controlled process snapshot.
-- **Diagnostics:** browser console, page, HTTP, slot, and unexpected network diagnostics were empty; the two expected export HEAD aborts matched completed export operation identities.
-- **Cleanup:** cleanup errors were empty, all service and mock-provider ports closed, all service and controlled process groups exited, and task-created Chrome targets and temporary directories were absent.
-- **Pre/post reconciliation:** Chrome identity and the three pre-existing targets were unchanged; target, listener, process, port, and temporary-directory diffs were empty. TUI was `NOT RUN (not affected)`, public TUI delivery remains phase 2 BLOCKED, and Task 34 has resumed without completing its remaining final-delivery items.
+Task 41 independent reviews are complete. Task 42 final review reopened acceptance for the Task 43 findings. Final verification, the 47-path package, independent bits, DSH, security, documentation, and plan/design/spec/checklist reviews, and delivery bookkeeping remain pending for Task 43.6.

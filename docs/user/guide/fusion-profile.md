@@ -105,7 +105,7 @@ dsh --profile fusion --port 3080
 
 Open the printed URL. The page retains the stock Web interface, including its left `ui-sidebar`, Settings, and New Session entry. Pet is visible as one global dock. Open the agent preset picker for a new session and select **梁神模式**. The preset roster returned by the Web API uses the id `liangshen`; the preset is repository-owned and is not a Fusion external row.
 
-The checked-in browser acceptance boots this one-row recipe through system Chrome CDP `9333`. It verifies exact package and row identity, one Pet root, live Pet-state data, blocked-package absence, stock Web visibility, clean diagnostics, and cleanup.
+Confirm that the page has this state and that the browser console reports no errors. Repository verification uses the [Fusion external-profile acceptance](../../testing.md#tiers); the owning [Agent Note](../../../.agents/notes/implemented/architecture/2026-08-19-fusion-profile-external-plugin-ownership.md) records its durable admission and verification requirements.
 
 ## Known limitations
 

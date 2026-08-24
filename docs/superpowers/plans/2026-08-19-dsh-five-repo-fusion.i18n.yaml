@@ -2,5 +2,5 @@
 # side as of the last confirmed-consistent state. Both languages carry equal authority;
 # after editing either side, bring the other along and re-record with:
 #   pnpm run verify-translation-pairing --write docs/superpowers/plans/2026-08-19-dsh-five-repo-fusion.md
-2026-08-19-dsh-five-repo-fusion.md: 2d0d7501d106f7e2c7359a2e0e107fba8bd4d1ad
-2026-08-19-dsh-five-repo-fusion.zh.md: afc808808833b982297565724d377c8673ad48f2
+2026-08-19-dsh-five-repo-fusion.md: cb5cf807199e7bb97773e75a2d6897d2acb085b7
+2026-08-19-dsh-five-repo-fusion.zh.md: 941f335183b0da0b834a2c2b311dd30c14813ca8

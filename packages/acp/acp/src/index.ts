@@ -142,13 +142,6 @@ export function apply(ctx: Context, config: AcpConfig): void {
     inflight.resolve(reason)
   }
 
-  const rejectFromError = (
-    inflight: NonNullable<SessionRecord['inflight']>,
-    reason: Extract<TurnEndReason, { kind: 'error' }>,
-  ): void => {
-    inflight.reject(internalError(`turn failed: ${reason.error.message}`))
-  }
-
   // Emit only committed assistant text. Raw chunks, reasoning, tools, plans,
   // titles, and retry markers are presentation or trace data and stay off the
   // automation wire.
@@ -187,7 +180,7 @@ export function apply(ctx: Context, config: AcpConfig): void {
           // Model failures surface immediately as prompt errors; ordinary
           // endings wait for whole-agent idle below.
           record.inflight = undefined
-          rejectFromError(inflight, event.data.reason)
+          inflight.reject(internalError(`turn failed: ${event.data.reason.error.message}`))
         } else {
           inflight.endReason = event.data.reason
         }
@@ -259,7 +252,10 @@ export function apply(ctx: Context, config: AcpConfig): void {
         const handle = await agents.create({
           sessionId,
           meta: { cwd: params.cwd },
-          agentOptions: agentOptions(config),
+          agentOptions: {
+            ...config.provider !== undefined ? { provider: config.provider } : {},
+            ...config.model !== undefined ? { model: config.model } : {},
+          },
         })
         /* v8 ignore next 4 -- a real stdio close can race an in-flight create. */
         if (closed) {
@@ -412,18 +408,6 @@ export function apply(ctx: Context, config: AcpConfig): void {
   /* v8 ignore stop */
 
   ctx.effect(() => quiesce, 'acp.connection')
-}
-
-/**
- * Build per-agent options from plugin config without assigning absent optional fields.
- * @param config - ACP provider/model configuration.
- * @returns the configured fields only.
- */
-function agentOptions(config: AcpConfig): { provider?: string; model?: string } {
-  return {
-    ...config.provider !== undefined ? { provider: config.provider } : {},
-    ...config.model !== undefined ? { model: config.model } : {},
-  }
 }
 
 /** Reject session features outside the automation contract. */

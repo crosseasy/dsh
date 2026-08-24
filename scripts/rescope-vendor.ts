@@ -565,6 +565,21 @@ function excluded(file: string): boolean {
   return !EXTENSIONS.some(extension => file.endsWith(extension))
 }
 
+/**
+ * Filter tracked paths to existing files eligible for the generic rescope pass.
+ * @param trackedFiles - Repository-relative paths reported by `git ls-files`.
+ * @param fileExists - Predicate run against each resolved path.
+ * @param resolveFile - Converts a repository-relative path to a filesystem path.
+ * @returns Existing tracked files that generic traversal may read and rewrite.
+ */
+export function trackedExistingEligibleFiles(
+  trackedFiles: readonly string[],
+  fileExists: (path: string) => boolean = existsSync,
+  resolveFile: (file: string) => string = file => resolve(root, file),
+): string[] {
+  return trackedFiles.filter(file => file !== '' && !excluded(file) && fileExists(resolveFile(file)))
+}
+
 function escapeRegExp(value: string): string {
   return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
 }
@@ -1188,9 +1203,9 @@ function main(): void {
   const mode = args.includes('--apply') ? 'apply' : args.includes('--check') ? 'check' : 'dry'
   const reverse = args.includes('--reverse')
   const all = patterns(reverse)
-  const files = execFileSync('git', ['ls-files', '-z'], { cwd: root, encoding: 'utf8' })
-    .split('\0')
-    .filter(file => file !== '' && !excluded(file))
+  const files = trackedExistingEligibleFiles(
+    execFileSync('git', ['ls-files', '-z'], { cwd: root, encoding: 'utf8' }).split('\0'),
+  )
 
   const counts = new Map<string, { files: number; lines: number }>()
   const failures: string[] = []

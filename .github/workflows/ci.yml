@@ -285,6 +285,9 @@ jobs:
           command -v google-chrome
           command -v setsid
           command -v curl
+          command -v ss
+          command -v ps
+          command -v timeout
 
       - name: Run Fusion external-profile snapshot with system Google Chrome
         env:
@@ -294,20 +297,123 @@ jobs:
           chrome_profile=
           chrome_pid=
           cleanup() {
+            local acceptance_status=$?
+            trap - EXIT
+            set +e
+            local cleanup_status=0
+            local cleanup_total_seconds=20
+            local cleanup_profile_reserve_seconds=5
+            local cleanup_term_grace_seconds=5
+            local cleanup_deadline=$((SECONDS + cleanup_total_seconds))
+            local process_deadline=$((cleanup_deadline - cleanup_profile_reserve_seconds))
+            local ps_probe_failed=
+            local ps_probe_failure=
+            local ss_probe_failed=
+            local ss_probe_failure=
             if [[ -n "$chrome_pid" ]]; then
-              kill -TERM -- "-$chrome_pid" 2>/dev/null || true
-              for _ in {1..20}; do
-                kill -0 "$chrome_pid" 2>/dev/null || break
+              kill -TERM -- "-$chrome_pid" 2>/dev/null
+              local term_status=$?
+              local term_deadline=$((SECONDS + cleanup_term_grace_seconds))
+              if (( term_deadline > process_deadline )); then
+                term_deadline=$process_deadline
+              fi
+              if (( term_status != 0 )); then
+                echo "Fusion cleanup: failed to send TERM to Chrome process group $chrome_pid" >&2
+                cleanup_status=1
+              fi
+              local kill_sent=
+              local quiescent=
+              while :; do
+                local group_quiet=1
+                local listener_quiet=
+                local group_rows
+                group_rows=$(ps -axo pgid=,stat= 2>&1)
+                if (( $? != 0 )); then
+                  ps_probe_failed=1
+                  ps_probe_failure=$group_rows
+                  group_quiet=
+                else
+                  while read -r member_pgid member_stat; do
+                    if [[ "$member_pgid" == "$chrome_pid" ]]; then
+                      case "$member_stat" in
+                        Z*|X*) ;;
+                        *) group_quiet= ;;
+                      esac
+                    fi
+                  done <<< "$group_rows"
+                fi
+                local listener_rows
+                listener_rows=$(ss --no-header --listening --tcp 'sport = :9333' 2>&1)
+                if (( $? != 0 )); then
+                  ss_probe_failed=1
+                  ss_probe_failure=$listener_rows
+                elif [[ -z "$listener_rows" ]]; then
+                  listener_quiet=1
+                fi
+                if [[ -n "$group_quiet" && -n "$listener_quiet" ]]; then
+                  quiescent=1
+                  break
+                fi
+                if [[ -z "$kill_sent" ]] && (( SECONDS >= term_deadline )); then
+                  kill -KILL -- "-$chrome_pid" 2>/dev/null
+                  if (( $? != 0 )); then
+                    echo "Fusion cleanup: failed to send KILL to Chrome process group $chrome_pid" >&2
+                    cleanup_status=1
+                  fi
+                  kill_sent=1
+                  continue
+                fi
+                if (( SECONDS >= process_deadline )); then
+                  break
+                fi
                 sleep 0.25
               done
-              kill -KILL -- "-$chrome_pid" 2>/dev/null || true
-              wait "$chrome_pid" 2>/dev/null || true
+              if [[ -n "$ps_probe_failed" ]]; then
+                echo "Fusion cleanup: ps process-group probe failed: $ps_probe_failure" >&2
+                cleanup_status=1
+              fi
+              if [[ -n "$ss_probe_failed" ]]; then
+                echo "Fusion cleanup: ss CDP listener probe failed: $ss_probe_failure" >&2
+                cleanup_status=1
+              fi
+              if [[ -z "$quiescent" ]]; then
+                echo "Fusion cleanup: Chrome process group or CDP listener did not become quiescent" >&2
+                cleanup_status=1
+              else
+                wait "$chrome_pid" 2>/dev/null
+                if (( $? == 127 )); then
+                  echo "Fusion cleanup: failed to wait for Chrome process-group leader $chrome_pid" >&2
+                  cleanup_status=1
+                fi
+              fi
             fi
             if [[ -n "$chrome_profile" ]]; then
-              rm -rf "$chrome_profile"
+              local remaining_seconds=$((cleanup_deadline - SECONDS))
+              local rm_status
+              if (( remaining_seconds > 0 )); then
+                timeout --signal=KILL "${remaining_seconds}s" rm -rf -- "$chrome_profile"
+                rm_status=$?
+              else
+                rm_status=124
+              fi
+              if (( rm_status != 0 )); then
+                echo "Fusion cleanup: failed to remove Chrome profile $chrome_profile (status $rm_status)" >&2
+                cleanup_status=1
+              fi
             fi
+            if (( acceptance_status != 0 )); then
+              exit "$acceptance_status"
+            fi
+            if (( cleanup_status != 0 )); then
+              exit 1
+            fi
+            exit 0
           }
           trap cleanup EXIT
+          if ss --no-header --listening --tcp 'sport = :9333' | grep -q .; then
+            echo "CDP port 9333 is already occupied"
+            exit 1
+          fi
           chrome_profile=$(mktemp -d)
           setsid "$chrome_bin" \
             --headless=new \
@@ -320,8 +426,36 @@ jobs:
           chrome_pid=$!
           ready=
           for _ in {1..40}; do
+            if ! kill -0 "$chrome_pid" 2>/dev/null; then
+              cat "$RUNNER_TEMP/fusion-chrome.log"
+              echo "system Chrome exited before CDP readiness"
+              exit 1
+            fi
             if curl --silent --show-error --fail --max-time 1 \
               http://127.0.0.1:9333/json/version >/dev/null; then
+              chrome_pgid=$(ps -o pgid= -p "$chrome_pid" | tr -d '[:space:]' || true)
+              if [[ "$chrome_pgid" != "$chrome_pid" ]]; then
+                echo "system Chrome is not the expected setsid process-group leader"
+                exit 1
+              fi
+              listener_pids=$(
+                ss --no-header --listening --tcp --process 'sport = :9333' \
+                  | grep -oE 'pid=[0-9]+' \
+                  | cut -d= -f2 \
+                  | sort -u \
+                  || true
+              )
+              if [[ -z "$listener_pids" ]]; then
+                echo "CDP port 9333 has no attributable listener"
+                exit 1
+              fi
+              while IFS= read -r listener_pid; do
+                listener_pgid=$(ps -o pgid= -p "$listener_pid" | tr -d '[:space:]' || true)
+                if [[ "$listener_pgid" != "$chrome_pgid" ]]; then
+                  echo "CDP port 9333 listener $listener_pid is outside Chrome process group $chrome_pgid"
+                  exit 1
+                fi
+              done <<< "$listener_pids"
               ready=1
               break
             fi

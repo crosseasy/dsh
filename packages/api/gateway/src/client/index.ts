@@ -18,7 +18,6 @@ import type {
 } from '@deepseek-ai/dsh-typert-protocol'
 
 interface MountToken {
-  active: boolean
   readonly abort: AbortController
 }
 
@@ -236,7 +235,7 @@ class ClientRemoteService extends Service implements TypertClientRemote {
   }
 
   private async install(descriptor: InvocationDescriptor): Promise<TypertDisposer> {
-    const token: MountToken = { active: true, abort: new AbortController() }
+    const token: MountToken = { abort: new AbortController() }
     const installed: TypertDisposer[] = []
     try {
       if (descriptor.invocation.kind === 'direct') {
@@ -245,15 +244,13 @@ class ClientRemoteService extends Service implements TypertClientRemote {
       const projection = scopedProjection(descriptor)
       if (projection !== undefined) installed.push(await this.installScoped(descriptor, projection, token))
     } catch (error) {
-      token.active = false
       token.abort.abort()
       for (const dispose of installed.reverse()) await dispose()
       throw error
     }
     return async () => {
       /* v8 ignore next -- Cordis effect disposers are idempotent and invoke this cleanup at most once. */
-      if (!token.active) return
-      token.active = false
+      if (token.abort.signal.aborted) return
       token.abort.abort()
       for (const dispose of installed.reverse()) await dispose()
     }
@@ -362,7 +359,7 @@ class ClientRemoteService extends Service implements TypertClientRemote {
     boundIdentity?: BoundContextIdentity,
   ): Promise<RemoteResult<unknown>> {
     const endpoint = endpointOf(descriptor)
-    if (!token.active) return withdrawn(endpoint)
+    if (token.abort.signal.aborted) return withdrawn(endpoint)
     const expected = descriptor.parameters.length - (projection?.parameterIndex === undefined ? 0 : 1)
     const hasCallerSignal = descriptor.cancellation !== undefined && values.length === expected + 1
     if (values.length !== expected && !hasCallerSignal) {
@@ -404,7 +401,8 @@ class ClientRemoteService extends Service implements TypertClientRemote {
       : AbortSignal.any([token.abort.signal, callerSignal])
     try {
       const result = await connection.rpc.call('/api', endpoint, { args }, signal)
-      if (!mountActive(token)) return withdrawn(endpoint)
+      // oxlint-disable-next-line typescript/no-unnecessary-condition -- the mount disposer can abort the signal while the RPC is awaited.
+      if (token.abort.signal.aborted) return withdrawn(endpoint)
       if (!result.ok) return { ok: false, error: result.error }
       return { ok: true, value: parse(descriptor.result, result.value, endpoint, 'result') }
     } catch (error) {
@@ -512,10 +510,6 @@ function remoteServiceKey(namespace: string): string {
 
 function endpointOf(descriptor: Pick<InvocationDescriptor, 'namespace' | 'method'>): string {
   return `${descriptor.namespace}/${descriptor.method}`
-}
-
-function mountActive(token: MountToken): boolean {
-  return token.active
 }
 
 function scopedProjection(descriptor: InvocationDescriptor): ScopedProjection | undefined {

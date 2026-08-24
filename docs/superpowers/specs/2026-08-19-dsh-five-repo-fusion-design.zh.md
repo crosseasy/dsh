@@ -3,9 +3,10 @@
 [English](2026-08-19-dsh-five-repo-fusion-design.md) | 中文
 
 - 日期：2026-08-19（v1）；2026-08-20（v2）；2026-08-21 整合 Task 12 证据；2026-08-22 整合 Task 18、Task 22 与 Task 26 证据；2026-08-23 整合 Task 28 与 Task 29 证据及 Task 35 oracle 约定
-- 状态：历史设计已同步至完成的 Task 34、Task 35、Task 36、Task 37 与 Task 38
-- 交付策略：最终 V2 `exact-product-worktree` package 精确包含 43 个产品路径，package SHA-256 为 `74e694a7c5e5bc18452596b0ec70a7379de1d3459c2073d8f0e1eee9c7b34170`，patch SHA-256 为 `1f71831a467bd652af7eeedf1561b0e431c95088d7e3cc26c9dfc4e2d5921581`；其 bits 复审为 P0/P1/P2 `0/0/0`，安全复审 clean，产品文档与 plan/design/spec alignment 复审均为 Critical/Important/Minor `0/0/0`
-- 当前结果：产品交付选择唯一外部配置行，即精确 Pet `0.2.9`。系统 Chrome 151 经 CDP `9333` 的当前 built acceptance 通过 1/1，完整 Web driver 通过 39/39，runtime-final oracle 通过 50/50。console、page、network 与 cleanup 诊断干净，pre/post target、listener、process、port 与临时目录检查均无残留。Git Graph `0.2.9` 保持阻塞；Task 22 与 Task 29 两行结果继续作为已被取代的历史证据。TUI 为 `NOT RUN (not affected)`，公开交付保持阶段 2 BLOCKED。全量仓库 coverage 与实际 GitHub-hosted job 未在本地运行。HEAD 保持 `6e0f654` 且 index 为空；恢复 staged-only 交付或清理 commit history 需要用户另行授权。
+- 状态：Task 43.6 最终复验已在显式 47 路径 `exact-product-worktree` package 上完成。重建 package 的 SHA-256 为 `177ee237ae7a232ba7f9012167bf1c3c3dce5a403dcb0f951b1917d177cdc564`，产品 binary diff SHA-256 保持 `5702846d37d25a615aac8c22b9145b4dc568da0a0a10b22a52a24b7a87212405`
+- 交付策略：Task 39 冻结了 `HEAD=a5e6deb6f9fbf17d31e8a593722cb0063969549a`、空 index，以及相对已验证 Fusion 基线的 44 个产品/支持路径。该历史范围由 43 个产品路径与 `.gitignore` 组成；`.gitignore` 持有排除执行产物的支持策略。纳入 `docs/user/guide/fusion-tui-profile.*` 三联后，当前范围为 47 个路径，44 路径 package 随之失效。更早的 V2 package 也因其 43 路径 allowlist 缺少 `.gitignore` 与三个 TUI 指南路径而独立陈旧；现有陈旧性记录没有提供 V2 HEAD，因此不推断该值。Task 44 和 Task 45 使 live Git index 保持为经过审计的 26 路径 Fusion allowlist staged delivery，不含被排除的执行记录，也不含无关或非 Fusion staged 路径；执行记录与无关/非 Fusion 工作只保留在 index 之外。当前顺序为 Task 39 -> Task 40 -> Task 41 -> Task 42 -> Task 43 -> Task 44 -> Task 45。
+- Git 操作记录：Round 6/Task 38 的只读复审、Task 42 与 Task 43.6.1 独立 reviewer 各违规调用了一次 `git write-tree`。三次调用都返回既有 tree `d381ff301022d8c57d4da9ffc98a4bbcaed2cc95`，后续 HEAD、index 与 status 对比未发现这些命令造成的变化。相关禁令继续生效。
+- 当前结果：产品交付选择唯一外部配置行，即精确 Pet `0.2.9`。[tracked 回归记录](../plans/fusion-regression-report.md)持有详细静态与运行时证据：当前 tracked Pet-only built acceptance 通过 1/1；被忽略的本地 driver 连续两轮通过 39/39，oracle 通过 50/50，但这些支持性证据无法从 clean checkout 复现，也不能替代 tracked acceptance。当前 TUI 验证为 `NOT RUN (not affected)`。TUI 系列截至 `2026-08-23T11:18:55Z` 有 20 个可安装版本；精确 `0.9.0` 通过产物与许可证检查，随后在单一 Liangshen 所有权检查失败，因此安全与后续闭包、安装、组合和 PTY 检查均为 `NOT RUN`。TUI 公开交付保持阶段 2 BLOCKED。
 
 ---
 
@@ -18,7 +19,7 @@ Fusion 层把 DeepSeek Harness `0.1.0-rc.5` 与来自五个外部仓库的能力
 | `deepseek-harness-desktop` | Electron 桌面壳 | 仅定义约定；不修改外部仓库 |
 | `liustack/modlens` | 图像桥接 | 精确 `3.24.0` 服务端请求安全失败；Fusion 无配置行 |
 | `zhu1090093659/dsh-web-ui` | Web 能力包与 Liangshen 来源 | `0.2.6` 至 `0.2.9` 均已审计；准入 Pet `0.2.9`；Git Graph `0.2.9` 与其他影响决策的身份被阻塞；保留 Liangshen `0.2.4` 来源；其他身份保持 `NOT SELECTED` |
-| `ccch1mneyyy/dsh-TUI` | 终端 UI | 源码运行时选择精确版本 `0.7.1`；`0.8.7`／`0.8.8` 静态阻塞，运行时为 `NOT RUN` |
+| `ccch1mneyyy/dsh-TUI` | 终端 UI | 源码运行时选择精确版本 `0.7.1`；最新 `0.9.0` 在单一 Liangshen 所有权检查失败，因此安全与后续检查均为 `NOT RUN` |
 | `omdsh-dev/DSH-better-sidebar` | 右侧工作台 | 精确 `0.15.2` 公共 rc.5 peer 闭包失败；不挂载 |
 
 Fusion 的职责是组合与取舍，不是重写。仓库代码拥有 patch bundle、经过安全适配的 Liangshen preset、Web profile 操作步骤、TUI 交付状态文档、测试和 durable 产品文档。外部包依赖树继续由 profile 持有。
@@ -70,16 +71,16 @@ v2 判据只在隔离安装、组合、真实启动、目标能力可见和诊�
 
 | 能力 | 所有者 | 排除的重复项或 blocker |
 | --- | --- | --- |
-| 图像理解 | 无已接受外部所有者 | 前 38 个 DSH-capable ModLens 版本均缺少目标 route 或丢失 route disposer；精确 `3.24.0` 在生命周期前因服务端请求安全失败 |
-| 任务看板 | 无已接受所有者 | 28 个已发布版本均至少有一项强制检查失败；`0.2.9` 在生命周期停止 |
-| SSH 入口和 hosts API | 无已接受所有者 | 全部 28 个 SSH 版本都把已接受的独立终端会话留在插件 dispose 之外 |
-| 移动端远程 UI | 无已接受 Fusion 所有者 | Remote Web UI 准入结果为 0/28；桌面端可保留自身实现 |
+| 图像理解 | 无已接受外部所有者 | 较早的 DSH-capable ModLens 版本均缺少目标 route 或丢失 route disposer；精确 `3.24.0` 在生命周期前因服务端请求安全失败 |
+| 任务看板 | 无已接受所有者 | 每个已审计版本均至少有一项强制检查失败；`0.2.9` 在生命周期停止 |
+| SSH 入口和 hosts API | 无已接受所有者 | 每个已审计 SSH 版本都把已接受的独立终端会话留在插件 dispose（资源释放）之外 |
+| 移动端远程 UI | 无已接受 Fusion 所有者 | 每个已审计 Remote Web UI 版本都未通过准入；桌面端可保留自身实现 |
 | 宠物 UI | `@linxin666/dsh-pet@0.2.9` | 精确许可证、授权、生命周期、所有权、去重和 Chrome 检查均通过 |
 | 分支选择和提交拓扑 | 无已接受所有者 | Git Graph `0.2.9` 会在配置行 fiber dispose 后留下活跃 JSON 操作与子进程 |
 | 皮肤管理 | 无已接受所有者 | `0.1.12` 至 `0.2.9` 许可证冲突；`0.1.11` slot 不可见 |
 | 右侧工作台 | 无已接受所有者 | Better Sidebar `0.15.2` 的公共 rc.5 peer 闭包为 0/14；之后检查均为 `NOT RUN` |
-| Liangshen preset | 仓库 preset，来源为 `0.2.4` | `0.2.8`／`0.2.9` 保留不受约束的 Windows 自定义 Bash；TUI `0.8.7`／`0.8.8` 各自打包第二个所有者 |
-| 终端 UI | 源码运行时：dsh-TUI `0.7.1`；无公开交付 | `0.8.7`／`0.8.8` 各自打包 8 个 Liangshen 文件，新的完整公开 rc.5 闭包结果为 0/41 |
+| Liangshen preset | 仓库 preset，来源为 `0.2.4` | `0.2.8`／`0.2.9` 保留不受约束的 Windows 自定义 Bash；TUI `0.9.0` 打包第二个所有者 |
+| 终端 UI | 源码运行时：dsh-TUI `0.7.1`；无公开交付 | `0.9.0` 打包 8 个 Liangshen 文件且无 opt-out，并在安全、公共闭包或 PTY 前停止 |
 
 ModLens、SSH、Remote Web UI、Task Board 与 Git Graph 在已发布版本通过首个失败的强制检查及全部后续检查前保持排除。Pet 固定为精确 `0.2.9`；更早存在授权缺陷或许可证冲突的版本继续保持拒绝。Files、editor、UI Terminal 和 Source Control 仍属于被阻塞的右侧工作台能力。
 
@@ -146,16 +147,18 @@ Better Sidebar 保持阻塞，直到上游部署策略能够隐藏或禁用不�
 
 ## 7. 失败模式
 
-- **ModLens 服务端安全：** 精确 `3.24.0` 通过产物、许可证、依赖闭包、隔离安装与组合检查，但 `POST /modlens/paste` 会接受 `/modlens/config` 所拒绝的跨站请求，并写入所提交的图像。生命周期、启动、能力与 Chrome 检查为 `NOT RUN`；前 38 个 DSH 候选保留既有 route 生命周期结论。
-- **SSH 生命周期：** 全部 28 个已发布版本都把已接受的独立终端会话留在 `SshEngine.dispose()` 之外。
-- **Remote Web UI：** 28 个发布版本保持排除。精确 `0.2.9` 修复许可证身份，但因 `/remote` 授权可关闭而在安全检查失败；下游生命周期与运行时检查为 `NOT RUN`。
-- **Task Board 生命周期：** 全部 28 个已发布版本均至少不满足一项必要条件。精确 `0.2.9` 修复许可证身份，但丢弃顶层 settings subscription disposer。不得使用 shim 或核心改动。
+[带日期兼容矩阵](../plans/fusion-compat-matrix.md)持有截至 `2026-08-23T11:18:55Z` 的当前发布计数与最新版本结论。
+
+- **ModLens 服务端安全：** 精确 `3.24.0` 通过产物、许可证、依赖闭包、隔离安装与组合检查，但 `POST /modlens/paste` 会接受 `/modlens/config` 所拒绝的跨站请求，并写入所提交的图像。生命周期、启动、能力与 Chrome 检查为 `NOT RUN`；较早的 DSH 候选保留既有 route 生命周期结论。
+- **SSH 生命周期：** 每个已审计版本都把已接受的独立终端会话留在 `SshEngine.dispose()` 之外。
+- **Remote Web UI：** 每个已审计版本都保持排除。精确 `0.2.9` 修复许可证身份，但因 `/remote` 授权可关闭而在安全检查失败；下游生命周期与运行时检查为 `NOT RUN`。
+- **Task Board 生命周期：** 每个已审计版本均至少不满足一项必要条件。精确 `0.2.9` 修复许可证身份，但丢弃顶层 settings subscription disposer。不得使用 shim 或核心改动。
 - **许可证身份：** `0.2.8` 波次有 10 个直接冲突；在 `0.2.9` 中，Chat Recovery 与 Skin Center 仍有直接冲突，Skins 与 `web-ui-all` 则继承冲突的依赖闭包。
 - **Describe Image 授权：** 精确 `0.2.8` 与 `0.2.9` 接受 `/describe-image` 上的非 loopback 跨站上传并触达 attachment 存储。
 - **Remote Web UI 授权：** 精确 `0.2.9` 在 `requirePairingForLan:false` 时跳过 `/remote` HTTP 与 WebSocket 路由的实时设备授权。
 - **Pet：** 精确 `0.2.9` 修复许可证身份、保留服务端授权，并通过实时负控、disposer／重挂、隔离 profile 检查和 Chrome 运行时 gate。
 - **Git Graph 生命周期：** 精确 `0.2.9` 修复许可证身份与授权，但活跃 `/git` JSON 操作及其子进程可越过配置行 fiber dispose。仅移除 route 不会结算 handler 或进程树。
-- **侧栏公共闭包：** 执行时无缓存 packument 包含 15 个可安装 manifest，且不存在高于 `0.15.2` 的发布版本。精确 Better Sidebar `0.15.2` 声明 14 个 `^0.1.0-rc.8` DSH peer；公共注册表对 14 个包提供精确 rc.5 的数量为 0。该首个失败后，安全、生命周期、隔离安装、组合、启动与 Chrome 均为 `NOT RUN`。
+- **侧栏公共闭包：** 截至 `2026-08-23T11:18:55Z`，带日期矩阵记录 15 个可安装 manifest，且不存在高于 `0.15.2` 的发布版本。精确 Better Sidebar `0.15.2` 声明 14 个 `^0.1.0-rc.8` DSH peer；公共注册表对 14 个包提供精确 rc.5 的数量为 0。该首个失败后，安全、生命周期、隔离安装、组合、启动与 Chrome 均为 `NOT RUN`。
 - **Peer 漂移：** 已接受包可能声明后续 DSH 或不同 React peer。记录漂移并依赖精确运行时证据；任何依赖变更后都要重跑判据。
 - **Slot 漂移：** 客户端可能成功加载，却注册 rc.5 不存在的 slot；Skin Center `0.1.11` 已证明该问题。
 - **Event id rescope：** 六个公开 `cordis/*` runtime event 被改写为 npm subpath，但进程内与协议 exact-string 分派不会规范化这些名称。仓库内部一致不能证明新 id 的语义正确。
@@ -174,7 +177,7 @@ Better Sidebar 保持阻塞，直到上游部署策略能够隐藏或禁用不�
 
 验证外部 Host 配置行与浏览器入口恰好为一项、Pet root 唯一、Pet 状态返回实时数据，且没有外部模型工具；Git Graph 与其他全部阻塞身份必须缺席，同时 stock Web 保持可见且诊断干净。
 
-在每个 profile 内，每个 blocked `GET` 完整响应快照必须与该 profile 自身的 `GET /` 相同，包括 body 原始字节相等。每个非 fallback 完整响应快照必须在独立启动的 `base + web-app` 与 Fusion profile 间保持原始字节相等。
+在每个 profile 内，每个 blocked `GET` 完整响应快照必须与该 profile 自身的 `GET /` 相同。快照包含状态、除每次请求产生的连接与传输字段 `connection`、`content-length`、`date`、`keep-alive`、`transfer-encoding` 外的全部规范化有序 header multimap，以及 body 原始字节。每个非 fallback 完整响应快照必须在独立启动的 `base + web-app` 与 Fusion profile 间保持相等。
 
 每个根响应必须各有且仅有一个可解析的 `window.__DSH_BOOT__` 赋值。baseline 不含 Pet entry；Fusion 精确增加一个合法 Pet entry；每侧 graph revision 都由该 graph 的完整、有序 entries 计算。从 Fusion graph 删除 Pet entry 并按剩余完整、有序 entries 重算 revision 后，完整 Fusion HTML 必须与 baseline HTML 原始字节相等。额外 client entry、共享 entry 字段或顺序漂移、baseline 或 Fusion 的错误 graph revision、boot script 外 body 差异，以及 mounted JSON、redirect、含 stock title 的 route-owned HTML、404 或 405 控制响应都必须使 oracle 失败。
 
@@ -210,7 +213,7 @@ Task 12.1 至 Task 12.14 保留任务级和历史证据，Task 12.15 至 Task 12
 
 截止后审计从 `2026-08-21T02:11:00Z` 开始。ModLens 有 76 个发布版本、38 个 DSH 候选和 3 个截止后候选；精确 `3.23.1` 直接在 dispose／重挂检查失败。17 个 Web UI 身份各自有 `0.2.6` 与 `0.2.7` 两个截止后版本；34 个精确产物均具备身份、完整性、许可证，以及适用的安全、生命周期、所有权或去重结论。Better Sidebar 有 13 个发布版本，精确 `0.15.0` 在部署策略和 PTY sink 检查被阻塞。
 
-dsh-TUI 有 19 个发布版本，以及 `0.8.7` 与 `0.8.8` 两个截止后候选。两个精确产物各自都有 24 个非 rc.5 DSH peer、0 个根与 15 个打包内 `workspace:*` 值，以及 8 个打包的 Liangshen 文件。历史 23 包计数是公开安装直接查询的子集；新的完整查询在历史源码验证闭包的 41 个包中找到 0 个精确 rc.5。两个候选都在安装前因单一所有者和公开闭包检查失败，因此对应 profile 与 PTY 检查为 `NOT RUN`。历史 `0.7.1` 源码运行时 PASS 保持不变。
+在该截止时间，dsh-TUI 有 19 个发布版本，以及 `0.8.7` 与 `0.8.8` 两个截止后候选。两个精确产物各自都有 24 个非 rc.5 DSH peer、0 个根与 15 个打包内 `workspace:*` 值，以及 8 个打包的 Liangshen 文件。历史 23 包计数是公开安装直接查询的子集；完整查询在历史源码验证闭包的 41 个包中找到 0 个精确 rc.5。两个候选均在安装前停止，因此对应 profile 与 PTY 检查为 `NOT RUN`。当前 20 个发布版本与 `0.9.0` 停止点见[兼容矩阵](../plans/fusion-compat-matrix.md)。
 
 Round 5 没有候选通过或未通过 Chrome／PTY 验证。精确产物的强制失败使这些下游检查成为 `NOT RUN`。详细系列计数、产物／许可证结果和证据路径见[兼容矩阵](../plans/fusion-compat-matrix.md)。
 
@@ -224,7 +227,7 @@ Task 22 及其独立复审是已完成的历史证据。该任务曾准入精确
 
 ## 12. 2026-08-22 Task 26 结果
 
-Task 26 在不增加 shim 或修改核心的情况下审计精确 ModLens `3.24.0` 与 Better Sidebar `0.15.1`。两个 tarball 均通过身份、完整性、路径安全与 MIT 许可证检查。ModLens 有 77 个发布版本和 39 个 DSH 候选；其无 DSH 依赖闭包、隔离安装与单行组合通过，随后跨站 paste 请求在服务端安全检查失败。Better Sidebar 有 14 个可安装发布版本；其公共 rc.5 peer 闭包在安装完成前失败。之后的检查均为 `NOT RUN`，两行 Fusion 结果在该历史检查点保持不变。
+Task 26 在不增加 shim 或修改核心的情况下审计精确 ModLens `3.24.0` 与 Better Sidebar `0.15.1`。两个 tarball 均通过身份、完整性、路径安全与 MIT 许可证检查。ModLens 的无 DSH 依赖闭包、隔离安装与单行组合通过，随后跨站 paste 请求在服务端安全检查失败。Better Sidebar 的公共 rc.5 peer 闭包在安装完成前失败。之后的检查均为 `NOT RUN`，两行 Fusion 结果在该历史检查点保持不变。
 
 ---
 
@@ -242,9 +245,9 @@ Task 26 在不增加 shim 或修改核心的情况下审计精确 ModLens `3.24.
 
 ## 15. 2026-08-23 Task 30 结果
 
-权威 exact-staged V8 package 为 `.superpowers/sdd/round5-final-staged-v8/review-package.md`，SHA-256 为 `d4d9e99624bd8f7612e92c477efeaadea1b2b37ee0f268ea6df4704fda42c8dc`，对应 index tree `d77fb5a65673db4232f5ace22726dbf9e091dc29`；其中包含 41 个文件、3,276 行新增与 506 行删除。四个 focused 文件通过 110/110 项测试。Typecheck、build、0 errors lint 与 hygiene 均通过。Translation pairing 检查 945 对文档；Agent Note 格式、归档 note 验证、Markdown wrap、Markdown links 和文档 budget 分别检查 542 份 note、426 个冻结产物、1,874 个文件、1,911 个文件与 9 个文档。
+Task 30 的本地 package 元数据、检查与复审结论是 [tracked 回归记录](../plans/fusion-regression-report.md)中的历史事实。该本地 package 本身不是 clean-checkout 证据 owner。
 
-系统 Chrome 151 经 CDP `9333` 的 built acceptance 通过 1/1，结束后 Fusion target 与 listener 均为 0。Task 28 summarize 重新生成 0/14，其 blocker assertion 按预期以退出码 1 结束；Task 29 oracles 通过 10/10。Task 28 与 Task 29 的 task review 均已完成。V8 bits 复审报告 P0/P1/P2 `0/0/0`，DSH 复审报告 `PASS / APPROVE` 且 0 findings，安全复审未发现可利用问题。
+历史 built acceptance 具有绑定到 tracked tree `a5e6deb6f9fbf17d31e8a593722cb0063969549a` 的可复现命令。Task 28 汇总、Task 29 oracle、资源对账与复审 verdict 依赖仅存在于本地的输入，只保留为不可复现背景，而不是当前验收证据。
 
 Remediation 集合覆盖事务式迟到 acquisition、CI trap、Pet 私有包副本、保留 `Promise.reject(undefined)` 的显式 `pending`／`fulfilled`／`rejected` settlement、带对象 identity 去重的正交 cancellation／operation／resource／final-cleanup failure 聚合、由 acquisition／disposal／final cleanup／operation settlement 共用的单一 cleanup deadline，以及 deadline 到期后不延长该 deadline 的已观察 best-effort 外层 disposal。独立 plan/design/spec alignment 为 `APPROVED`，Critical/Important/Minor 为 `0/0/0`；最终 checklist、staging 与 Git 对账及唯一最终 progress 追加均已完成。本地未运行全量仓库 coverage 或实际 GitHub-hosted job。
 
@@ -260,15 +263,15 @@ Remediation 集合覆盖事务式迟到 acquisition、CI trap、Pet 私有包副
 
 ## 17. 执行交接
 
-Task 34 至 Task 38 已完成。43 路径 V2 package 与全部最终复审均 clean；HEAD 保持 `6e0f654` 且 index 为空，恢复 staged-only 交付或清理 history 需要用户另行授权。
+Task 43.6 最终复验已在显式 47 路径 allowlist package 上完成。[tracked 回归记录](../plans/fusion-regression-report.md)持有产品运行时证据，`.superpowers/sdd/fusion-final-47/final-verification-addendum.md` 记录本地最终门禁补充。未授权进一步恢复 staged-only 交付或改写历史。Task 44 和 Task 45 后，live Git index 是经过审计的 26 路径 Fusion allowlist staged delivery；执行记录与无关/非 Fusion 工作只保留在 index 之外。
 
 ---
 
 ## 附录 A：仓库参考
 
-- Bundle 机制：[`packages/bundle/README.md`](file:///Users/bytedance/opencode/agent/dsh/packages/bundle/README.md)
-- Patch 模板：[`packages/bundle/base/`](file:///Users/bytedance/opencode/agent/dsh/packages/bundle/base)
-- Profile 启动：[`packages/boot/app-boot/README.md`](file:///Users/bytedance/opencode/agent/dsh/packages/boot/app-boot/README.md)
-- Preset：[`packages/preset/README.md`](file:///Users/bytedance/opencode/agent/dsh/packages/preset/README.md)
-- 组合命令：[`apps/cli/src/plugin.ts`](file:///Users/bytedance/opencode/agent/dsh/apps/cli/src/plugin.ts)
-- 根构建策略：[`pnpm-workspace.yaml`](file:///Users/bytedance/opencode/agent/dsh/pnpm-workspace.yaml)
+- Bundle 机制：[bundle 参考](../../../packages/bundle/README.md)
+- Patch 模板：[`packages/bundle/base/`](../../../packages/bundle/base/)
+- Profile 启动：[app-boot profile 参考](../../../packages/boot/app-boot/README.md)
+- Preset：[preset 参考](../../../packages/preset/README.md)
+- 组合命令：[`apps/cli/src/plugin.ts`](../../../apps/cli/src/plugin.ts)
+- 根构建策略：[`pnpm-workspace.yaml`](../../../pnpm-workspace.yaml)

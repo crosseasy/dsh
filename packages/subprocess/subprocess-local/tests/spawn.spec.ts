@@ -3,7 +3,6 @@ import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
 import { describe, expect, it, vi } from 'vitest'
 import {
-  killGroup,
   OutputCollector,
   spawnSubprocess,
   taskkillProcessTree,
@@ -531,20 +530,6 @@ describe('OutputCollector', () => {
   })
 })
 
-describe('killGroup', () => {
-  it('ignores non-positive pids', () => {
-    expect(() => { killGroup(-1, 'SIGTERM') }).not.toThrow()
-    expect(() => { killGroup(0, 'SIGTERM') }).not.toThrow()
-  })
-
-  it('swallows ESRCH for vanished groups', async () => {
-    const running = spawnSubprocess(spec('true'))
-    await running.done
-    expect(() => { killGroup(running.pid, 'SIGTERM') }).not.toThrow()
-  })
-
-})
-
 describe('stdio dispositions', () => {
   it("'pipe' exposes raw streams for caller-owned protocol decoding", async () => {
     const running = spawnSubprocess({
@@ -949,17 +934,6 @@ describe('environment and spill-file hardening', () => {
     expect(dir).toMatch(/dsh-subprocess-/)
     const mode = statSync(dir).mode & 0o777
     expect(mode).toBe(0o700)
-  })
-
-  it('killGroup never throws, even for EPERM-style failures', () => {
-    const spy = vi.spyOn(process, 'kill').mockImplementation(() => {
-      throw Object.assign(new Error('EPERM'), { code: 'EPERM' })
-    })
-    try {
-      expect(() => { killGroup(12345, 'SIGTERM') }).not.toThrow()
-    } finally {
-      spy.mockRestore()
-    }
   })
 
   it('honors AbortSignal on background-style runs (no timeout)', async () => {

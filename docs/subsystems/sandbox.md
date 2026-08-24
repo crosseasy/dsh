@@ -147,7 +147,7 @@ interface ConfinedArgv {
 }
 ```
 
-The [local provider](../../packages/sandbox/sandbox-local/README.md) owns operator configuration and maps its runner dialect into these rules. The [sandboxed bash consumer](../../packages/shell/bash-sandbox/README.md) owns spawn and result attribution.
+The [local provider](../../packages/sandbox/sandbox-local/README.md) owns operator configuration and maps its runner dialect into these rules. `@deepseek-ai/dsh-shell` owns the shared spawn-provenance, runner-failure, and denial classification used by the [Bash](../../packages/shell/bash-sandbox/README.md) and [PowerShell](../../packages/shell/pwsh-sandbox/README.md) sandbox providers; each provider retains its command dialect and process lifecycle.
 
 ## Provider and fail-closed errors
 

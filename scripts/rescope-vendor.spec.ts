@@ -14,6 +14,7 @@ import {
   exactEditState,
   repositoryPostconditionFailures,
   rewriteSourceText,
+  trackedExistingEligibleFiles,
 } from './rescope-vendor.ts'
 
 const ANCHOR = '\n## Sync procedure'
@@ -49,6 +50,21 @@ describe('exactEditState', () => {
   })
 })
 
+describe('trackedExistingEligibleFiles', () => {
+  it('skips deleted tracked files during generic traversal', () => {
+    expect(trackedExistingEligibleFiles(
+      [
+        'packages/shell/bash-sandbox/src/helpers.ts',
+        'packages/shell/shell/src/bash.ts',
+        'scripts/rescope-vendor.ts',
+        '',
+      ],
+      path => path !== '/repo/packages/shell/bash-sandbox/src/helpers.ts',
+      file => `/repo/${file}`,
+    )).toEqual(['packages/shell/shell/src/bash.ts'])
+  })
+})
+
 describe('rewriteSourceText', () => {
   function expectRoundTrip(
     source: string,
@@ -60,6 +76,11 @@ describe('rewriteSourceText', () => {
     expect(rewriteSourceText(expected, file)).toEqual({ text: expected, lines: 0 })
     expect(rewriteSourceText(expected, file, true)).toEqual({ text: source, lines })
     expect(rewriteSourceText(source, file, true)).toEqual({ text: source, lines: 0 })
+  }
+
+  function expectUnchangedInBothDirections(source: string): void {
+    expect(rewriteSourceText(source, 'README.md')).toEqual({ text: source, lines: 0 })
+    expect(rewriteSourceText(source, 'README.md', true)).toEqual({ text: source, lines: 0 })
   }
 
   function expectYamlSemanticRoundTrip(
@@ -710,8 +731,7 @@ describe('rewriteSourceText', () => {
       '```',
       '',
     ].join('\n')
-    expect(rewriteSourceText(source, 'README.md')).toEqual({ text: source, lines: 0 })
-    expect(rewriteSourceText(source, 'README.md', true)).toEqual({ text: source, lines: 0 })
+    expectUnchangedInBothDirections(source)
   })
 
   it('keeps malformed JSONC fences byte-identical in both directions', () => {
@@ -729,8 +749,7 @@ describe('rewriteSourceText', () => {
       '```',
       '',
     ].join('\n')
-    expect(rewriteSourceText(source, 'README.md')).toEqual({ text: source, lines: 0 })
-    expect(rewriteSourceText(source, 'README.md', true)).toEqual({ text: source, lines: 0 })
+    expectUnchangedInBothDirections(source)
   })
 
   it('uses fence language for JSX while preserving TypeScript generic parsing', () => {

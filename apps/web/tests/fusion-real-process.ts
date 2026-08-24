@@ -1,4 +1,10 @@
 import { createHash } from 'node:crypto'
+import { existsSync } from 'node:fs'
+import { copyFile, mkdir, readFile, realpath } from 'node:fs/promises'
+import { request as httpRequest } from 'node:http'
+import { request as httpsRequest } from 'node:https'
+import { createRequire } from 'node:module'
+import { dirname, join } from 'node:path'
 import type { SubprocessHandle, SubprocessOutcome, SubprocessRuntime, SubprocessSpawnSpec } from '@deepseek-ai/dsh-subprocess'
 import type { ContextSnapshotSection, ToolSchema } from '@deepseek-ai/dsh-llm'
 import { JSDOM } from 'jsdom'
@@ -6,11 +12,52 @@ import { JSDOM } from 'jsdom'
 const DIAGNOSTIC_OUTPUT_MAX_BYTES = 64 * 1024
 const BOOT_ASSIGNMENT_PREFIX = 'window.__DSH_BOOT__ = '
 const PET_ENTRY_ID = '@linxin666/dsh-pet'
+const FUSION_COMPACT_SUMMARY =
+  'Fusion compact summary: the tracked Pet-only regression remains complete.'
+const FUSION_COMPACT_PROVIDER = 'deepseek-official'
+const FUSION_COMPACT_MODEL = 'deepseek-v4-flash'
+const FUSION_PROFILE_FIXTURE_FILES = [
+  'cordis.patch.yml',
+  'package.json',
+  'pnpm-lock.yaml',
+  'pnpm-workspace.yaml',
+] as const
+// Node generates these connection/framing fields per request. Body bytes are
+// compared directly, including after the permitted Pet boot-entry rewrite.
+const HTTP_TRANSPORT_HEADERS = new Set([
+  'connection',
+  'content-length',
+  'date',
+  'keep-alive',
+  'transfer-encoding',
+])
 const PET_INJECT = [
   '@deepseek-ai/dsh-client-runtime',
   '@deepseek-ai/dsh-client-connection',
   '@deepseek-ai/dsh-client-ui-settings',
   '@deepseek-ai/dsh-client-ui-conversation',
+] as const
+const FUSION_COMPOSITION_TOKENS = [
+  '@deepseek-ai/dsh-fusion',
+  '@linxin666/dsh-pet',
+  '@liustack/modlens',
+  '@linxin666/dsh-client-ui-git-graph',
+  '@linxin666/dsh-ssh',
+  '@linxin666/dsh-remote-web-ui',
+  '@linxin666/dsh-client-ui-task-board',
+  '@linxin666/dsh-client-ui-skin-center',
+  'dsh-better-sidebar',
+  'git-graph',
+  'modlens',
+  'dsh-ssh',
+  'remote-web-ui',
+  'ui-task-board',
+  'skin-center',
+  'better-sidebar',
+  'web-ui-all',
+  'describe-image',
+  'aionui-panel',
+  'liangshen',
 ] as const
 
 /** Total Vitest budget for the Fusion acceptance, including its final cleanup. */
@@ -111,11 +158,10 @@ export interface SystemChromeVersion {
   webSocketDebuggerUrl: string
 }
 
-/** Stable fields observed from one route probe. */
+/** Normalized complete response data observed from one route probe. */
 export interface HttpResponseSnapshot {
-  body: string
-  contentType: string
-  location: string
+  body: Buffer
+  headers: Array<readonly [name: string, values: readonly string[]]>
   status: number
 }
 
@@ -137,6 +183,290 @@ export interface ModelInputSnapshot {
   tools: ToolSchema[]
 }
 
+/** One completed browser export operation and its HEAD request identity. */
+export interface FusionExportLedgerEntry {
+  action: 'header' | 'slash'
+  completed: boolean
+  downloadUrl: string
+  headRequestId: string
+  headStatus: number
+  headUrl: string
+  zipSha256: string
+}
+
+/** One browser request failure retained for export identity checks. */
+export interface FusionNetworkFailure {
+  errorText: string
+  method: string
+  requestId: string
+  url: string
+}
+
+/** Minimal durable event fields consumed by the compact lifecycle oracle. */
+export interface FusionCompactEvent {
+  data?: Record<string, unknown>
+  seq?: number
+  sourceEventSeqs?: number[]
+  surfaceOp?: unknown
+  type: string
+}
+
+function isSafeIntegerArray(value: unknown): value is number[] {
+  return Array.isArray(value)
+    && value.every((item: unknown) => typeof item === 'number' && Number.isSafeInteger(item))
+}
+
+/**
+ * Require the two export actions to own distinct, complete downloads and HEAD aborts.
+ * @param ledger - Header and slash export records in execution order.
+ * @param failures - Browser request failures observed for the page.
+ * @param downloads - Download URLs observed for the page.
+ */
+export function assertFusionExportLedger(
+  ledger: readonly FusionExportLedgerEntry[],
+  failures: readonly FusionNetworkFailure[],
+  downloads: readonly string[],
+): void {
+  if (JSON.stringify(ledger.map(entry => entry.action)) !== '["header","slash"]') {
+    throw new Error('Fusion exports must run in header then slash order')
+  }
+  if (new Set(ledger.map(entry => entry.headRequestId)).size !== ledger.length) {
+    throw new Error('Fusion exports must use unique HEAD request ids')
+  }
+  for (const entry of ledger) {
+    if (entry.headStatus !== 200) {
+      throw new Error(`${entry.action} export HEAD returned ${String(entry.headStatus)}`)
+    }
+    if (entry.downloadUrl !== entry.headUrl) {
+      throw new Error(`${entry.action} export download URL differs from its HEAD URL`)
+    }
+    if (!entry.completed) {
+      throw new Error(`${entry.action} export download did not complete`)
+    }
+    if (!/^[a-f0-9]{64}$/u.test(entry.zipSha256)) {
+      throw new Error(`${entry.action} export ZIP SHA-256 is invalid`)
+    }
+  }
+  if (failures.length !== ledger.length) {
+    throw new Error('Fusion export abort count differs from the export ledger')
+  }
+  for (const entry of ledger) {
+    const matches = failures.filter(failure => failure.requestId === entry.headRequestId)
+    if (matches.length !== 1) {
+      throw new Error(`${entry.action} export HEAD abort identity is not unique`)
+    }
+    const failure = matches[0]!
+    if (
+      failure.method !== 'HEAD'
+      || failure.url !== entry.headUrl
+      || failure.errorText !== 'net::ERR_ABORTED'
+    ) {
+      throw new Error(`${entry.action} export HEAD abort does not match its request`)
+    }
+  }
+  const actualDownloads = [...downloads].sort()
+  const expectedDownloads = ledger.map(entry => entry.downloadUrl).sort()
+  if (JSON.stringify(actualDownloads) !== JSON.stringify(expectedDownloads)) {
+    throw new Error('Fusion export download URL multiset differs from the ledger')
+  }
+}
+
+/**
+ * Require the selected session row to be the returned fork child.
+ * @param selectedCount - Number of selected session rows.
+ * @param selectedTitle - Exact title rendered in the selected row.
+ * @param childId - Child id returned by `session.fork`.
+ */
+export function assertFusionForkSelection(
+  selectedCount: number,
+  selectedTitle: string,
+  childId: string,
+): void {
+  if (selectedCount !== 1) throw new Error('Fusion fork must select exactly one session row')
+  if (selectedTitle !== `Fusion fork ${childId}`) {
+    throw new Error('Fusion fork selected row is not bound to the returned child id')
+  }
+}
+
+/**
+ * Require one successful command and compaction transaction with shared identities.
+ * @param events - Durable session events after `/compact` settles.
+ * @returns The compact command id.
+ */
+export function assertFusionCompactLifecycle(
+  events: readonly FusionCompactEvent[],
+): string {
+  const runs = events.filter(event =>
+    event.type === 'command/run' && event.data?.name === 'compact')
+  if (runs.length !== 1) throw new Error('expected exactly one compact command/run')
+  const commandId = runs[0]?.data?.commandId
+  if (typeof commandId !== 'string') {
+    throw new Error('compact command/run omitted its command id')
+  }
+  const done = events.filter(event =>
+    event.type === 'command/done' && event.data?.commandId === commandId)
+  if (done.length !== 1 || done[0]?.data?.kind !== 'success') {
+    throw new Error('compact command/done is missing, duplicated, or unsuccessful')
+  }
+  const compactionEvents = ['compaction/start', 'compaction/summary', 'compaction/end']
+    .map((type) => {
+      const matches = events.filter(event =>
+        event.type === type && event.data?.sourceCommandId === commandId)
+      if (matches.length !== 1) {
+        throw new Error(`${type} does not uniquely reference the compact command`)
+      }
+      return matches[0]!
+    })
+  const compactionId = compactionEvents[0]!.data?.compactionId
+  if (
+    typeof compactionId !== 'string'
+    || compactionEvents.some(event => event.data?.compactionId !== compactionId)
+  ) {
+    throw new Error('compact lifecycle does not share one compaction id')
+  }
+  const linkedSummarySeq = compactionEvents[1]!.seq
+  if (typeof linkedSummarySeq !== 'number' || done[0].data?.sourceEventSeq !== linkedSummarySeq) {
+    throw new Error('compact command/done does not reference the summary event')
+  }
+  if (Object.hasOwn(compactionEvents[2]!.data ?? {}, 'error')) {
+    throw new Error('compact lifecycle ended with an error')
+  }
+  const [start, summary, end] = compactionEvents
+  const runSeq = runs[0]?.seq
+  const startSeq = start?.seq
+  const summarySeq = summary?.seq
+  const endSeq = end?.seq
+  const doneSeq = done[0]?.seq
+  if (
+    typeof runSeq !== 'number'
+    || typeof startSeq !== 'number'
+    || typeof summarySeq !== 'number'
+    || typeof endSeq !== 'number'
+    || typeof doneSeq !== 'number'
+    || !(runSeq < startSeq && startSeq < summarySeq && summarySeq < endSeq && endSeq < doneSeq)
+  ) {
+    throw new Error('compact lifecycle events are out of order')
+  }
+  if (
+    JSON.stringify(summary!.data?.summary)
+      !== JSON.stringify([{ type: 'text', text: FUSION_COMPACT_SUMMARY }])
+    || summary!.data?.provider !== FUSION_COMPACT_PROVIDER
+    || summary!.data?.model !== FUSION_COMPACT_MODEL
+  ) {
+    throw new Error('compact summary content, provider, or model is incorrect')
+  }
+  const shadowedRange = summary!.data?.shadowedRange as {
+    end?: unknown
+    start?: unknown
+  } | undefined
+  const shadowedSeqs = summary!.data?.shadowedSeqs
+  const shadowedTokenCount = summary!.data?.shadowedTokenCount
+  if (
+    shadowedRange === undefined
+    || !isSafeIntegerArray(shadowedSeqs)
+    || shadowedSeqs.length === 0
+    || shadowedRange.start !== shadowedSeqs[0]
+    || shadowedRange.end !== shadowedSeqs.at(-1)
+    || !Number.isSafeInteger(shadowedTokenCount)
+    || (shadowedTokenCount as number) <= 0
+    || shadowedSeqs.some(seq => !events.some(event => event.seq === seq))
+  ) {
+    throw new Error('compact summary shadowed range, seqs, or token count is incorrect')
+  }
+  const summaryIndex = events.indexOf(summary!)
+  const replacement = events[summaryIndex + 1]
+  const replacementSource = replacement?.data?.source as Record<string, unknown> | undefined
+  const replacementSurface = replacement?.surfaceOp as Record<string, unknown> | undefined
+  if (
+    replacement?.type !== 'user/message'
+    || replacement.seq !== summarySeq + 1
+    || replacementSurface?.op !== 'replace'
+    || replacementSurface.start !== shadowedRange.start
+    || replacementSurface.end !== shadowedRange.end
+    || replacementSource?.kind !== 'plugin'
+    || replacementSource.plugin !== 'compact'
+    || replacementSource.compactionId !== compactionId
+    || replacementSource.sourceCommandId !== commandId
+    || JSON.stringify(replacement.sourceEventSeqs)
+      !== JSON.stringify([startSeq, summarySeq, ...shadowedSeqs])
+  ) {
+    throw new Error('compact summary is not immediately followed by its bound replacement')
+  }
+  if (
+    replacement.seq >= endSeq
+    || endSeq >= doneSeq
+    || done[0].data?.text
+      !== `Compacted ${String(shadowedSeqs.length)} history items (~${String(shadowedTokenCount)} tokens).`
+  ) {
+    throw new Error('compact replacement, end, or done event is inconsistent')
+  }
+  return commandId
+}
+
+/**
+ * Require a stock profile or ACP composition to exclude Fusion and every external row.
+ * @param label - Composition name used in diagnostics.
+ * @param text - Serialized config or dump output.
+ */
+export function assertFusionExcludedFromComposition(label: string, text: string): void {
+  const normalized = text.toLowerCase()
+  const found = FUSION_COMPOSITION_TOKENS.find(token => normalized.includes(token))
+  if (found !== undefined) {
+    throw new Error(`${label} unexpectedly contains ${found}`)
+  }
+}
+
+/**
+ * Populate and install the exact Fusion acceptance profile.
+ * @param source - Fixture directory containing the tracked profile inputs.
+ * @param target - Empty profile directory to populate.
+ * @param install - Frozen, profile-local installation operation.
+ * @returns The resolved Pet entry after installation.
+ */
+export async function setupFusionAcceptanceProfile(
+  source: string,
+  target: string,
+  install: () => Promise<void>,
+): Promise<string> {
+  await mkdir(target, { recursive: true })
+  await Promise.all(FUSION_PROFILE_FIXTURE_FILES.map(async (file) => {
+    await copyFile(join(source, file), join(target, file))
+  }))
+  if (existsSync(join(target, 'node_modules'))) {
+    throw new Error('Fusion acceptance profile inherited fixture node_modules before installation')
+  }
+  await install()
+  const requireFromProfile = createRequire(join(target, 'package.json'))
+  const packageJsonPath = requireFromProfile.resolve(`${PET_ENTRY_ID}/package.json`)
+  const manifest = JSON.parse(await readFile(packageJsonPath, 'utf8')) as {
+    main?: unknown
+    name?: unknown
+    version?: unknown
+  }
+  if (
+    manifest.name !== PET_ENTRY_ID
+    || manifest.version !== '0.2.9'
+    || manifest.main !== 'lib/index.js'
+  ) {
+    throw new Error('Fusion acceptance profile did not install @linxin666/dsh-pet@0.2.9')
+  }
+  const mainPath = await realpath(requireFromProfile.resolve(PET_ENTRY_ID))
+  const expectedMainPath = await realpath(join(dirname(packageJsonPath), 'lib/index.js'))
+  if (mainPath !== expectedMainPath) {
+    throw new Error('Fusion acceptance profile resolved an unexpected Pet entry')
+  }
+  return mainPath
+}
+
+/**
+ * Decode response bytes for JSON or HTML consumers after snapshot capture.
+ * @param response - Snapshot whose original bytes remain available for equality checks.
+ * @returns The UTF-8 response text.
+ */
+export function httpResponseBodyText(response: HttpResponseSnapshot): string {
+  return response.body.toString('utf8')
+}
+
 /** Explicit environment additions for the isolated Fusion profile. */
 export function acceptanceEnvironment(home: string, agentsHome: string): NodeJS.ProcessEnv {
   return {
@@ -146,6 +476,24 @@ export function acceptanceEnvironment(home: string, agentsHome: string): NodeJS.
     DSH_HOME: home,
     DSH_TELEMETRY_DISABLED: '1',
     NODE_OPTIONS: undefined,
+  }
+}
+
+/**
+ * Route child-process temporary files into a root owned by the acceptance lifecycle.
+ * @param env - Existing explicit child environment.
+ * @param temporaryRoot - Directory removed by the lifecycle resource owner.
+ * @returns The environment with every supported temporary-directory variable scoped.
+ */
+export function withOwnedTemporaryRoot(
+  env: NodeJS.ProcessEnv,
+  temporaryRoot: string,
+): NodeJS.ProcessEnv {
+  return {
+    ...env,
+    TMPDIR: temporaryRoot,
+    TMP: temporaryRoot,
+    TEMP: temporaryRoot,
   }
 }
 
@@ -451,7 +799,11 @@ export function assertSameHttpResponse(
   fusion: HttpResponseSnapshot,
   label: string,
 ): void {
-  if (JSON.stringify(baseline) === JSON.stringify(fusion)) return
+  if (
+    baseline.status === fusion.status
+    && JSON.stringify(baseline.headers) === JSON.stringify(fusion.headers)
+    && baseline.body.equals(fusion.body)
+  ) return
   throw new Error(
     `${label} differs from the base + web-app response`
     + `\nbaseline: ${JSON.stringify(baseline)}`
@@ -463,8 +815,8 @@ function failPetOnlyComparison(label: string, detail: string): never {
   throw new Error(`${label} differs from the base + web-app response: ${detail}`)
 }
 
-function parseBootGraph(body: string, label: string): ParsedBootGraph {
-  const dom = new JSDOM(body, { includeNodeLocations: true })
+function parseBootGraph(body: Buffer, label: string): ParsedBootGraph {
+  const dom = new JSDOM(body.toString('utf8'))
   try {
     const scripts = [...dom.window.document.querySelectorAll('script')]
       .filter(script => script.textContent?.includes('window.__DSH_BOOT__') ?? false)
@@ -494,26 +846,17 @@ function parseBootGraph(body: string, label: string): ParsedBootGraph {
     ) {
       return failPetOnlyComparison(label, 'window.__DSH_BOOT__ payload is malformed')
     }
-    const location: unknown = dom.nodeLocation(script)
+    const sourceBytes = Buffer.from(source)
+    const contentStart = body.indexOf(sourceBytes)
     if (
-      typeof location !== 'object'
-      || location === null
-      || !('startTag' in location)
-      || typeof location.startTag !== 'object'
-      || location.startTag === null
-      || !('endOffset' in location.startTag)
-      || typeof location.startTag.endOffset !== 'number'
-      || !('endTag' in location)
-      || typeof location.endTag !== 'object'
-      || location.endTag === null
-      || !('startOffset' in location.endTag)
-      || typeof location.endTag.startOffset !== 'number'
+      contentStart < 0
+      || body.indexOf(sourceBytes, contentStart + sourceBytes.length) >= 0
     ) {
-      return failPetOnlyComparison(label, 'window.__DSH_BOOT__ source offsets are unavailable')
+      return failPetOnlyComparison(label, 'window.__DSH_BOOT__ raw payload is not unique')
     }
     return {
-      contentStart: location.startTag.endOffset,
-      contentEnd: location.endTag.startOffset,
+      contentStart,
+      contentEnd: contentStart + sourceBytes.length,
       graph: value as BootGraph,
     }
   } finally {
@@ -571,10 +914,9 @@ export function assertPetOnlyRootResponse(
 ): void {
   if (
     baseline.status !== fusion.status
-    || baseline.contentType !== fusion.contentType
-    || baseline.location !== fusion.location
+    || JSON.stringify(baseline.headers) !== JSON.stringify(fusion.headers)
   ) {
-    failPetOnlyComparison(label, 'status, content type, or location changed')
+    failPetOnlyComparison(label, 'status or headers changed')
   }
   const baselineBoot = parseBootGraph(baseline.body, `${label} baseline`)
   const fusionBoot = parseBootGraph(fusion.body, `${label} Fusion`)
@@ -614,13 +956,28 @@ export function assertPetOnlyRootResponse(
     rev: bootGraphRevision(sharedEntries),
     entries: sharedEntries,
   }
-  const normalizedBody = fusion.body.slice(0, fusionBoot.contentStart)
-    + BOOT_ASSIGNMENT_PREFIX
-    + JSON.stringify(normalizedGraph)
-    + fusion.body.slice(fusionBoot.contentEnd)
-  if (normalizedBody !== baseline.body) {
+  const normalizedBody = Buffer.concat([
+    fusion.body.subarray(0, fusionBoot.contentStart),
+    Buffer.from(BOOT_ASSIGNMENT_PREFIX + JSON.stringify(normalizedGraph)),
+    fusion.body.subarray(fusionBoot.contentEnd),
+  ])
+  if (!normalizedBody.equals(baseline.body)) {
     failPetOnlyComparison(label, 'HTML outside the allowed Pet boot delta changed')
   }
+}
+
+function normalizeRawHeaders(
+  rawHeaders: readonly string[],
+): Array<readonly [name: string, values: readonly string[]]> {
+  const valuesByName = new Map<string, string[]>()
+  for (let index = 0; index < rawHeaders.length; index += 2) {
+    const name = rawHeaders[index]!.toLowerCase()
+    if (HTTP_TRANSPORT_HEADERS.has(name)) continue
+    const values = valuesByName.get(name)
+    if (values === undefined) valuesByName.set(name, [rawHeaders[index + 1]!])
+    else values.push(rawHeaders[index + 1]!)
+  }
+  return [...valuesByName].sort(([left], [right]) => left < right ? -1 : left > right ? 1 : 0)
 }
 
 /**
@@ -660,17 +1017,80 @@ export async function readHttpResponse(
     signal,
   ].filter((candidate): candidate is AbortSignal => candidate !== undefined)
   const requestSignal = signals.length === 1 ? signals[0]! : AbortSignal.any(signals)
-  const response = await fetch(url, {
-    ...init,
-    redirect: 'manual',
-    signal: requestSignal,
-  })
-  return {
-    status: response.status,
-    contentType: response.headers.get('content-type') ?? '',
-    location: response.headers.get('location') ?? '',
-    body: await response.text(),
+  requestSignal.throwIfAborted()
+  const requestBody = init?.body === undefined || init.body === null
+    ? undefined
+    : Buffer.from(await new Response(init.body).arrayBuffer())
+  requestSignal.throwIfAborted()
+  const requestHeaders = init?.headers === undefined
+    ? undefined
+    : Object.fromEntries(new Headers(init.headers))
+  const transport = url.protocol === 'http:'
+    ? httpRequest
+    : url.protocol === 'https:'
+      ? httpsRequest
+      : undefined
+  if (transport === undefined) {
+    throw new TypeError(`Unsupported HTTP response protocol: ${url.protocol}`)
   }
+
+  return await new Promise<HttpResponseSnapshot>((resolve, reject) => {
+    let settled = false
+    const request = transport(url, {
+      headers: requestHeaders,
+      method: init?.method,
+    }, (response) => {
+      const status = response.statusCode
+      if (status === undefined) {
+        response.resume()
+        settleReject(new Error(`HTTP response omitted status for ${url.href}`))
+        return
+      }
+      const chunks: Buffer[] = []
+      response.on('data', (chunk: Buffer) => {
+        chunks.push(Buffer.from(chunk))
+      })
+      response.once('aborted', () => {
+        settleReject(new Error(`HTTP response body aborted for ${url.href}`))
+      })
+      response.once('error', settleReject)
+      response.once('end', () => {
+        settleResolve({
+          status,
+          headers: normalizeRawHeaders(response.rawHeaders),
+          body: Buffer.concat(chunks),
+        })
+      })
+    })
+    const removeAbortListener = (): void => {
+      requestSignal.removeEventListener('abort', onAbort)
+    }
+    const settleResolve = (response: HttpResponseSnapshot): void => {
+      if (settled) return
+      settled = true
+      removeAbortListener()
+      resolve(response)
+    }
+    function settleReject(error: unknown): void {
+      if (settled) return
+      settled = true
+      removeAbortListener()
+      request.destroy()
+      reject(error instanceof Error
+        ? error
+        : new Error('HTTP response request failed', { cause: error }))
+    }
+    const onAbort = (): void => {
+      settleReject(requestSignal.reason)
+    }
+    request.once('error', settleReject)
+    requestSignal.addEventListener('abort', onAbort, { once: true })
+    if (requestSignal.aborted) {
+      onAbort()
+      return
+    }
+    request.end(requestBody)
+  })
 }
 
 /**

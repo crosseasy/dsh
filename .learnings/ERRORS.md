@@ -720,3 +720,24 @@ Both verifiers renamed the variable and reran the probes successfully; the
 failed outputs were not used as evidence.
 
 ---
+
+## [ERR-20260824-001] translation_pairing_and_finished_agent_followup
+
+**Logged**: 2026-08-24
+**Priority**: low
+**Status**: resolved
+**Area**: tooling
+
+### Tooling Failure Summary
+
+A verifier was mistakenly delegated `pnpm run verify-translation-pairing -- <pair>`.
+pnpm 11.7.0 forwarded the bare `--`, and the script correctly reported
+`unknown flag(s): --`. A `followup_task` call also failed because its subagent
+had already finished.
+
+### Tooling Resolution
+
+Use `pnpm run verify-translation-pairing <pair>`, which passed. Spawn a new
+verifier instead of calling `followup_task` on a finished subagent.
+
+---

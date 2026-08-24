@@ -6,9 +6,9 @@ English | [中文](2026-08-19-dsh-five-repo-fusion.zh.md)
 >
 > **Historical plan:** this document records the v2 execution plan. The 2026-08-21 Task 12 section records verified outcomes without rewriting earlier planned work as if it had already been known.
 
-**Current status:** Tasks 12 through 38 are complete. The final V2 `exact-product-worktree` package contains exactly 43 product paths, with package SHA-256 `74e694a7c5e5bc18452596b0ec70a7379de1d3459c2073d8f0e1eee9c7b34170` and patch SHA-256 `1f71831a467bd652af7eeedf1561b0e431c95088d7e3cc26c9dfc4e2d5921581`. Its bits review is P0/P1/P2 `0/0/0`, its security review is clean, and its product-documentation and plan/design/spec alignment reviews are Critical/Important/Minor `0/0/0`.
+**Current status:** Task 43.6 final verification is complete for the explicit 47-path `exact-product-worktree` package at `.superpowers/sdd/fusion-final-47/review-package.md`, whose SHA-256 is `177ee237ae7a232ba7f9012167bf1c3c3dce5a403dcb0f951b1917d177cdc564`. Fresh `doc-sync`, typecheck, build, zero-error lint, hygiene, diff checks, system Chrome CDP `9333` built acceptance, and independent bits, security, documentation, lifecycle, and alignment reviews have no remaining P0/P1/P2 finding for that allowlist. After Tasks 44 and 45, the live Git index is an audited 26-path Fusion allowlist staged delivery with no excluded execution records and no unrelated or non-Fusion staged paths. Execution records and unrelated/non-Fusion work remain only outside the index. The older V2 package is stale because its 43-path allowlist omits `.gitignore` and the three `docs/user/guide/fusion-tui-profile.*` files. Its captured staleness record supplies no V2 HEAD, so this plan does not infer one.
 
-**Current result:** the product delivery selects one external row, exact Pet `0.2.9`. System Chrome 151 through CDP `9333` passes the current built acceptance 1/1, the full Web driver passes 39/39, and the runtime-final oracle passes 50/50. Console, page, network, and cleanup diagnostics are clean, and pre/post target, listener, process, port, and temporary-directory checks leave no residue. Git Graph `0.2.9` is blocked because an active JSON operation and its child process can outlive row-fiber disposal. The Task 22 and Task 29 two-row results remain superseded historical evidence for their exact runs. ModLens `3.24.0` fails server-side request safety before lifecycle or Chrome validation. A fresh no-cache Better Sidebar packument contains 15 installable versions and no release above `0.15.2`; exact `0.15.2` is the sole candidate after the prior cutoff and fails the public rc.5 peer closure at 0/14 before security, lifecycle, isolated installation, composition, boot, or Chrome. These blockers remain unmounted. Task 30 repairs transactional late acquisition, pre-acquisition CI trap ownership, private complete-package Pet mutation, explicit settlement including `Promise.reject(undefined)`, orthogonal failure aggregation with identity-only reference deduplication, one shared cleanup deadline, and observed best-effort outer disposal after deadline expiry. Historical zero-row, three-row, four-row, and six-row results also remain superseded evidence. TUI is `NOT RUN (not affected)`, and public TUI delivery remains phase 2 BLOCKED. Full repository coverage and the actual GitHub-hosted job were not run locally. HEAD remains `6e0f654` with an empty index; restoring staged-only delivery or cleaning commit history requires separate user authorization.
+**Current result:** the product delivery selects one external row, exact Pet `0.2.9`. The [tracked regression record](fusion-regression-report.md) owns the detailed static and runtime evidence: the current tracked Pet-only built acceptance passes 1/1, while the ignored local driver's two consecutive 39/39 runs and the 50/50 oracle are supporting evidence that cannot be reproduced from a clean checkout or replace the tracked acceptance. Git Graph `0.2.9`, ModLens `3.24.0`, and Better Sidebar `0.15.2` remain blocked at their recorded lifecycle, security, and public-closure failures. A no-cache TUI response through `2026-08-23T11:18:55Z` contains 20 installable versions; exact `0.9.0` passes artifact and license checks, then fails single Liangshen ownership, so security, closure, installation, composition, and PTY remain `NOT RUN`. Current TUI verification is `NOT RUN (not affected)`, and public TUI delivery remains phase 2 BLOCKED.
 
 **Goal:** preserve a pure Fusion bundle (`@deepseek-ai/dsh-fusion`), one shared `liangshen` preset, and reproducible exact-row profile assembly while leaving `packages/core/**`, the agent loop, and the session format unchanged.
 
@@ -31,21 +31,24 @@ English | [中文](2026-08-19-dsh-five-repo-fusion.zh.md)
 - Keep each REAL process stdout/stderr diagnostic tail byte-bounded at 64 KiB while preserving cross-chunk readiness matching.
 - Keep `cordis/request-run`, `cordis/request-run-resolved`, `cordis/dynamic-package`, `cordis/dynamic-retract`, `cordis/inspect-query`, and `cordis/inspect-query-resolved` as the sole event ids; add no compatibility aliases.
 - Preserve failed and blocked evidence. Do not convert a historical failure into a success.
-- Do not reset, rebase, create another commit, push, or merge during Tasks 33 through 35. Restoring a staged-only delivery or cleaning commit history requires separate user authorization and does not block code or runtime verification.
+- Do not stage, commit, push, merge, rebase, reset, or write an index tree during Tasks 39 through 43. Restoring a staged-only delivery or changing history requires separate user authorization.
 - Deliver phase 1 independently; a phase 2 blocker does not invalidate accepted phase 1 capabilities.
+
+The Round 6/Task 38 read-only review, Task 42, and the independent Task 43.6.1 reviewer each invoked the prohibited `git write-tree` command once. All three invocations returned the pre-existing `HEAD` tree `d381ff301022d8c57d4da9ffc98a4bbcaed2cc95`; subsequent HEAD, index, and status comparisons found no change caused by the commands. These remain process violations rather than exceptions to the rule above. No later task may invoke the command, and `progress.md` owns the final append-only correction after Task 43 verification.
 
 ---
 
 ## Key References
 
-- Design: `docs/superpowers/specs/2026-08-19-dsh-five-repo-fusion-design.md`
-- Patch bundle template: [`packages/bundle/base/`](file:///Users/bytedance/opencode/agent/dsh/packages/bundle/base)
-- Bundle mechanism: [`packages/bundle/README.md`](file:///Users/bytedance/opencode/agent/dsh/packages/bundle/README.md)
-- Profile boot: [`packages/boot/app-boot/README.md`](file:///Users/bytedance/opencode/agent/dsh/packages/boot/app-boot/README.md)
-- Plugin composition: [`apps/cli/src/plugin.ts`](file:///Users/bytedance/opencode/agent/dsh/apps/cli/src/plugin.ts)
-- Preset template: [`standard/`](file:///Users/bytedance/opencode/agent/dsh/apps/cli/config/agent-presets/standard)
-- Root build policy: [`pnpm-workspace.yaml`](file:///Users/bytedance/opencode/agent/dsh/pnpm-workspace.yaml)
-- Compatibility evidence: `docs/superpowers/plans/fusion-compat-matrix.md`
+- Design: [technical design](../specs/2026-08-19-dsh-five-repo-fusion-design.md)
+- Patch bundle template: [`packages/bundle/base/`](../../../packages/bundle/base/)
+- Bundle mechanism: [bundle reference](../../../packages/bundle/README.md)
+- Profile boot: [app-boot profile reference](../../../packages/boot/app-boot/README.md)
+- Plugin composition: [`apps/cli/src/plugin.ts`](../../../apps/cli/src/plugin.ts)
+- Preset template: [`standard/`](../../../apps/cli/config/agent-presets/standard/)
+- Root build policy: [`pnpm-workspace.yaml`](../../../pnpm-workspace.yaml)
+- Compatibility evidence: [compatibility matrix](fusion-compat-matrix.md)
+- Runtime evidence: [tracked regression record](fusion-regression-report.md)
 
 ---
 
@@ -169,7 +172,7 @@ English | [中文](2026-08-19-dsh-five-repo-fusion.zh.md)
 - [x] Task 12.13: independently rereview the TDD implementation that limits each REAL process stdout/stderr diagnostic tail to 64 KiB while preserving cross-chunk readiness matching.
 - [x] Task 12.14: rebuild the checked-in fixture for the historical three-row stage, rerun its gate and complete Web oracle, and synchronize that stage's product and generated documentation with their bilingual sidecars. The gate passed 1/1; the complete oracle passed 174/174 with seven items/402 tokens, projected message tokens from 449 to 155, and the same session retaining 155 after restart. Later lifecycle reviews supersede this admission evidence.
 - [x] Task 12.15: audit ModLens, SSH, and Remote Web UI lifecycle ownership and revoke the historical three-row admission. ModLens loses route disposers across all DSH candidates; SSH leaves active terminal and SSH sessions open in 26/26 releases; Remote Web UI accepts 0/26 releases because `0.1.11` leaks SSE, tunnel quiescence, client subscriptions, and a failed-pair root while `0.1.12+` also conflicts on manifest/LICENSE identity.
-- [x] Task 12.16: repair vendored rescope classification with AST context so module imports continue to rewrite while event and locale ids remain unchanged; retain the dedicated implementation and review reports under `.superpowers/sdd/task13-final/`.
+- [x] Task 12.16: repair vendored rescope classification with AST context so module imports continue to rewrite while event and locale ids remain unchanged; the implementation and tests are the durable evidence.
 - [x] Task 12.17: converge the Fusion bundle, manifest, REAL fixture/tests, product guidance, desktop contract, website labels, Agent Note, and execution records on zero external rows and eight blockers while preserving the pure ESM exports and invariant companion.
 
 Task 12.7 through Task 12.14 remain checked only as completed historical stages. Their three-row 1/1 and 174/174, four-row 1/1 and 170/170, and six-row 156/156 results are superseded by the later lifecycle and security reviews and do not satisfy Task 13. The top-level Task 12 cross-domain review is complete.
@@ -192,7 +195,7 @@ Task 12.7 through Task 12.14 remain checked only as completed historical stages.
 
 The audit uses the `2026-08-21T02:11:00Z` cutoff and covers every later release. ModLens now has 76 total releases, 38 DSH candidates, and three post-cutoff candidates; exact `3.23.1` passes artifact, license, install, and composition checks but fails direct dispose/remount. Each of the 17 Web UI identities has both `0.2.6` and `0.2.7` after the cutoff; all 34 exact tarballs are bound, and the applicable license, security, lifecycle, ownership, and deduplication decisions preserve zero Fusion Web rows.
 
-Better Sidebar has 13 releases and exact `0.15.0` remains blocked by deployment ownership and the unconfined ambient-environment PTY sink, not by bypassing the complete ToolRuntime. dsh-TUI has 19 releases; exact `0.8.7` and `0.8.8` each have 24 non-rc.5 peers, zero root and 15 packaged `workspace:*` values, and eight packaged Liangshen files. The historical public-install query covered a direct 23-package subset; the fresh complete source-closure query found exact rc.5 for 0/41 packages. Both new TUI candidates fail static ownership and public-closure gates, so installation and PTY runtime are `NOT RUN`. The [compatibility matrix](fusion-compat-matrix.md) owns the detailed version totals, results, and evidence paths.
+At the Task 18 cutoff, Better Sidebar had 13 releases and exact `0.15.0` remained blocked by deployment ownership and the unconfined ambient-environment PTY sink, not by bypassing the complete ToolRuntime. dsh-TUI then had 19 releases; exact `0.8.7` and `0.8.8` each had 24 non-rc.5 peers, zero root and 15 packaged `workspace:*` values, and eight packaged Liangshen files. The historical public-install query covered a direct 23-package subset; the complete source-closure query found exact rc.5 for 0/41 packages. Both candidates stopped before installation and PTY runtime. The [compatibility matrix](fusion-compat-matrix.md) owns current counts and stop points.
 
 ### Task 22: Web UI `0.2.8` and `0.2.9` Audit
 
@@ -202,7 +205,7 @@ Task 23 historically compared each blocked `GET` response with the complete stab
 
 ### Task 26: ModLens `3.24.0` and Better Sidebar `0.15.1`
 
-Task 26 is complete. ModLens now has 77 releases and 39 DSH candidates; exact `3.24.0` passes artifact, license, dependency-closure, isolated-install, and composition checks, then fails because a cross-site `POST /modlens/paste` writes the submitted image. Better Sidebar now has 14 installable releases; exact `0.15.1` passes artifact and license checks, then fails because all 14 DSH peer ranges require `^0.1.0-rc.8` and the public registry provides exact rc.5 for 0/14 peer packages. The first failures make every later candidate lifecycle, boot, and Chrome check `NOT RUN`; the two-row Fusion selection remained unchanged at that historical checkpoint.
+Task 26 is complete historical evidence. The [dated compatibility matrix](fusion-compat-matrix.md) owns current release counts and candidate stop points. Exact ModLens `3.24.0` passes artifact, license, dependency-closure, isolated-install, and composition checks, then fails because a cross-site `POST /modlens/paste` writes the submitted image. Exact Better Sidebar `0.15.1` passes artifact and license checks, then fails because its DSH peer ranges require `^0.1.0-rc.8` while the public registry lacks the required exact rc.5 packages. The first failures make every later candidate lifecycle, boot, and Chrome check `NOT RUN`; the two-row Fusion selection remained unchanged at that historical checkpoint.
 
 ### Task 28: Better Sidebar `0.15.2`
 
@@ -214,21 +217,21 @@ Task 29 is complete historical evidence. One fresh assembled run of the exact Pe
 
 ### Task 30: Final Convergence
 
-The final exact-staged V8 package is `.superpowers/sdd/round5-final-staged-v8/review-package.md`, with SHA-256 `d4d9e99624bd8f7612e92c477efeaadea1b2b37ee0f268ea6df4704fda42c8dc` and index tree `d77fb5a65673db4232f5ace22726dbf9e091dc29`; it contains 41 files, 3,276 insertions, and 506 deletions. Four focused files pass 110/110 tests. Typecheck, build, zero-error lint, and hygiene pass. Translation pairing checks 945 pairs, Agent Note format checks 542 notes, archived-note verification checks 426 frozen artifacts, Markdown wrap checks 1,874 files, Markdown links check 1,911 files, and document budgets check 9 documents.
+Task 30's local 41-path package and its review verdict are historical metadata recorded in the [tracked regression record](fusion-regression-report.md). The local package itself is not a clean-checkout evidence owner.
 
-System Chrome 151 through CDP `9333` passes the built acceptance 1/1, with zero Fusion targets and listeners afterward. Task 28 summarize regenerates 0/14 and its blocker assertion exits 1 as expected; Task 29 oracles pass 10/10. The Task 28 and Task 29 task reviews are complete. The V8 bits review reports P0/P1/P2 `0/0/0`, the DSH review reports `PASS / APPROVE` with zero findings, and the security review finds no exploitable issue.
+The [tracked regression record](fusion-regression-report.md) retains the Task 35 built-acceptance command bound to tracked tree `a5e6deb6f9fbf17d31e8a593722cb0063969549a` and explicitly downgrades local-only Task 30 and Task 35 records. It does not replace Task 42 acceptance of the current tree.
 
-All validated remediation findings are closed: transactional late acquisition; the CI trap; the private Pet package copy; explicit settlement that preserves `Promise.reject(undefined)`; orthogonal failure aggregation with object-identity deduplication; one shared cleanup deadline; and observed best-effort outer disposal after that deadline expires. The independent plan/design/spec alignment is `APPROVED` with Critical/Important/Minor `0/0/0`; final checklist, staging, and Git reconciliation and the single final progress append are complete. Full repository coverage and the actual GitHub-hosted job were not run locally.
+Task 30 closed its recorded lifecycle findings. Task 40 identified the next nine findings, and Task 41 completed their correction and independent review. Task 42 final review then reopened acceptance for the Task 43 findings; Task 43 owns remediation and final acceptance.
 
 ### Task 35: Pet-Only Root HTML Oracle
 
-- [x] Within each profile, require every blocked `GET` response snapshot to equal that profile's own `GET /`, including byte-for-byte body equality.
+- [x] Within each profile, require every blocked `GET` response snapshot to equal that profile's own `GET /`, including normalized complete semantic headers and original body bytes.
 - [x] Across the independently booted `base + web-app` and Fusion profiles, require every non-fallback response snapshot and body to remain byte-for-byte identical.
 - [x] Require one parseable `window.__DSH_BOOT__` assignment per root response, no Pet entry in baseline, exactly one additional valid Pet entry in Fusion, and a graph revision derived from each side's complete ordered entries.
 - [x] Remove the Pet entry from the Fusion graph, recompute the revision from the remaining complete ordered entries, and require the complete Fusion HTML to equal the baseline HTML byte for byte.
 - [x] Reject any additional client entry, shared-entry field or order drift, invalid baseline or Fusion graph revision, body difference outside the boot script, mounted JSON, redirect, stock-title route-owned HTML, 404, or 405 control response.
 - [x] Synchronize the specification, plan, design, checklist, compatibility matrix, regression report, and owning Agent Note in English and Chinese, re-record all five sidecars, and run the named documentation checks.
-- [x] Complete independent review and focused tests; pass the Pet-only built acceptance 1/1 through system Chrome 151/CDP `9333`, the full Web driver 39/39, and the runtime-final oracle 50/50; leave no target, listener, process, port, or temporary-directory residue; then resume Task 34.
+- [x] Record the historical Pet-only built acceptance through system Chrome 151/CDP `9333`; the local-only full Web driver, runtime-final oracle, and resource reconciliation are non-reproducible context rather than current acceptance evidence.
 
 ---
 
@@ -240,11 +243,11 @@ All validated remediation findings are closed: transactional late acquisition; t
 - Every other Web UI identity stops at its first failed or not-selected mandatory check; downstream checks are not inferred from historical evidence.
 - First-load visibility cannot waive plugin lifecycle ownership: ModLens, SSH, Remote Web UI, Task Board, and Git Graph remain excluded until a published version satisfies its recorded cleanup, quiescent disposal, disconnect remounting, license identity, rc.5 runtime, and same-page lifecycle requirements.
 - Package rescope changes module specifiers, not runtime event or locale ids; the six `cordis/*` ids remain canonical without aliases.
-- TUI `0.7.1` and Liangshen source `0.2.4` retain single preset ownership. The pure rc.5 source-validation runtime passes. The historical public-install attempt found 23 missing packages in its direct subset, while the fresh complete query finds exact rc.5 for 0/41 packages; no supported public assembly exists.
+- TUI `0.7.1` and Liangshen source `0.2.4` retain the historical source-validation result. The public series has 20 installable versions through `2026-08-23T11:18:55Z`; exact `0.9.0` fails single Liangshen ownership before security, public closure, installation, composition, or PTY.
 - Historical failures and measurements remain evidence. The document header states the current Pet-only delivery status; the Task 12 and Task 22/29 sections label their zero-row, three-row, four-row, six-row, and two-row runtime stages as superseded evidence.
 
 ---
 
 ## Execution Handoff
 
-Tasks 34 through 38 are complete. The 43-path V2 package and all final reviews are clean; HEAD remains `6e0f654` with an empty index, and staged-only restoration or history cleanup requires separate user authorization.
+Task 43.6 final verification is complete for the explicit 47-path allowlist package. The rebuilt package hash is `177ee237ae7a232ba7f9012167bf1c3c3dce5a403dcb0f951b1917d177cdc564`; the product binary diff hash remains `5702846d37d25a615aac8c22b9145b4dc568da0a0a10b22a52a24b7a87212405`. The [tracked regression record](fusion-regression-report.md) owns product runtime evidence, while `.superpowers/sdd/fusion-final-47/final-verification-addendum.md` records the local final gate addendum. No further staged-only restoration or history rewrite is authorized. After Tasks 44 and 45, the live Git index is an audited 26-path Fusion allowlist staged delivery; execution records and unrelated/non-Fusion work remain only outside the index.

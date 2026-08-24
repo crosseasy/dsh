@@ -4,7 +4,7 @@ English | [中文](README.zh.md)
 
 The static patch layer applied after [`dsh-base`](../base/README.md) and [`dsh-web-app`](../web-app/README.md) in a fusion profile. [`cordis.patch.yml`](cordis.patch.yml) mounts Pet from the exact `0.2.9` package; the manifest's `dsh.bundle.profileDependencies` records that profile-owned dependency without adding third-party runtime dependencies to this bundle.
 
-Repository acceptance is explicit rather than part of the default test collections: `pnpm run test:fusion:acceptance` builds and boots `base -> web-app -> fusion` through system Chrome CDP `9333`. The gate verifies the exact Pet row, Pet capability surface, blocked-package absence, stock Web behavior, clean diagnostics, and process, port, target, and temporary-directory cleanup.
+Repository verification follows the [Fusion external-profile acceptance](../../../docs/testing.md#tiers). The owning [Agent Note](../../../.agents/notes/implemented/architecture/2026-08-19-fusion-profile-external-plugin-ownership.md) records the durable admission and verification requirements.
 
 ## Model Experience
 

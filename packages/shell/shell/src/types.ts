@@ -1,8 +1,8 @@
 /**
- * Execution types for the bash executor seam. Background job semantics belong
+ * Execution types for the shell executor seam. Background job semantics belong
  * to `@deepseek-ai/dsh-jobs`; this seam exposes only process handles. The
  * managed-environment and captured-output vocabulary is owned by the
- * subprocess seam and re-exported here so bash consumers keep one import
+ * subprocess seam and re-exported here so shell consumers keep one import
  * root.
  * @module dsh-shell/types
  */
@@ -44,8 +44,8 @@ export interface ShellExecRequest {
   /**
    * Foreground stdout capture budget in bytes. Absent uses the executor's
    * default output cap. Trusted in-process consumers use this when they must
-   * parse complete stdout up to their own bounded limit; the model-facing bash
-   * tool does not expose it as a parameter.
+   * parse complete stdout up to their own bounded limit; the model-facing Bash
+   * and PowerShell tools do not expose it as a parameter.
    */
   stdoutMaxBytes?: number | undefined
   /** Abort signal — implementations kill the command when it fires. */
@@ -54,8 +54,9 @@ export interface ShellExecRequest {
    * Bytes to write to the command's stdin, then close it. Absent leaves stdin
    * closed/empty (the default for model-driven tool calls). Set by in-process
    * plugins (e.g. the hooks bridges, which write a hook command's JSON payload
-   * to its stdin); the model-facing bash tool does not expose it as a parameter
-   * (a model that needs stdin uses shell syntax like a heredoc or a pipe).
+   * to its stdin); the model-facing Bash and PowerShell tools do not expose it
+   * as a parameter (a model that needs stdin uses the active shell's inline
+   * input or pipeline syntax).
    */
   stdin?: string | undefined
   /**
@@ -63,7 +64,7 @@ export interface ShellExecRequest {
    * scrub. Managed facts belong in {@link dshEnv}, which merges after this
    * map, so an entry here can never displace one. Set by in-process plugins
    * (the hooks bridges set `CLAUDE_PROJECT_DIR`, `CLAUDE_PLUGIN_ROOT`, …); the
-   * model-facing bash tool does not expose it as a parameter.
+   * model-facing Bash and PowerShell tools do not expose it as a parameter.
    */
   env?: Record<string, string> | undefined
   /**
