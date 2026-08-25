@@ -15,10 +15,10 @@ import {
   ancestorChain,
   createSourceReadBudget,
   descendantDirsBetween,
-  findProjectRoot,
   probeScopeInstruction,
   readScopeInstruction,
   relativeDisplay,
+  sourceReadBudgetExhausted,
   type LoadedInstructionFile,
 } from './files.ts'
 import {
@@ -255,7 +255,7 @@ export async function reconcileInstructionContext(
     touchedPaths: readonly string[]
     includeBaselineScopes: boolean
     excludedBaselineScopes?: ReadonlySet<string>
-    projectRoot?: string
+    projectRoot: string
     signal?: AbortSignal
   },
 ): Promise<ReconciledInstructionContext | undefined> {
@@ -263,10 +263,7 @@ export async function reconcileInstructionContext(
   const effective = visibleInstructionChanges(agent, options.authorityMessages)
   /* v8 ignore next -- normal agents carry an absolute session cwd. */
   const cwd = session.header.cwd ?? process.cwd()
-  // TODO(frozen-project-root): retain the baseline root for the loop instance;
-  // recomputing it after marker edits reinterprets the existing relative scope keys.
   const projectRoot = options.projectRoot
-    ?? await findProjectRoot(cwd, resolved.projectRootMarkers, fileSystem, options.signal)
   const scopes = new Set<string>()
   const baselineScopes = new Set<string>()
   const addDirScopes = (target: Set<string>, directory: string): void => {
@@ -350,7 +347,7 @@ export async function reconcileInstructionContext(
     .toSorted(([left], [right]) => directorySpecificity(right) - directorySpecificity(left))
   const budget = createSourceReadBudget(resolved.maxTotalSourceBytes)
   for (const [directory, unsortedDirectoryScopes] of plannedDirectories) {
-    if (budget.exhausted) break
+    if (sourceReadBudgetExhausted(budget)) break
     const directoryScopes = unsortedDirectoryScopes.toSorted((left, right) => {
       const leftName = decodeScopeKey(left).candidateName
       const rightName = decodeScopeKey(right).candidateName
@@ -384,7 +381,7 @@ export async function reconcileInstructionContext(
       keptTrimmedByDir.delete(directory)
     }
     for (const [scopeIndex, scope] of probedScopes.entries()) {
-      if (budget.exhausted) {
+      if (sourceReadBudgetExhausted(budget)) {
         if (probedScopes.slice(scopeIndex).some((remainingScope) => {
           const previous = effective.get(remainingScope)
           return previous !== undefined && previous.action !== 'remove'
@@ -434,7 +431,7 @@ export async function reconcileInstructionContext(
         options.signal,
       )
       if (read.kind === 'unavailable') {
-        if (budget.exhausted) {
+        if (sourceReadBudgetExhausted(budget)) {
           rollbackDirectory()
           break
         }

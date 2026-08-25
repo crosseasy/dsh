@@ -50,7 +50,6 @@ try {
 
   const notifications = [];
   const server = new HarnessSdkJsonRpcServer(ctx, {
-    request() { return Promise.reject(new Error("unexpected host request")); },
     notify(method, params) { notifications.push({ method, params }); },
   });
   const parent = await ctx.agents.create({

@@ -3328,6 +3328,7 @@ describe('dynamic nested workspace context injection', () => {
             })],
             touchedPaths: [],
             includeBaselineScopes: false,
+            projectRoot: root,
             signal: testToolSignal,
           }
 
@@ -3377,6 +3378,7 @@ describe('dynamic nested workspace context injection', () => {
         scopeMessages: [],
         touchedPaths: [],
         includeBaselineScopes: false,
+        projectRoot: root,
         signal: testToolSignal,
       }
 
@@ -3420,6 +3422,7 @@ describe('dynamic nested workspace context injection', () => {
         scopeMessages: [],
         touchedPaths: [],
         includeBaselineScopes: false,
+        projectRoot: root,
         signal: testToolSignal,
       })
 
@@ -3452,6 +3455,7 @@ describe('dynamic nested workspace context injection', () => {
         scopeMessages: [],
         touchedPaths: [],
         includeBaselineScopes: true,
+        projectRoot: root,
         signal: testToolSignal,
       })
 

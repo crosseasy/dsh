@@ -17,7 +17,7 @@ import * as LlmDeepSeek from '@deepseek-ai/dsh-llm-deepseek'
 import type {
   InitializeParams,
   InitializeResult,
-  JsonRpcTransportPeer,
+  JsonRpcServerNotifier,
   SessionEventNotification,
   SessionPromptParams,
   SessionPromptResult,
@@ -64,7 +64,7 @@ export class HarnessSdkJsonRpcServer {
 
   constructor(
     private readonly ctx: Context,
-    private readonly transport: JsonRpcTransportPeer,
+    private readonly transport: JsonRpcServerNotifier,
     private readonly options: HarnessSdkJsonRpcServerOptions = {},
   ) {
     const serverOptions = this.options

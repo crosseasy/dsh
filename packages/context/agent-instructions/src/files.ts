@@ -98,9 +98,22 @@ export interface SourceReadBudget {
   exhausted: boolean
 }
 
-/** Create one aggregate source-read budget. */
+/**
+ * Create one aggregate source-read budget.
+ * @param maxBytes - maximum UTF-8 bytes that the batch may receive.
+ * @returns mutable accounting state shared by every source read in the batch.
+ */
 export function createSourceReadBudget(maxBytes: number): SourceReadBudget {
   return { maxBytes, readBytes: 0, exhausted: false }
+}
+
+/**
+ * Report whether the batch must skip further source reads.
+ * @param budget - aggregate source-read accounting state.
+ * @returns true after the limit is reached or a known-size source cannot fit.
+ */
+export function sourceReadBudgetExhausted(budget: SourceReadBudget): boolean {
+  return budget.exhausted
 }
 
 type BoundedRead =
@@ -199,6 +212,7 @@ async function probeRootMarker(
  * @param fileSystem - optional provider used instead of host filesystem probes.
  * @param signal - cancellation for provider and host probes.
  * @returns the discovered project root, or `cwd` when no marker exists.
+ * @throws when a marker probe is unavailable or cancellation is requested.
  */
 export async function findProjectRoot(
   cwd: string,
@@ -373,7 +387,7 @@ async function readBounded(
   signal?: AbortSignal,
 ): Promise<BoundedRead> {
   signal?.throwIfAborted()
-  if (budget.exhausted) return { kind: 'unavailable' }
+  if (sourceReadBudgetExhausted(budget)) return { kind: 'unavailable' }
   if (file.size !== undefined && file.size > maxSourceBytes) return { kind: 'unavailable' }
   if (file.size !== undefined && file.size > budget.maxBytes - budget.readBytes) {
     budget.exhausted = true
@@ -461,7 +475,7 @@ export async function loadBaselineInstructionSet(
   const budget = createSourceReadBudget(config.maxTotalSourceBytes)
   const loadedByPath = new Map<string, LoadedInstructionFile>()
   for (const file of discovered.toSorted((left, right) => right.specificity - left.specificity)) {
-    if (budget.exhausted) break
+    if (sourceReadBudgetExhausted(budget)) break
     const read = await readBounded(file, config.maxSourceBytes, budget, fileSystem, options.signal)
     if (read.kind === 'loaded') {
       loadedByPath.set(file.absolutePath, {
@@ -472,7 +486,7 @@ export async function loadBaselineInstructionSet(
       })
     }
   }
-  const loaded = discovered.flatMap(file => {
+  const loaded = discovered.flatMap((file) => {
     const value = loadedByPath.get(file.absolutePath)
     return value === undefined ? [] : [value]
   })
@@ -553,7 +567,7 @@ export async function probeScopeInstruction(
  * @param budget - aggregate source-read budget for this reconciliation batch.
  * @param fileSystem - provider used for the streaming read.
  * @param signal - cancellation for provider streaming.
- * @returns loaded content with the probed version, or undefined when unavailable.
+ * @returns loaded content with the probed version, or an unavailable result.
  */
 export async function readScopeInstruction(
   file: ProbedInstructionFile,

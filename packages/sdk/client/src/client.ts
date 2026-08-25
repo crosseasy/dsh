@@ -14,7 +14,7 @@
 
 import { spawn, type ChildProcess } from 'node:child_process'
 import {
-  JsonRpcLineTransport,
+  JsonRpcLineClientTransport,
   JsonRpcResponseError,
   type InitializeParams,
   type InitializeResult,
@@ -183,7 +183,7 @@ class NotificationSubscriptionImpl implements NotificationSubscription {
  */
 export class HarnessClient {
   private child: ChildProcess | undefined
-  private transport: JsonRpcLineTransport | undefined
+  private transport: JsonRpcLineClientTransport | undefined
   private readonly stderrTail: string[] = []
   private readonly subscriptions = new Map<string, NotificationSubscriptionImpl>()
   private readonly sessionParents = new Map<string, string>()
@@ -254,7 +254,7 @@ export class HarnessClient {
       // will never be answered.
       this.transport?.close()
     })
-    const transport = new JsonRpcLineTransport(child.stdout, child.stdin)
+    const transport = new JsonRpcLineClientTransport(child.stdout, child.stdin)
     transport.onNotification((method, params) => { this.dispatchNotification({ method, params }) })
     transport.start()
     this.transport = transport

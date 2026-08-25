@@ -10,7 +10,7 @@
 import type { Readable, Writable } from 'node:stream'
 import type { ContentBlock } from '@deepseek-ai/dsh-llm'
 import type { SubagentResult } from '@deepseek-ai/dsh-subagent'
-import { JsonRpcLineTransport } from '@deepseek-ai/dsh-sdk-protocol'
+import { JsonRpcLineClientTransport } from '@deepseek-ai/dsh-sdk-protocol'
 import type { CodexPermissionMode } from './run.ts'
 
 type JsonObject = Record<string, unknown>
@@ -210,7 +210,7 @@ async function raceAbort<T>(pending: Promise<T>, signal: AbortSignal): Promise<T
  * another product method must first become part of the provider contract.
  */
 export class CodexAppServerWire {
-  private readonly transport: JsonRpcLineTransport
+  private readonly transport: JsonRpcLineClientTransport
   private readonly fatal = Promise.withResolvers<never>()
   private threadId: string | undefined
   private turnId: string | undefined
@@ -246,7 +246,7 @@ export class CodexAppServerWire {
     output: Writable,
     private readonly permissionMode: CodexPermissionMode,
   ) {
-    this.transport = new JsonRpcLineTransport(input, output)
+    this.transport = new JsonRpcLineClientTransport(input, output)
     // Fatal protocol state can arrive after the current guarded operation has
     // already settled. Keep the shared rejection observed without inserting
     // another promise-adoption hop into active races.

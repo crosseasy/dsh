@@ -24,7 +24,7 @@ import {
 } from '@agentclientprotocol/sdk'
 import type { ContentBlock } from '@deepseek-ai/dsh-llm'
 import { SessionId } from '@deepseek-ai/dsh-session'
-import { AssistantOutputFold, settleRunResult, subprocessRunHandle } from '@deepseek-ai/dsh-subagent'
+import { AssistantOutputFold, subprocessRunHandle } from '@deepseek-ai/dsh-subagent'
 import type { SubagentResult, SubagentRun, SubagentStartRequest, SubagentStopReason } from '@deepseek-ai/dsh-subagent'
 import type { SubprocessHandle, SubprocessSpawnSpec } from '@deepseek-ai/dsh-subprocess'
 
@@ -321,24 +321,32 @@ export async function startAcpRun(request: SubagentStartRequest, spec: AcpRunSpe
   if (sessionId === undefined) throw new Error('unreachable: ACP startup fulfilled without a session id')
   const remoteSessionId = sessionId
 
-  const result: Promise<SubagentResult> = settleRunResult({
-    attempt: async () => {
+  const result: Promise<SubagentResult> = (async (): Promise<SubagentResult> => {
+    try {
       // Race the remote turn against local cancellation.
       const prompt = async (): Promise<SubagentResult> => {
         const promptResult = await conn.prompt({ sessionId: remoteSessionId, prompt: toAcpPrompt(request.prompt) })
         return { output: collectOutput(), stopReason: acpStopReason(promptResult.stopReason) }
       }
-      return Promise.race([
+      return await Promise.race([
         prompt(),
         cancelSettled.then((): SubagentResult => ({ output: collectOutput(), stopReason: 'aborted' })),
       ])
-    },
-    collectOutput,
-    cancelled: () => flags.cancelled,
-    onError: spec.onError,
-    signal: request.signal,
-    onAbort,
-  })
+    } catch (error: unknown) {
+      // Cover a process rejection already queued when cancellation arrives.
+      /* v8 ignore next */
+      if (flags.cancelled) return { output: collectOutput(), stopReason: 'aborted' }
+      // Flatten post-publication transport failures while preserving diagnostics.
+      try {
+        spec.onError?.(toError(error), 'error')
+      } catch {
+        // The diagnostic sink cannot reject the run result.
+      }
+      return { output: collectOutput(), stopReason: 'error' }
+    } finally {
+      request.signal.removeEventListener('abort', onAbort)
+    }
+  })()
 
   // The shared run handle memoizes disposal; ACP retains its EOF-first process
   // teardown and best-effort session/cancel behavior.

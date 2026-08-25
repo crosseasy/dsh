@@ -1,10 +1,10 @@
 # Tasks
 
-- [ ] Task 1: 核验候选来源并冻结审计目录，产出可机器验证的插件事实。
-  - [ ] 1.1 从 Awesome 清单与 `docs/plugin/superpowers/02-插件矩阵与择优.md` 提取 P0/P1/P2 候选 URL。
-  - [ ] 1.2 对每个候选执行只读浅克隆/manifest 核验，记录 HEAD SHA、包名、Node engine、license、`dsh.bundle.patch`、测试/CI、安装脚本和外部依赖。
-  - [ ] 1.3 对无法访问、许可证不清、无 bundle、Node 不兼容或要求核心补丁的候选记录硬拒绝，不将其放入 active profile。
-  - [ ] 1.4 以 focused schema test 验证目录字段完整、SHA 为 40 位、候选 ID 唯一。
+- [x] Task 1: 核验候选来源并冻结审计目录，产出可机器验证的插件事实。
+  - [x] 1.1 从 Awesome 清单与 `docs/plugin/superpowers/02-插件矩阵与择优.md` 提取 P0/P1/P2 候选 URL。
+  - [x] 1.2 对每个候选执行只读浅克隆/manifest 核验，记录 HEAD SHA、包名、Node engine、license、`dsh.bundle.patch`、测试/CI、安装脚本和外部依赖。
+  - [x] 1.3 对无法访问、许可证不清、无 bundle、Node 不兼容或要求核心补丁的候选记录硬拒绝，不将其放入 active profile。
+  - [x] 1.4 以 focused schema test 验证目录字段完整、SHA 为 40 位、候选 ID 唯一。
 
 - [ ] Task 2: 创建 `packages/curated/` workspace 拓扑和静态 curated bundle。
   - [ ] 2.1 新增符合仓库 package 约定的 curated 包骨架、README、invariant companion 和 Host aggregate 引用。
