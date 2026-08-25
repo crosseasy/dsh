@@ -9,6 +9,12 @@
  */
 
 import { Context } from '@deepseek-ai/cordis'
+import {
+  classifySandboxDenial,
+  classifySandboxRunnerFailure,
+  isSandboxRunnerSpawnFailure,
+  matchesSandboxSignature,
+} from '@deepseek-ai/dsh-shell'
 import type { ShellExecRequest, ShellExecSpec, ShellProcess, ShellRunResult } from '@deepseek-ai/dsh-shell'
 import { SandboxUnavailableError } from '@deepseek-ai/dsh-sandbox'
 import type {
@@ -23,7 +29,6 @@ import type {
 import type {} from '@deepseek-ai/dsh-sandbox-policy'
 import { LocalBashExecutor } from '@deepseek-ai/dsh-bash-local'
 import type { Config as LocalConfig } from '@deepseek-ai/dsh-bash-local'
-import { classifyDenial, classifyRunnerFailure, isRunnerSpawnFailure, matchesSignature } from './helpers.ts'
 
 /**
  * Plugin config: the local executor's knobs, verbatim. The sandbox policy —
@@ -99,18 +104,21 @@ export class SandboxBashExecutor extends LocalBashExecutor {
     } catch (error) {
       // An upstream abort remains cancellation even when it prevents spawn.
       if (spec.signal?.aborted === true) spec.signal.throwIfAborted()
-      if (isRunnerSpawnFailure(error, confined.argv[0], spec.workdir)) {
+      if (isSandboxRunnerSpawnFailure(error, confined.argv[0], spec.workdir)) {
         throw new SandboxUnavailableError(mode, String(error))
       }
       throw error
     }
     // Runner failure outranks denial because the command did not run. Carry
     // the matched fatal line, not an informational line that preceded it.
-    const runnerFailure = classifyRunnerFailure(result.exitCode, result.stderr.text, confined.runnerFailureRules)
+    const runnerFailure = classifySandboxRunnerFailure(result.exitCode, result.stderr.text, confined.runnerFailureRules)
     if (runnerFailure !== undefined) {
       throw new SandboxUnavailableError(mode, runnerFailure.detail)
     }
-    return { ...result, sandbox: { mode, denied: classifyDenial(result, confined.denialSignatures), enforcement: confined.enforcement } }
+    return {
+      ...result,
+      sandbox: { mode, denied: classifySandboxDenial(result, confined.denialSignatures), enforcement: confined.enforcement },
+    }
   }
 
   override start(spec: ShellExecSpec): ShellProcess {
@@ -126,7 +134,7 @@ export class SandboxBashExecutor extends LocalBashExecutor {
     } catch (error) {
       // LocalSubprocessRuntime reports ENOENT/EACCES with the failed executable path through async
       // `done` rejection; this covers alternatives that throw the same error synchronously.
-      if (isRunnerSpawnFailure(error, confined.argv[0], spec.workdir)) {
+      if (isSandboxRunnerSpawnFailure(error, confined.argv[0], spec.workdir)) {
         throw new SandboxUnavailableError(mode, String(error))
       }
       throw error
@@ -154,11 +162,13 @@ export class SandboxBashExecutor extends LocalBashExecutor {
       // A rejected spawn never started the confined launch. Otherwise runner
       // failure outranks denial because its diagnostics may contain denial terms.
       const runnerFailed = spawnFailed
-        ? isRunnerSpawnFailure(spawnError, facts.runnerProgram, facts.workdir)
-        : classifyRunnerFailure(proc.exitCode, stderr, facts.runnerFailureRules) !== undefined
+        ? isSandboxRunnerSpawnFailure(spawnError, facts.runnerProgram, facts.workdir)
+        : classifySandboxRunnerFailure(proc.exitCode, stderr, facts.runnerFailureRules) !== undefined
       proc.sandbox = {
         mode: facts.mode,
-        denied: !runnerFailed && matchesSignature(proc.exitCode, stderr, facts.denialSignatures),
+        denied: proc.status !== 'killed'
+          && !runnerFailed
+          && matchesSandboxSignature(proc.exitCode, stderr, facts.denialSignatures),
         enforcement: facts.enforcement,
         ...(runnerFailed ? { runnerFailed } : {}),
       }

@@ -2,10 +2,9 @@
  * Generate `THIRD_PARTY_NOTICES.md` from the workspace manifests: every
  * external dependency named by a workspace `package.json`, the vendored-package
  * manifest in `vendor/README.md`, the Python `pyproject.toml` files, and the
- * pnpm patch list, and explicitly copied source trees. License and repository
- * metadata come from the installed store or the copied tree's retained licenses,
- * so the tree must be installed. `--check` verifies the committed artifact.
- * Tier policy and ownership live in
+ * pnpm patch list. License and repository metadata come from the installed
+ * store, so the tree must be installed. `--check` verifies the committed
+ * artifact. Tier policy and ownership live in
  * `.agents/notes/implemented/process/2026-07-30-generated-third-party-notices.md`.
  */
 
@@ -674,7 +673,6 @@ export function render(): string {
   )
     ? collectClaudeDistribution()
     : undefined
-
   const nonPermissiveDev = devDeps.filter(dep => !isPermissive(dep.license))
   // A copyleft license reaching a shipped surface is a distribution decision,
   // not a rendering detail; the notices cannot quietly absorb it.
@@ -694,7 +692,7 @@ export function render(): string {
 
 DeepSeek Harness is licensed under [MIT](LICENSE). It depends on the third-party software listed below. Each project remains under its own license; nothing in this file changes those terms.
 
-This file lists **direct** dependencies declared by the workspace and the explicitly disclosed official Claude platform payload closure. It is generated from the workspace manifests by \`scripts/gen-third-party-notices.ts\`: a pre-commit hook regenerates it whenever a staged file changes one of its inputs, and \`scripts/gen-third-party-notices.spec.ts\` asserts in the test lane that the committed bytes match. Deleting a manifest runs no hook, so that case is caught by the assertion instead. Run \`pnpm run verify-third-party-notices\` for the standalone check.
+This file lists **direct** dependencies declared by the workspace and the explicitly disclosed official Claude Code platform payload closure. It is generated from the workspace manifests by \`scripts/gen-third-party-notices.ts\`: a pre-commit hook regenerates it whenever a staged file changes one of its inputs, and \`scripts/gen-third-party-notices.spec.ts\` asserts in the test lane that the committed bytes match. Deleting a manifest runs no hook, so that case is caught by the assertion instead. Run \`pnpm run verify-third-party-notices\` for the standalone check.
 
 The complete npm transitive closure, including the Landlock launcher workspace, is recorded with exact pinned versions in [\`pnpm-lock.yaml\`](pnpm-lock.yaml) — inspect it with \`pnpm licenses list\`. The Python closure is recorded separately in [\`python/sdk/uv.lock\`](python/sdk/uv.lock).
 
@@ -705,10 +703,6 @@ The Cordis framework and its foundation libraries are source-vendored into this 
 | Package | Upstream name | Upstream | License |
 | --- | --- | --- | --- |
 ${vendored.map(row => `| \`${row.npmName}\` | \`${row.upstreamName}\` | [${row.upstream.replace('https://', '')}](${row.upstream}) | MIT |`).join('\n')}
-
-## Copied preset sources
-
-The five-file system preset at [\`apps/cli/config/agent-presets/liangshen/\`](apps/cli/config/agent-presets/liangshen/) is copied byte-for-byte from the Apache-2.0-licensed \`@linxin666/dsh-liangshen@0.2.2\` package. It includes the package author's two-phase isolation extensions and retains portions from the MIT-licensed DeepSeek Harness Minimal and Standard presets and [\`xiaobright/dsh-anchored-standard\`](https://github.com/xiaobright/dsh-anchored-standard). The complete source terms are retained in [\`licenses/\`](apps/cli/config/agent-presets/liangshen/licenses/): [dsh-liangshen Apache-2.0](apps/cli/config/agent-presets/liangshen/licenses/dsh-liangshen-Apache-2.0.txt), [DeepSeek Harness MIT](apps/cli/config/agent-presets/liangshen/licenses/DeepSeek-Harness-MIT.txt), and [dsh-anchored-standard MIT](apps/cli/config/agent-presets/liangshen/licenses/dsh-anchored-standard-MIT.txt). The source [\`NOTICE\`](apps/cli/config/agent-presets/liangshen/NOTICE) identifies which preset files contain those portions.
 
 ## Runtime npm dependencies
 

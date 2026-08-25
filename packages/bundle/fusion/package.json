@@ -1,7 +1,7 @@
 {
   "name": "@deepseek-ai/dsh-fusion",
-  "description": "The dsh fusion bundle: a pure profile patch layer for curated external plugins over dsh-web-app",
-  "version": "0.1.0-rc.7",
+  "description": "The Pet external-integration patch layer for a fusion profile, applied after dsh-base and dsh-web-app",
+  "version": "0.1.0-rc.5",
   "publishConfig": {
     "access": "public"
   },
@@ -35,25 +35,18 @@
   "license": "MIT",
   "dsh": {
     "bundle": {
-      "patch": "./cordis.patch.yml"
+      "patch": "./cordis.patch.yml",
+      "profileDependencies": {
+        "@linxin666/dsh-pet": "0.2.9"
+      }
     }
-  },
-  "dependencies": {
-    "@liustack/modlens": "3.21.1",
-    "dsh-better-sidebar": "0.13.1",
-    "@linxin666/dsh-client-ui-web-ui-settings": "0.2.2",
-    "@linxin666/dsh-client-ui-task-board": "0.2.2",
-    "@linxin666/dsh-client-ui-git-graph": "0.2.2",
-    "@linxin666/dsh-remote-web-ui": "0.2.2",
-    "@linxin666/dsh-ssh": "0.2.2",
-    "@linxin666/dsh-pet": "0.2.2",
-    "@linxin666/dsh-client-ui-skin-center": "0.2.2"
   },
   "peerDependencies": {
     "@deepseek-ai/dsh-invariants": "workspace:^",
     "@deepseek-ai/cordis": "workspace:^"
   },
   "devDependencies": {
+    "@deepseek-ai/dsh-app-boot": "workspace:^",
     "@deepseek-ai/dsh-invariants": "workspace:^",
     "@deepseek-ai/cordis": "workspace:^"
   }

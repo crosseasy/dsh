@@ -133,10 +133,26 @@ const homeAndGuide = pairedPages([
   {
     source: 'docs/user/guide/fusion-profile.md',
     route: 'guide/fusion-profile.md',
-    label: { root: 'Fusion profile', en: 'Fusion profile' },
+    label: { root: '组装 Fusion Web profile', en: 'Assemble the Fusion Web profile' },
     sidebar: { root: 'zh-guide', en: 'en-guide' },
     section: { root: '入门', en: 'Guide' },
     order: 3,
+  },
+  {
+    source: 'docs/user/guide/fusion-tui-profile.md',
+    route: 'guide/fusion-tui-profile.md',
+    label: { root: 'Fusion TUI 交付状态', en: 'Fusion TUI delivery status' },
+    sidebar: { root: 'zh-guide', en: 'en-guide' },
+    section: { root: '入门', en: 'Guide' },
+    order: 4,
+  },
+  {
+    source: 'docs/user/guide/desktop-shell-contract.md',
+    route: 'guide/desktop-shell-contract.md',
+    label: { root: '桌面壳集成', en: 'Desktop shell integration' },
+    sidebar: { root: 'zh-guide', en: 'en-guide' },
+    section: { root: '入门', en: 'Guide' },
+    order: 5,
   },
   {
     source: 'docs/user/guide/python-sdk.md',
@@ -419,6 +435,16 @@ const reference = [
     order: 5,
   }]),
 ]
+
+/**
+ * Sidebar collections of each locale, in the order the site's navigation
+ * presents them. The navigation bar and the llms.txt index both read this
+ * sequence, so a new collection lands in both surfaces together.
+ */
+export const localeCollections = {
+  root: ['zh-guide', 'zh-develop', 'zh-reference'],
+  en: ['en-guide', 'en-develop', 'en-reference'],
+} as const satisfies Record<DocsLocale, readonly DocsSidebar[]>
 
 /** A sidebar group, matched to pages by `label`. */
 export interface DocsSection {

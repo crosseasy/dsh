@@ -9,12 +9,12 @@ import type { InvariantInstaller } from '@deepseek-ai/dsh-invariants'
 const PACKAGE_NAME = '@deepseek-ai/dsh-fusion'
 
 /** Cordis companion plugin name. */
-export const name = 'fusion-invariant'
+export const name = 'fusion-bundle-invariant'
 /** Service required before the companion can register. */
 export const inject = ['invariants']
 
-// No runtime invariant: the package is a static patch-list carrier. It mounts
-// no service, emits no events, and owns no mutable relation to check.
+// No runtime invariant: the package carries a static composition patch and
+// owns no mutable runtime relation.
 const install: InvariantInstaller = () => {}
 
 /**

@@ -2,5 +2,5 @@
 # side as of the last confirmed-consistent state. Both languages carry equal authority;
 # after editing either side, bring the other along and re-record with:
 #   pnpm run verify-translation-pairing --write .agents/notes/implemented/feature/2026-07-06-sandbox.md
-2026-07-06-sandbox.md: 62c46c99a2283b03cf75d8823783367dd6b3473a
-2026-07-06-sandbox.zh.md: 82c2e7962800c007a207f0204bf47cef01f79a36
+2026-07-06-sandbox.md: 998a4730987f557a6d927c32fc749c8d22a73b1f
+2026-07-06-sandbox.zh.md: e233e856776a1e0368b6ec3da6d2e46cce190fe6

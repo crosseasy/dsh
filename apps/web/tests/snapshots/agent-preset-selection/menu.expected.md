@@ -5,4 +5,4 @@
   - menuitem "PTC mode All Standard mode capabilities, with tools exposed through the Code Mode SDK so the model can combine multi-step operations in one TypeScript program."
   - menuitem "Minimal mode Two-tool coding agent with persistent bash and str_replace_editor."
   - menuitem "Creator mode Built for creating custom agent presets, with all Standard mode capabilities plus runtime inspection, plugin experiments, and preset-authoring guidance."
-  - menuitem "梁神模式 那模式一启动，使用者当场双腿一软瘫坐在地，仿佛看见原子弹爆炸——三秒，三辈子的代码，外加文言文、二进制、摩斯电码三语解说轮番轰炸，凡人最后只能趴在地上用下巴磕出两个字:梁神！"
+  - menuitem "梁神模式 完整保留标准模式能力，首阶段仅呈现 bash 与 str_replace_editor，稳定后切换至 PTC 模式，并在压缩后重新锚定。"

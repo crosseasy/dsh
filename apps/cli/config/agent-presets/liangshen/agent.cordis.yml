@@ -3,13 +3,16 @@
 # the same one-line persona, with no runtime contexts and no injected pre-step
 # messages, anchoring the Minimal trajectory; after a stabilized anchor the
 # wire switches to PTC Mode and the ordinary injections open. The
-# phase-1 surface matches the official "exact RL prompt and schemas" snapshot
-# byte-for-byte on the model-visible wire shape, at the cost of keeping the
-# persistent shell for the whole session. Unlike the builtin Minimal preset,
-# the phase-1 editor inherits the host file sandbox instead of mounting a bare
-# local filesystem (see the filesystem section below).
+# phase-1 surface matches the official Minimal prompt and tool names, at the
+# cost of keeping the persistent shell for the whole POSIX session. Unlike the
+# builtin Minimal preset, the phase-1 editor inherits the host file sandbox
+# instead of mounting a bare local filesystem (see the filesystem section
+# below).
 #
-# Adapted from the builtin `minimal` and `standard` presets.
+# Adapted from the builtin `minimal` and `standard` presets and
+# `@linxin666/dsh-liangshen@0.2.4`. The Windows shell intentionally differs
+# from that source: it uses the Harness sandbox and official bash Consumer
+# instead of publishing a direct subprocess-backed model tool.
 #
 # This file is an AGENT-PLANE composition. The roster mounts it ONCE under a
 # standing scope; every session naming it joins by scope parentage, so the
@@ -135,18 +138,32 @@
           * Please avoid commands that may produce a very large amount of output.
           * Please run long lived commands in the background, e.g. 'sleep 10 &' or start a server in the background.
 
-# Windows-only `bash` tool (custom-bash.mjs): the PTY backend above is
-# linux/darwin-only, so win32 disables the persistent-shell group and
-# registers this `bash` through the ordinary cross-platform subprocess seam
-# (Git Bash). Both platforms end up with exactly one tool named `bash`, so the
-# phase-1 Minimal anchor (shellTools: [bash] + str_replace_editor) is
-# unchanged. Non-zero exit is reported not thrown; state does NOT persist
-# across calls on this path; no OS sandbox confinement on Windows. `bashPath`
-# is optional (defaults to Git Bash inference); set it explicitly when git is
-# not on PATH.
-- id: custom-bash
-  name: ./custom-bash.mjs
+# The PTY backend is linux/darwin-only. Windows instead mounts a private bash
+# executor and the official model tool over the host sandbox, policy, approval,
+# subprocess, and shell-environment services. `shell` isolation prevents the
+# host PowerShell executor from interpreting bash text; `settings` isolation
+# prevents both executors from owning the same settings namespace. Git Bash
+# must expose `bash` on PATH. Missing bash or sandbox support fails closed in
+# the official executor; this path never falls back to pwsh, cmd, or an
+# unconfined subprocess. Background mode is absent because the private
+# executor must remain inside this preset-owned lifetime.
+- id: windows-bash
+  name: cordis:group
+  group: true
   disabled: !!js process.platform !== 'win32'
+  isolate:
+    shell: true
+    settings: true
+  config:
+    - id: windows-bash-sandbox
+      name: '@deepseek-ai/dsh-bash-sandbox'
+      config:
+        timeoutMs: 120000
+
+    - id: windows-tool-bash
+      name: '@deepseek-ai/dsh-tool-bash'
+      config:
+        enableRunInBackground: false
 
 # ── minimal phase-1 filesystem ──────────────────────────────────────────────
 

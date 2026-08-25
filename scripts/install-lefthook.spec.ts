@@ -179,6 +179,10 @@ function hooksPath(fixture: Fixture, root: string): string {
   return join(gitDirectory(fixture, root), 'dsh-hooks')
 }
 
+function posixShellQuoteForTest(value: string): string {
+  return `'${value.replaceAll('\'', '\'\\\'\'')}'`
+}
+
 function installLockPath(fixture: Fixture): string {
   return join(commonDirectory(fixture), 'dsh-lefthook-install.lock')
 }
@@ -291,6 +295,22 @@ describe('worktree-local Lefthook installer', { timeout: 30_000 }, () => {
     expect(readFileSync(join(mainHooks, 'pre-commit'), 'utf8')).toBe(mainHookBeforeRemoval)
     expect(readFileSync(legacyHook, 'utf8')).toBe('#!/bin/sh\n# legacy hook\n')
   }, MULTI_PROCESS_TEST_TIMEOUT_MS)
+
+  it.skipIf(process.platform === 'win32')('adds the installing Node bin directory to POSIX hooks', async () => {
+    const fixture = createFixture()
+
+    const result = await runInstaller(fixture, fixture.main)
+
+    expect(result.status, result.stderr).toBe(0)
+    const hook = readFileSync(join(hooksPath(fixture, fixture.main), 'pre-push'), 'utf8')
+    const pathBootstrap = [
+      '# dsh hook PATH bootstrap',
+      `PATH=${posixShellQuoteForTest(dirname(process.execPath))}:$PATH`,
+      'export PATH',
+    ].join('\n')
+    expect(hook).toContain(`\n${pathBootstrap}\n`)
+    expect(hook.indexOf(pathBootstrap)).toBeLessThan(hook.indexOf('exit 0'))
+  })
 
   it('replaces the owned hook path Git copies into a newly added worktree', async () => {
     const fixture = createFixture()
@@ -529,7 +549,12 @@ describe('worktree-local Lefthook installer', { timeout: 30_000 }, () => {
     const lockPath = installLockPath(fixture)
     const runningPath = join(hooksPath(fixture, fixture.main), '.fake-lefthook-running')
     const install = runInstaller(fixture, fixture.main, { DSH_TEST_LEFTHOOK_DELAY_MS: '250' })
-    await waitForPath(runningPath)
+    try {
+      await waitForPath(runningPath)
+    } catch (error) {
+      await install
+      throw error
+    }
     const replacementRecord = 'replacement owner\n'
     writeFileSync(lockPath, replacementRecord)
 

@@ -2,22 +2,20 @@
 
 [English](README.md) | 中文
 
-fusion 组合包是位于 `dsh-web-app` 之上的纯 profile patch 层，用于承载精选的外部插件。它的 manifest（元数据清单）通过 `dsh.bundle.patch` 暴露 [`cordis.patch.yml`](cordis.patch.yml)，预期用在 `dsh-base` 与 `dsh-web-app` 层之后。根模块没有运行时 API。
+fusion profile 在 [`dsh-base`](../base/README.zh.md) 与 [`dsh-web-app`](../web-app/README.zh.md) 之后应用的静态 patch 层。[`cordis.patch.yml`](cordis.patch.yml) 从精确 `0.2.9` 包挂载 Pet；manifest（元数据清单）的 `dsh.bundle.profileDependencies` 记录该 profile 持有的依赖，不会把第三方运行时依赖加入本 bundle。
 
-该 patch 挂载 `@liustack/modlens@3.21.1`、`dsh-better-sidebar@0.13.1` 和七个 `0.2.2` Web UI 包：`@linxin666/dsh-client-ui-web-ui-settings`、`@linxin666/dsh-client-ui-task-board`、`@linxin666/dsh-client-ui-git-graph`、`@linxin666/dsh-remote-web-ui`、`@linxin666/dsh-ssh`、`@linxin666/dsh-pet` 与 `@linxin666/dsh-client-ui-skin-center`。这些运行时依赖都使用精确版本。
-
-该组合不包含 `@linxin666/dsh-web-ui-all`、`@linxin666/dsh-tool-describe-image`、`@linxin666/dsh-client-ui-aionui-panel`、`@linxin666/dsh-skins` 和 `@linxin666/dsh-liangshen` 运行时配置项。
+仓库验证遵循 [Fusion 外部 profile 验收](../../../docs/testing.zh.md#tiers)。拥有该决策的 [Agent Note](../../../.agents/notes/implemented/architecture/2026-08-19-fusion-profile-external-plugin-ownership.zh.md) 记录持久准入与验证要求。
 
 ## 模型体验
 
-模型体验由间接挂载的插件提供，每个插件负责自身的模型可见行为。
+间接，通过插入的 Pet 配置行：它增加浏览器和 Host 路由，但不增加模型可见工具或提示词。
 
 #### KV Cache 影响
 
-该 patch 自身不添加请求内容；各挂载插件负责自己的提示词、工具 schema、消息贡献及相应的缓存影响。
+无。
 
 ## 已知限制与暂缓事项
 
-- **兼容性固定为 dsh `0.1.0-rc.7`**：更改 dsh 或任一外部依赖后，必须重新执行安装、启动与浏览器诊断。
-- **该组合包依赖 Web 层**：其浏览器插件依赖 `dsh-web-app` 挂载的 Host 和客户端 roster。
-- **Liangshen 位于该组合包之外**：该组合既不安装也不同步 Liangshen preset。
+- **该组合包不是内置 profile 模板**：使用方需要显式组合 `base`、`web-app` 与 `fusion`，然后安装产品指南记录的精确 profile 依赖和 React 对等依赖（peer dependency）。
+- **只有 Pet 已准入**：Git Graph `0.2.9` 因活跃 JSON 操作及其子进程可越过配置行 fiber dispose（资源释放）而被阻塞。图像理解、SSH、移动端远程 UI、Task Board、Skin Center，以及右侧 Files、editor、终端和 Source Control 工作台也仍不存在。使用方不得通过增加其他候选包或 patch 配置行绕过准入。拥有该决策的 [Agent Note](../../../.agents/notes/implemented/architecture/2026-08-19-fusion-profile-external-plugin-ownership.zh.md) 定义已接受集合、各包的具体阻塞原因与重验要求。
+- **桌面集成是一项消费约定**：该包不会修改或交付外部 Electron 应用。

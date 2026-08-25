@@ -10,7 +10,7 @@ Status: implemented
 
 ## 决定
 
-九个包统一改名进 `@deepseek-ai` scope。目录名、上游版本号、依赖 range 一律不动，所以 `vendor/README.md` 的清单仍然读作一份上游快照。面向使用者的映射表见 [docs/rescope.md](../../../../docs/rescope.md)。
+九个包统一改名进 `@deepseek-ai` scope。目录名、上游版本号、依赖 range 一律不动，所以 `vendor/README.md` 的清单仍然读作一份上游快照。面向使用者的映射表见 [docs/rescope.md](../../../../docs/rescope.zh.md)。
 
 | 目录 | npm 名 | 上游名 |
 |---|---|---|
@@ -24,11 +24,13 @@ Status: implemented
 | `hmr/` | `@deepseek-ai/cordis-plugin-hmr` | `@cordisjs/plugin-hmr` |
 | `logger-console/` | `@deepseek-ai/cordis-plugin-logger-console` | `@cordisjs/plugin-logger-console` |
 
-改写只落在**带定界符的完整包名 token** 上：引号或反引号包裹的 specifier（可带 `/子路径`）、`package.json` 的 `name` 与依赖键、`cordis.yml` 的 `name:` 值、`tsconfig.base.json` 的 `paths` 键。因此以下同形串一律未改，它们不是包名：`cordis.yml` 及其家族文件名、Loader 的 `cordis:` 内建前缀（`cordis:include`、`cordis:group`，见 `vendor/loader/src/config/tree.ts`）、`cordis-config-entry` 这类 kind 串、`@deepseek-ai/dsh-tool-cordis`、Schemastery 上游的 `Symbol.for('schemastery')` 与 `vendor:` 元数据、`scripts/gen-module-graph.ts` 与 `gen-doc-graphs.ts` 里 `GROUP_ORDER` 的 `packages/<group>/` 目录名，以及 `vendor/*/README.md` 里的上游安装指引。
+改写通过解析后的语法与元数据识别包引用，不会把所有带引号的 token 都当作包名。它会改写模块说明符、`package.json` 的 `name` 与依赖键、`peerDependenciesMeta` 键、`tsconfig*.json` 的 `paths` 键，以及 Cordis Loader 的 `name:` 值。拼写相同但不是包引用的字符串保持不变，包括运行时事件 id、locale 与 data id、普通 JSON 值、自然语言中带引号的文本、`cordis.yml` 配置文件家族、Loader 的 `cordis:` 内建前缀（`cordis:include`、`cordis:group`，见 `vendor/loader/src/config/tree.ts`）、`cordis-config-entry` 这类 kind 串、`@deepseek-ai/dsh-tool-cordis`、Schemastery 上游的 `Symbol.for('schemastery')` 与 `vendor:` 元数据，以及 `scripts/gen-module-graph.ts` 与 `gen-doc-graphs.ts` 里 `GROUP_ORDER` 的 `packages/<group>/` 目录名。
+
+YAML 改写使用仓库统一的 Loader 文件策略：`*cordis*.yml` 与 `*cordis*.yaml`。解析器接受运行时 `!!js` 方言，遇到格式错误或不支持的文档则不改写；精确标量范围仅取自顶层 entry、带 `id` 的 patch `name` guard、`insert` entry、group 子项和 include 的 `config.patches`。内建名称 `cordis:group` 与 `cordis:include` 自身保持不变，但用于选择是否遍历其嵌套 Loader entry。已有标量引号和注释保持不变；普通标量的 scoped 形式若以 `@` 开头，就改成双引号标量。Reverse 模式保证解析后的 Loader 数据等价并且各方向幂等，不保证把原来的普通标量逐字节还原。
 
 Token 规则看不见两类点位，它们按名字逐处改：一是属性访问 `manifest.peerDependencies?.cordis`——TypeScript 抓不到过期的 `Record<string, string>` 键；二是把名字当数据的常量（`check-workspace-constraints.ts` 的 vendored 集合、`verify-cordis-config.ts` 的 group/include 名、`cordis-walk.ts` 与 `gen-scoped-events.ts` 与 typert `analyzer.ts` 里识别 `declare module` 目标的字符串、`app-boot/tsdown.config.ts` 的 `alwaysBundle`）。
 
-Markdown 按「读者拿它做什么」一分为二。围栏一律跟着改，不看 info string——围栏里是读者要照抄的代码或要挂载的配置，包括写着 Loader 插件名的 `yaml` 围栏和紧邻编译围栏的 `ts ignore-check` 围栏。散文只在 `docs/` 下跟着改：教程里引用某个名字的句子，教的是本仓已不解析的东西。`docs/` 之外的散文——`vendor/*/README.md`、各包 README、`.agents/notes/`——保留写作当时的名字：既因为它记录的是当时的事实，也因为同一个拼写可能指别的东西，比如 Python SDK 的 `cordis` 选项、我们没 vendor 的 `@cordisjs/plugin-http`，或某个 agent-preset 的 id。
+Markdown 使用每个围栏声明的语言来识别模块与包元数据引用。有效 JSON/JSONC 围栏会改写 dependency 与 `peerDependenciesMeta` 键，同时保留普通值；格式错误的 JSON/JSONC 围栏逐字节保持不变。通用 YAML 围栏没有识别 Loader 输入所需的文件名或角色元数据，因此保持不变。`docs/` 下的散文只改写显式模块语法，自然语言中带引号的文本保持不变。其他位置的散文不参与改写。
 
 ## 影响
 

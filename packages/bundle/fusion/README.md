@@ -2,22 +2,20 @@
 
 English | [中文](README.zh.md)
 
-The fusion bundle is a pure profile patch layer for curated external plugins over `dsh-web-app`. Its manifest exposes [`cordis.patch.yml`](cordis.patch.yml) through `dsh.bundle.patch`, and its root module has no runtime API.
+The static patch layer applied after [`dsh-base`](../base/README.md) and [`dsh-web-app`](../web-app/README.md) in a fusion profile. [`cordis.patch.yml`](cordis.patch.yml) mounts Pet from the exact `0.2.9` package; the manifest's `dsh.bundle.profileDependencies` records that profile-owned dependency without adding third-party runtime dependencies to this bundle.
 
-The patch mounts `@liustack/modlens@3.21.1`, `dsh-better-sidebar@0.13.1`, and seven `0.2.2` Web UI packages: `@linxin666/dsh-client-ui-web-ui-settings`, `@linxin666/dsh-client-ui-task-board`, `@linxin666/dsh-client-ui-git-graph`, `@linxin666/dsh-remote-web-ui`, `@linxin666/dsh-ssh`, `@linxin666/dsh-pet`, and `@linxin666/dsh-client-ui-skin-center`. These runtime dependencies use exact versions.
-
-The composition omits `@linxin666/dsh-web-ui-all`, `@linxin666/dsh-tool-describe-image`, `@linxin666/dsh-client-ui-aionui-panel`, `@linxin666/dsh-skins`, and the `@linxin666/dsh-liangshen` runtime row.
+Repository verification follows the [Fusion external-profile acceptance](../../../docs/testing.md#tiers). The owning [Agent Note](../../../.agents/notes/implemented/architecture/2026-08-19-fusion-profile-external-plugin-ownership.md) records the durable admission and verification requirements.
 
 ## Model Experience
 
-Indirectly, through the mounted plugins, which own their model-visible behavior.
+Indirectly, through the inserted Pet row: it adds browser and Host routes but no model-visible tool or prompt.
 
 #### KV Cache effect
 
-The patch adds no request content itself; each mounted plugin owns any prompt, tool-schema, or message contribution and its cache effect.
+None.
 
 ## Known Limitations and Deferred Work
 
-- **Compatibility is pinned to dsh `0.1.0-rc.7`** — changing dsh or an external dependency requires repeating the installation, boot, and browser diagnostics.
-- **The bundle requires the Web layers** — its browser plugins rely on the Host and client roster mounted by `dsh-web-app`.
-- **Liangshen is outside this bundle** — the composition neither installs nor synchronizes a Liangshen preset.
+- **The bundle is not a built-in profile template** - consumers assemble `base`, `web-app`, and `fusion` explicitly, then install the exact profile dependencies and React peers documented in the product guide.
+- **Only Pet is admitted** - Git Graph `0.2.9` is blocked because an active JSON operation and its child process can outlive row-fiber disposal. Image understanding, SSH, mobile remote UI, Task Board, Skin Center, and the right-side Files, editor, terminal, and Source Control workbench also remain absent. Consumers must not add other candidate packages or patch rows to bypass admission. The owning [Agent Note](../../../.agents/notes/implemented/architecture/2026-08-19-fusion-profile-external-plugin-ownership.md) defines the accepted set, package-specific blockers, and revalidation requirements.
+- **The desktop integration is a consumption contract** - this package does not modify or ship the external Electron application.

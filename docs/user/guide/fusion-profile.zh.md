@@ -1,51 +1,112 @@
-# Fusion profile
+# 组装 Fusion Web profile
 
 [English](fusion-profile.md) | 中文
 
-`fusion` profile 会在标准浏览器应用之上添加精选的外部 Web 插件集合。它要求使用 dsh `0.1.0-rc.7` 和 pnpm。
+Fusion Web profile 在标准 Web 应用上保留外部集成发行层。Pet `0.2.9` 已满足全部准入判据，因此该 profile 增加这条配置行，同时保留三个组合包层：`@deepseek-ai/dsh-base`、`@deepseek-ai/dsh-web-app` 和 `@deepseek-ai/dsh-fusion`。
+
+## 前置条件
+
+使用 `@deepseek-ai/dsh@0.1.0-rc.5`、Node.js 22.19.0 或 24.0.0 及以上版本，以及 pnpm。这些命令会替换新 profile 的 pnpm workspace 设置，因此需要全新的 `DSH_HOME`。
 
 ## 创建 profile
 
-先安装 Web 应用层：
+创建临时 Harness home，并以与 `dsh` 相同的精确版本添加 Fusion 组合包：
 
 ```sh
-dsh plugin --profile fusion add @deepseek-ai/dsh-web-app@0.1.0-rc.7
-```
+export DSH_HOME="$(mktemp -d "${TMPDIR:-/tmp}/dsh-fusion.XXXXXX")"
+export FUSION_PROFILE="$DSH_HOME/profiles/fusion"
 
-该命令会创建 `$DSH_HOME/profiles/fusion/pnpm-workspace.yaml`。安装 Fusion 层之前，只在此文件中添加以下必要的生命周期脚本许可：
+dsh plugin --profile fusion add @deepseek-ai/dsh-fusion@0.1.0-rc.5
+dsh plugin --profile fusion add \
+  @linxin666/dsh-pet@0.2.9 \
+  react@18.3.1 \
+  react-dom@18.3.1
 
-```yaml
-allowBuilds:
-  node-pty@1.1.0: true
-  cloudflared: true
-  cpu-features: true
-  ssh2: true
-```
+node --input-type=module - "$FUSION_PROFILE/package.json" <<'NODE'
+import { readFileSync, writeFileSync } from 'node:fs'
 
-安装 Fusion 层并启动 profile：
-
-```sh
-dsh plugin --profile fusion add @deepseek-ai/dsh-fusion@0.1.0-rc.7
-dsh --profile fusion
-```
-
-## 验证 profile
-
-`$DSH_HOME/profiles/fusion/package.json` 必须按以下顺序列出组合包层：
-
-```json
-[
-  "@deepseek-ai/dsh-base",
-  "@deepseek-ai/dsh-web-app",
-  "@deepseek-ai/dsh-fusion"
+const path = process.argv[2]
+const manifest = JSON.parse(readFileSync(path, 'utf8'))
+manifest.dsh.profile.bundles = [
+  '@deepseek-ai/dsh-base',
+  '@deepseek-ai/dsh-web-app',
+  '@deepseek-ai/dsh-fusion',
 ]
+writeFileSync(path, `${JSON.stringify(manifest, undefined, 2)}\n`)
+NODE
 ```
 
-打开 `dsh` 打印的 URL，并验证：
+`base` 与 `web-app` 组合包从已安装的 `dsh` 解析，profile 依赖则提供 `fusion`。归一化步骤会明确固定三者的顺序，并防止其他已安装包的组合包声明成为 profile 层。
 
-- 左侧保留标准会话侧边栏。
-- 右侧工作台提供资源管理器、编辑器、终端和 Git 标签页。
-- 任务看板、皮肤中心、宠物、ModLens、远程 Web、SSH 和贡献的 Web UI 设置均可用。
-- Agent preset 选择器包含**梁神模式**；需要使用 Liangshen 的会话必须在启动前选中它。
+## 固定 profile 依赖
 
-该 profile 会固定九个 Fusion 运行时包的版本。升级 dsh 或任何 Fusion 包后，请重新创建并验证 profile。
+已接受包及其 React 对等依赖（peer dependency）由 profile 持有，不需要原生构建许可。请精确保留新发布版本例外：
+
+```sh
+cat > "$FUSION_PROFILE/pnpm-workspace.yaml" <<'YAML'
+packages:
+  - .
+nodeLinker: hoisted
+autoInstallPeers: false
+minimumReleaseAgeExclude:
+  - '@linxin666/dsh-pet@0.2.9'
+YAML
+```
+
+不要把 Git Graph、ModLens、SSH、Remote Web UI 或其传递构建许可加入该 profile 或仓库根目录。
+
+## 确认精确外部依赖
+
+Fusion 包的 [`dsh.bundle.profileDependencies`](../../../packages/bundle/fusion/package.json) 仅包含 Pet `0.2.9`，其 patch 只插入 `pet`。其他外部候选必须由一个已发布版本通过完整的许可证、安全、生命周期、所有权、去重、rc.5 和组合运行时判据后才能安装。
+
+## 验证 profile manifest（元数据清单）
+
+启动前检查精确的组合包列表与四项依赖映射：
+
+```sh
+node --input-type=module - "$FUSION_PROFILE/package.json" <<'NODE'
+import { readFileSync } from 'node:fs'
+
+const manifest = JSON.parse(readFileSync(process.argv[2], 'utf8'))
+const expectedBundles = [
+  '@deepseek-ai/dsh-base',
+  '@deepseek-ai/dsh-web-app',
+  '@deepseek-ai/dsh-fusion',
+]
+const expectedDependencies = {
+  '@deepseek-ai/dsh-fusion': '0.1.0-rc.5',
+  '@linxin666/dsh-pet': '0.2.9',
+  react: '18.3.1',
+  'react-dom': '18.3.1',
+}
+
+if (JSON.stringify(manifest.dsh?.profile?.bundles) !== JSON.stringify(expectedBundles)) {
+  throw new Error('fusion profile bundle order does not match the documented recipe')
+}
+if (Object.keys(manifest.dependencies ?? {}).length !== Object.keys(expectedDependencies).length) {
+  throw new Error('fusion profile dependencies do not match the documented recipe')
+}
+for (const [name, version] of Object.entries(expectedDependencies)) {
+  if (manifest.dependencies?.[name] !== version) throw new Error(`${name} must be ${version}`)
+}
+console.log('fusion profile manifest verified')
+NODE
+```
+
+该命令会打印 `fusion profile manifest verified`。
+
+## 启动 Web UI
+
+在可用端口上启动该 profile：
+
+```sh
+dsh --profile fusion --port 3080
+```
+
+打开命令打印的 URL。页面保留 stock Web 界面，包括左侧 `ui-sidebar`、Settings 与 New Session 入口。Pet 显示为唯一的全局 dock。在新会话的 agent（智能体） preset 选择器中选择**梁神模式**。Web API 返回的 preset roster 使用 id `liangshen`；该 preset 由仓库持有，不属于 Fusion 外部配置行。
+
+确认页面保持上述状态，且浏览器控制台没有错误。仓库验证使用 [Fusion 外部 profile 验收](../../testing.zh.md#tiers)；拥有该决策的 [Agent Note](../../../.agents/notes/implemented/architecture/2026-08-19-fusion-profile-external-plugin-ownership.zh.md) 记录持久准入与验证要求。
+
+## 已知限制
+
+- 该 profile 包含一条外部配置行。Git Graph `0.2.9` 因活跃 JSON 操作及其子进程可越过配置行 fiber dispose（资源释放）而仍不可用。图像理解、SSH、移动端远程 UI、Task Board、Skin Center，以及右侧 Files、editor、终端和 Source Control 工作台也不可用。请勿通过安装其他候选包或增加 profile 配置行绕过准入。拥有该决策的 [Agent Note](../../../.agents/notes/implemented/architecture/2026-08-19-fusion-profile-external-plugin-ownership.zh.md) 定义已接受集合、各包的具体阻塞原因与重验要求。

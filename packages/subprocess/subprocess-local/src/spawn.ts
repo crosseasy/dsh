@@ -251,22 +251,6 @@ export class OutputCollector {
 }
 
 /**
- * Send `sig` to a detached POSIX process group. Never throws: delivery races
- * process exit and may run in a timer callback, so failures are contained and
- * a non-positive pid is a no-op.
- * @param pid - the group leader's pid; non-positive means the spawn failed and the call is a no-op.
- * @param sig - the signal to deliver to the whole group.
- */
-export function killGroup(pid: number, sig: NodeJS.Signals): void {
-  if (pid <= 0) return
-  try {
-    process.kill(-pid, sig)
-  } catch {
-    // Swallow: see contract above.
-  }
-}
-
-/**
  * Terminate one Windows process tree with `taskkill /T /F`. Contained like
  * POSIX group signalling — delivery races tree exit, so an absent tree, a
  * nonzero status, or a missing taskkill binary must not break idempotent

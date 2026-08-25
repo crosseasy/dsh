@@ -61,6 +61,16 @@
       - 'button "复制: 创造模式"':
         - img
         - text: 复制
+    - listitem:
+      - 'button "设为默认: 梁神模式"':
+        - text: 梁神模式 内置 完整保留标准模式能力，首阶段仅呈现 bash 与 str_replace_editor，稳定后切换至 PTC 模式，并在压缩后重新锚定。
+        - code: liangshen
+      - 'button "查看: 梁神模式"':
+        - img
+        - text: 查看
+      - 'button "复制: 梁神模式"':
+        - img
+        - text: 复制
   - heading "自定义" [level=3]
   - button "用「创造模式」创作自定义预设":
     - img

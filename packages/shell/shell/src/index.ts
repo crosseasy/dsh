@@ -36,6 +36,12 @@ export type {
 } from './types.ts'
 export { parseExitStatus } from './render.ts'
 export type { ParsedExitStatus } from './render.ts'
+export {
+  classifySandboxDenial,
+  classifySandboxRunnerFailure,
+  isSandboxRunnerSpawnFailure,
+  matchesSandboxSignature,
+} from './sandbox.ts'
 
 declare module '@deepseek-ai/cordis' {
   interface Context {
@@ -44,7 +50,7 @@ declare module '@deepseek-ai/cordis' {
 }
 
 /**
- * Abstract bash execution service. Subclass, implement the abstract methods,
+ * Abstract shell execution service shared by Bash and PowerShell providers. Subclass, implement the abstract methods,
  * and load the subclass as a plugin — it registers as `ctx.shell` (one
  * implementation per context; loading a second throws, which is cordis'
  * standard duplicate-service behavior).

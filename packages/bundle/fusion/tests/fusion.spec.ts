@@ -1,133 +1,155 @@
 /**
- * The bundle's manifest must name a patch file that the Cordis entry-list
- * schema can parse.
+ * The fusion package must resolve its accepted external rows through the same
+ * profile and Loader path used by a real dsh launch.
  */
 
-import { readFileSync } from 'node:fs'
-import { resolve } from 'node:path'
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, symlinkSync, writeFileSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { dirname, join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
-import { entryListSchema } from '@deepseek-ai/cordis-plugin-include'
-import * as yaml from 'js-yaml'
-import { describe, expect, it } from 'vitest'
+import {
+  boot,
+  initProfile,
+  loadProfile,
+  resolveProfileDir,
+} from '@deepseek-ai/dsh-app-boot'
+import { afterEach, describe, expect, it } from 'vitest'
 
-const root = fileURLToPath(new URL('..', import.meta.url))
-
-const expectedRows = [
-  { id: 'modlens', name: '@liustack/modlens' },
-  { id: 'better-sidebar', name: 'dsh-better-sidebar' },
-  {
-    id: 'ui-web-ui-settings',
-    name: '@linxin666/dsh-client-ui-web-ui-settings',
-  },
-  { id: 'ui-task-board', name: '@linxin666/dsh-client-ui-task-board' },
-  { id: 'ui-git-graph', name: '@linxin666/dsh-client-ui-git-graph' },
-  { id: 'remote-web-ui', name: '@linxin666/dsh-remote-web-ui' },
-  { id: 'ssh', name: '@linxin666/dsh-ssh' },
-  { id: 'pet', name: '@linxin666/dsh-pet' },
-  {
-    id: 'ui-skin-center',
-    name: '@linxin666/dsh-client-ui-skin-center',
-  },
-] as const
-
-const expectedDependencies = {
-  '@liustack/modlens': '3.21.1',
-  'dsh-better-sidebar': '0.13.1',
-  '@linxin666/dsh-client-ui-web-ui-settings': '0.2.2',
-  '@linxin666/dsh-client-ui-task-board': '0.2.2',
-  '@linxin666/dsh-client-ui-git-graph': '0.2.2',
-  '@linxin666/dsh-remote-web-ui': '0.2.2',
-  '@linxin666/dsh-ssh': '0.2.2',
-  '@linxin666/dsh-pet': '0.2.2',
-  '@linxin666/dsh-client-ui-skin-center': '0.2.2',
-} as const
-
-const bannedIds = [
-  'web-ui-all',
-  'tool-describe-image',
-  'web-ui-describe-image',
-  'aionui-panel',
-  'web-ui-dsh-aionui-panel',
-  'dsh-skins',
-  'liangshen',
-  'web-ui-liangshen',
-] as const
-
-const bannedNames = [
-  '@linxin666/dsh-web-ui-all',
-  '@linxin666/dsh-tool-describe-image',
-  '@linxin666/dsh-client-ui-aionui-panel',
-  '@linxin666/dsh-skins',
-  '@linxin666/dsh-liangshen',
-] as const
-
-function expectNoBannedValues(
-  actual: readonly string[],
-  banned: readonly string[],
-): void {
-  for (const value of banned) {
-    expect(actual).not.toContain(value)
-  }
+const PACKAGE_NAME = '@deepseek-ai/dsh-fusion'
+const PROFILE_DEPENDENCIES = {
+  '@linxin666/dsh-pet': '0.2.9',
 }
+const EXPECTED_ROWS = [
+  { id: 'pet', name: '@linxin666/dsh-pet' },
+]
+const BLOCKED_PACKAGES = [
+  '@liustack/modlens',
+  '@linxin666/dsh-client-ui-git-graph',
+  '@linxin666/dsh-ssh',
+  '@linxin666/dsh-remote-web-ui',
+  '@linxin666/dsh-client-ui-task-board',
+  '@linxin666/dsh-client-ui-skin-center',
+  'dsh-better-sidebar',
+] as const
+const temporaryDirectories: string[] = []
+
+afterEach(() => {
+  for (const directory of temporaryDirectories.splice(0)) {
+    rmSync(directory, { recursive: true, force: true })
+  }
+})
 
 describe('dsh-fusion bundle', () => {
-  it('declares its patch through the package manifest', () => {
+  it('loads its accepted rows through profile composition and the Loader', async () => {
+    const packageRoot = fileURLToPath(new URL('..', import.meta.url))
     const manifest = JSON.parse(
-      readFileSync(resolve(root, 'package.json'), 'utf8'),
+      readFileSync(resolve(packageRoot, 'package.json'), 'utf8'),
     ) as {
-      name?: string
-      dsh?: { bundle?: { patch?: string } }
+      dependencies?: Record<string, string>
+      optionalDependencies?: Record<string, string>
+      peerDependencies?: Record<string, string>
+      devDependencies?: Record<string, string>
+      dsh?: {
+        bundle?: {
+          patch?: string
+          profileDependencies?: Record<string, string>
+        }
+      }
     }
 
-    expect(manifest.name).toBe('@deepseek-ai/dsh-fusion')
     expect(manifest.dsh?.bundle?.patch).toBe('./cordis.patch.yml')
-  })
+    expect(manifest.dsh?.bundle?.profileDependencies).toEqual(PROFILE_DEPENDENCIES)
+    expect(manifest.dependencies).toBeUndefined()
+    expect(manifest.optionalDependencies).toBeUndefined()
+    expect(manifest.peerDependencies).toEqual({
+      '@deepseek-ai/dsh-invariants': 'workspace:^',
+      '@deepseek-ai/cordis': 'workspace:^',
+    })
+    expect(manifest.devDependencies).toEqual({
+      '@deepseek-ai/dsh-app-boot': 'workspace:^',
+      '@deepseek-ai/dsh-invariants': 'workspace:^',
+      '@deepseek-ai/cordis': 'workspace:^',
+    })
+    for (const packageName of Object.keys(PROFILE_DEPENDENCIES)) {
+      expect(manifest.dependencies ?? {}).not.toHaveProperty(packageName)
+      expect(manifest.optionalDependencies ?? {}).not.toHaveProperty(packageName)
+      expect(manifest.peerDependencies ?? {}).not.toHaveProperty(packageName)
+      expect(manifest.devDependencies ?? {}).not.toHaveProperty(packageName)
+    }
 
-  it('ships a patch list accepted by the Cordis entry-list schema', () => {
-    const parsed = yaml.load(
-      readFileSync(resolve(root, 'cordis.patch.yml'), 'utf8'),
-      { schema: entryListSchema },
+    const temporaryRoot = mkdtempSync(join(tmpdir(), 'dsh-fusion-'))
+    temporaryDirectories.push(temporaryRoot)
+    const appDirectory = join(temporaryRoot, 'app')
+    const appManifest = join(appDirectory, 'package.json')
+    const home = join(temporaryRoot, 'home')
+    const profileDirectory = resolveProfileDir('fusion-test', home)
+    mkdirSync(appDirectory, { recursive: true })
+    writeFileSync(appManifest, '{"name":"fusion-test-app","private":true}\n')
+    initProfile(profileDirectory, [PACKAGE_NAME])
+    writeFileSync(join(profileDirectory, 'cordis.patch.yml'), '[]\n')
+
+    const packageLink = join(profileDirectory, 'node_modules', PACKAGE_NAME)
+    mkdirSync(dirname(packageLink), { recursive: true })
+    symlinkSync(packageRoot, packageLink, 'junction')
+    for (const packageName of Object.keys(PROFILE_DEPENDENCIES)) {
+      const externalRoot = join(profileDirectory, 'node_modules', ...packageName.split('/'))
+      mkdirSync(externalRoot, { recursive: true })
+      writeFileSync(
+        join(externalRoot, 'package.json'),
+        `${JSON.stringify({
+          name: packageName,
+          version: PROFILE_DEPENDENCIES[packageName as keyof typeof PROFILE_DEPENDENCIES],
+          type: 'module',
+          exports: './index.js',
+        })}\n`,
+      )
+      writeFileSync(join(externalRoot, 'index.js'), 'export function apply() {}\n')
+      expect(existsSync(join(
+        profileDirectory,
+        'node_modules',
+        ...packageName.split('/'),
+        'package.json',
+      ))).toBe(true)
+    }
+
+    const profile = loadProfile('fusion-test', 'fusion-test', appManifest, home)
+    expect(profile.layers).toHaveLength(1)
+    const [layer] = profile.layers
+    if (layer === undefined) throw new Error('fusion profile must resolve one bundle layer')
+    expect(layer.packageName).toBe(PACKAGE_NAME)
+    expect(realpathSync(layer.patchPath)).toBe(resolve(packageRoot, 'cordis.patch.yml'))
+    const rows = layer.patches.flatMap((patch): Array<{ id?: string; name?: string }> =>
+      typeof patch === 'object' && patch !== null
+        ? (patch as { insert?: Array<{ id?: string; name?: string }> }).insert ?? []
+        : [],
     )
+    expect(rows).toEqual(EXPECTED_ROWS)
+    const serializedRows = JSON.stringify(rows)
+    for (const forbidden of [
+      ...BLOCKED_PACKAGES,
+      'git-graph',
+      'ui-task-board',
+      'skin-center',
+      'better-sidebar',
+      'web-ui-all',
+      'describe-image',
+      'aionui',
+      'liangshen',
+    ]) {
+      expect(serializedRows).not.toContain(forbidden)
+    }
 
-    expect(parsed).toEqual([{ insert: expectedRows }])
-  })
-
-  it('mounts only the nine curated rows', () => {
-    const parsed = yaml.load(
-      readFileSync(resolve(root, 'cordis.patch.yml'), 'utf8'),
-      { schema: entryListSchema },
-    ) as Array<{ insert?: Array<{ id: string; name: string }> }>
-    const rows = parsed.flatMap(entry => entry.insert ?? [])
-    const ids = rows.map(row => row.id)
-    const names = rows.map(row => row.name)
-
-    expect(rows).toHaveLength(9)
-    expect(rows).toEqual(expectedRows)
-    expectNoBannedValues(ids, bannedIds)
-    expectNoBannedValues(names, bannedNames)
-    expect([...names].sort()).toEqual(Object.keys(expectedDependencies).sort())
-  })
-
-  it('rejects one banned row field independently', () => {
-    expect(() => {
-      expectNoBannedValues(['web-ui-all'], bannedIds)
-    }).toThrow()
-    expect(() => {
-      expectNoBannedValues(['@linxin666/dsh-web-ui-all'], bannedNames)
-    }).toThrow()
-  })
-
-  it('pins exactly the curated runtime dependencies', () => {
-    const manifest = JSON.parse(
-      readFileSync(resolve(root, 'package.json'), 'utf8'),
-    ) as { dependencies?: Record<string, string> }
-
-    expect(manifest.dependencies).toEqual(expectedDependencies)
-    expect(Object.values(manifest.dependencies ?? {})).toEqual(
-      expect.not.arrayContaining([
-        expect.stringMatching(/^[~^]/),
-        'latest',
-      ]),
-    )
+    const rootConfig = join(profileDirectory, 'cordis.yml')
+    writeFileSync(rootConfig, '[]\n')
+    const patches = [
+      ...profile.layers.flatMap(layer => layer.patches),
+      ...profile.patches,
+    ]
+    const context = await boot('fusion-test', rootConfig, patches)
+    try {
+      expect(context.get('loader')).toBeDefined()
+    } finally {
+      await context.fiber.dispose()
+    }
   })
 })
