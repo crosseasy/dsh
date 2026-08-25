@@ -8,12 +8,14 @@
 
 import { Context, Service } from '@deepseek-ai/cordis'
 import type z from '@deepseek-ai/schemastery'
-import { redactSecrets } from './redact.ts'
-import type { RedactedSecret } from './redact.ts'
+import { describeForWire as describeSettingsForWire } from './redact.ts'
+import type { RedactedSecret, WireDescriptionInput } from './redact.ts'
 import type { SettingsNamespace, SettingsUpdateSource } from './types.ts'
 
-export { redactSecrets } from './redact.ts'
-export type { RedactedSecret, RedactedValue } from './redact.ts'
+export { describeForWire, redactSecrets } from './redact.ts'
+export type {
+  RedactedSecret, RedactedValue, WireDescription, WireDescriptionInput,
+} from './redact.ts'
 export type { SettingsNamespace, SettingsUpdateSource } from './types.ts'
 
 const NAMESPACE_PATTERN = /^[a-z][a-z0-9-]*$/
@@ -85,18 +87,12 @@ export interface SettingsDescriptor {
   user?: unknown
   /** Owner's declared effect timing. */
   applies: SettingsApplies
-  /** Schema-declared secret positions; present only under `redactSecrets`. */
-  secrets?: RedactedSecret[]
 }
 
-/** Options for {@link SettingsProvider.describe}. */
-export interface SettingsDescribeOptions {
-  /**
-   * Strip `role('secret')` fields from `value`/`base`/`user` and enumerate
-   * them in each descriptor's `secrets`. Every wire surface MUST pass this;
-   * the verbatim default exists for same-process configuration UIs only.
-   */
-  redactSecrets?: boolean
+/** One descriptor proven safe for a wire settings surface. */
+export interface WireSettingsDescriptor extends SettingsDescriptor {
+  /** Schema-declared secret positions; values and defaults are absent. */
+  secrets: RedactedSecret[]
 }
 
 /** Owner-facing handle for one registered namespace. */
@@ -469,46 +465,70 @@ export abstract class SettingsProvider extends Service {
     }
   }
 
+  /** Detach the optional layers shared by same-process and wire descriptions. */
+  private descriptorLayers(registration: SettingsRegistration): Omit<WireDescriptionInput, 'value'> {
+    let user: Record<string, unknown> | undefined
+    try {
+      user = this.section(registration.ns)
+    } catch {
+      // A malformed stored section already warned at publish and kept the
+      // last good resolved value; only that malformed shape can throw here,
+      // and describing it as "no user layer" keeps this read total.
+      user = undefined
+    }
+    const base = registration.base === undefined ? undefined : structuredClone(registration.base)
+    const detachedUser = user === undefined ? undefined : structuredClone(user)
+    return {
+      ...base === undefined ? {} : { base },
+      ...detachedUser === undefined ? {} : { user: detachedUser },
+    }
+  }
+
   /**
-   * Describe every registered namespace for configuration surfaces, including
-   * the composition `base` and raw user layers so a form can mark which fields
-   * the user overrode (presence in `user`) and what a reset returns to.
-   * @param options - redaction switch; wire surfaces must redact.
+   * Describe every registered namespace for same-process configuration
+   * consumers, including verbatim values and serialized schema metadata.
    * @returns one descriptor per registered namespace, in registration order.
    */
-  describe(options?: SettingsDescribeOptions): SettingsDescriptor[] {
+  describe(): SettingsDescriptor[] {
     return [...this.registrations.values()].map((registration) => {
-      let user: Record<string, unknown> | undefined
-      try {
-        user = this.section(registration.ns)
-      } catch {
-        // A malformed stored section already warned at publish and kept the
-        // last good resolved value; only that malformed shape can throw here,
-        // and describing it as "no user layer" keeps this read total.
-        user = undefined
-      }
-      const base = registration.base === undefined ? undefined : structuredClone(registration.base)
-      const detachedUser = user === undefined ? undefined : structuredClone(user)
-      const descriptor: SettingsDescriptor = {
+      return {
         ns: registration.ns,
         schema: registration.schema.toJSON(),
         value: registration.resolved,
         revision: registration.revision,
-        ...base === undefined ? {} : { base },
-        ...detachedUser === undefined ? {} : { user: detachedUser },
+        ...this.descriptorLayers(registration),
         applies: registration.applies,
       }
-      if (options?.redactSecrets !== true) return descriptor
-      const schema = registration.schema as z<never>
-      const redacted = redactSecrets(schema, registration.resolved)
+    })
+  }
+
+  /**
+   * Describe registered namespaces for wire consumers through the only
+   * supported serialization path. The complete schema graph is checked before
+   * serialization; secrets are removed from values and schema defaults.
+   * @param ns - optional namespace selecting one descriptor.
+   * @returns all descriptors in registration order, or the selected descriptor.
+   * @throws a value-free error when a schema cannot be represented safely.
+   */
+  describeForWire(): WireSettingsDescriptor[]
+  describeForWire(ns: SettingsNamespace): WireSettingsDescriptor | undefined
+  describeForWire(ns?: SettingsNamespace): WireSettingsDescriptor[] | WireSettingsDescriptor | undefined {
+    const registrations = ns === undefined
+      ? [...this.registrations.values()]
+      : [...this.registrations.values()].filter(registration => registration.ns === ns)
+    const descriptors = registrations.map((registration): WireSettingsDescriptor => {
+      const described = describeSettingsForWire(registration.schema as z<never>, {
+        value: registration.resolved,
+        ...this.descriptorLayers(registration),
+      })
       return {
-        ...descriptor,
-        value: redacted.value,
-        ...base === undefined ? {} : { base: redactSecrets(schema, base).value },
-        ...detachedUser === undefined ? {} : { user: redactSecrets(schema, detachedUser).value },
-        secrets: redacted.secrets,
+        ns: registration.ns,
+        ...described,
+        revision: registration.revision,
+        applies: registration.applies,
       }
     })
+    return ns === undefined ? descriptors : descriptors[0]
   }
 
   /**

@@ -9,7 +9,8 @@
 - `documentPath` — 提供方拥有用户可编辑文件时，该字段是文件的绝对路径；非文件提供方保留 `undefined`。Host 配置适配器据此派生可用性，而浏览器协议只暴露一个布尔能力，绝不暴露文件系统目标。
 - `prepareDocument()` — 让文档做好供原生编辑器打开的准备后返回该路径。基类实现返回 `documentPath`；文件提供方可先创建缺失的文档。
 - `register(ns, schema, { base?, applies? })` — 返回 owner 的 `SettingsScope`（`get`/`watch`/`update`）。注册是调用方插件 fiber 上的 effect：dispose（资源释放）该 fiber 即移除 namespace 及其观察者。schema 拒绝的存量分节会使注册本身失败；重复 namespace 立即报错。
-- `describe(options?)` — 每个 namespace 一条描述（`schema.toJSON()` 封装、解析值、分离出的 `base`/`user` 层、`applies`），供配置界面使用；字段出现在 `user` 中即标记其被用户覆盖。`describe({ redactSecrets: true })` 从每一层剥离 `role('secret')` 字段，并附加 `secrets` slot 列表（`{ path, set }`）；每个协议接口都必须传入它，纯遍历器 `redactSecrets(schema, value)` 已导出，供其他 wire 使用。
+- `describe()` — 每个 namespace 一条原样描述（`schema.toJSON()` 封装、解析值、分离出的 `base`/`user` 层、`applies`），供同进程消费方使用；字段出现在 `user` 中即标记其被用户覆盖。
+- `describeForWire(ns?)` — 唯一受支持的 wire 描述路径。它在序列化前证明完整 schema 图安全，从每个值层和 schema 默认值中剥离 `role('secret')` 字段，并附加 `secrets` slot 列表（`{ path, set }`）。union 或 intersection 下的 secret、任何 transform 或不受支持的 schema 节点会让 namespace 以不含值的错误被拒绝；选择 `ns` 可在持久化前完成写入预检。
 - `get(ns)` — 解析值；未注册时为 `undefined`。
 - `update(ns, patch)` — 把普通对象 patch 深合并进用户分节（绝不合并进 `base`），校验解析候选值，经提供方持久化后提交。patch 只能包含与 JSON 兼容的数据：Date、Map、BigInt、非有限数或循环引用会在任何内容持久化前被拒绝，并给出以 `$` 为根的路径（YAML/JSON 存储在重载时会静默改变这类值）。校验失败在持久化前拒绝；只读提供方（`writable: false`）拒绝一切写入。同一 namespace 的写入按调用顺序串行。
 - `replace(ns, section)` — 整体替换用户分节：这是刻意的重置（`replace({})` 重新继承 `base` 与 schema 默认值）。
@@ -41,5 +42,5 @@
 ## 已知限制与暂缓事项
 
 - **单一用户层** — 解析只认识 schema 默认值、一个组合 `base` 与一个用户文档；它尚未记录每个解析值由哪一层提供。
-- **`redactSecrets` 并非一条可被证明的协议边界**：walker 只跟随 `object`/`dict`/`array`，因此只能经由 union、intersection 或 transform 抵达的 `role('secret')` 会被**原样**返回，且 `secrets` 列表为空；而 `schema.toJSON()` 会把 secret 字段的 `.default(...)` 一并带给每个客户端。这两种情况都不会被拒绝；机密无法经由被遍历的容器抵达的 schema，绝不可注册到暴露于协议的 namespace 上。真正的答案是一个 fail-closed 的 `describeForWire()`——它拒绝自己无法证明安全的 schema，并对序列化封装与错误文本做净化——此项暂缓。
+- **wire schema 使用经过明确限定的 Schemastery 子集**：支持 `object`/`dict`/`array` 下的直接 secret 叶节点。transform、扩展定义节点，以及 union 或 intersection 下的 secret 会被拒绝，因为其 callback 或依赖分支的路径无法安全表示。需要这些构造的插件不得把它们放进暴露于 wire 的 settings namespace。
 - **跨进程并发由提供方定义** — seam 仅在进程内按 namespace 串行化写入；跨进程并发按提供方行为收敛（本地文件提供方在写锁下读-改-写，因此 namespace 在并发写入者下不会丢失，同 namespace 冲突按后写胜出解决）。

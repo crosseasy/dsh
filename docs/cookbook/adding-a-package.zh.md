@@ -114,7 +114,7 @@ Append-only, prefix-stable, replacing, or independent behavior, including the ex
 pnpm install        # registers the workspace
 pnpm run doc-sync
 pnpm run constraints && pnpm run typecheck && pnpm run lint
-pnpm run build && pnpm run hygiene
+pnpm run hygiene
 ```
 
 请遵循[仓库测试政策](../testing.zh.md)，执行新包所需的行为专项检查并达到相应覆盖率。

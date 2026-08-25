@@ -833,7 +833,7 @@ describe('mutate (path-addressed writes)', () => {
     // rebuilds the section from what it holds. A wholesale replace of that
     // rebuild deletes the stored literal key; a path unset cannot.
     const ctx = await mounted({ keyed: { apiKey: 'sk-stored', baseURL: 'https://user', reasoning: 'high' } })
-    const redacted = ctx.settings.describe({ redactSecrets: true }).find(d => d.ns === KEYED)!
+    const redacted = ctx.settings.describeForWire().find(d => d.ns === KEYED)!
     expect(redacted.user).toEqual({ baseURL: 'https://user', reasoning: 'high' })
 
     await ctx.settings.mutate(KEYED, [{ op: 'unset', path: ['baseURL'] }])

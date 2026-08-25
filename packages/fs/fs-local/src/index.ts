@@ -6,7 +6,7 @@
 
 import { Context } from '@deepseek-ai/cordis'
 import { constants as bufferConstants } from 'node:buffer'
-import { isAbsolute, relative, resolve, sep } from 'node:path'
+import { isAbsolute, relative, sep } from 'node:path'
 import { pathToFileURL } from 'node:url'
 import z from '@deepseek-ai/schemastery'
 import { FileSystem, FsError, FsVersion } from '@deepseek-ai/dsh-fs'
@@ -15,7 +15,6 @@ import type {
   FsEditOutcome,
   FsEditRequest,
   FsInfo,
-  FsPathInfo,
   FsTarget,
   FsWriteIntent,
   FsWriteOutcome,
@@ -25,7 +24,6 @@ import {
   listDirectory,
   normalizeLineEndings,
   probe,
-  probeNoFollow,
   readForEdit,
   readTextForDiff,
   readWholeBytes,
@@ -127,15 +125,6 @@ export class LocalFileSystem extends FileSystem {
     if (signal?.aborted) throw new FsError('stat aborted', 'FS_ABORTED')
     const info = await probe(target.targetKey)
     if (signal?.aborted) throw new FsError('stat aborted', 'FS_ABORTED')
-    if (!info) return undefined
-    return { version: info.version, type: info.type, size: info.size }
-  }
-
-  override async lstat(path: string, opts?: { cwd?: string }, signal?: AbortSignal): Promise<FsPathInfo | undefined> {
-    if (signal?.aborted) throw new FsError('lstat aborted', 'FS_ABORTED')
-    if (path.trim().length === 0) throw new FsError('file_path must be a non-empty string', 'FS_NOT_FOUND')
-    const info = await probeNoFollow(resolve(opts?.cwd ?? this.config.cwd, path))
-    if (signal?.aborted) throw new FsError('lstat aborted', 'FS_ABORTED')
     if (!info) return undefined
     return { version: info.version, type: info.type, size: info.size }
   }

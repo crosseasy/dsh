@@ -41,7 +41,7 @@ export function apply(ctx: Context, config: Config) {
 }
 ```
 
-`role('secret')` on a field keeps its value off every response; the card writes such a field into an `update`/`mutate` payload, or addresses a credential reference through the `credentials` domain instead. `applies: 'restart'` tells a configuration surface the owner acts on a change only at the next start.
+`role('secret')` on a field keeps its value and default off every response; the card writes such a field into an `update`/`mutate` payload, or addresses a credential reference through the `credentials` domain instead. Wire-exposed schemas keep secret leaves directly under `object`, `dict`, or `array`: a secret hidden by a union or intersection, any transform, or an unsupported schema node makes `settings.describe` and writes fail before persistence. `applies: 'restart'` tells a configuration surface the owner acts on a change only at the next start.
 
 ## 2. Register the card (browser half)
 

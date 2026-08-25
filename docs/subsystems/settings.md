@@ -95,7 +95,7 @@ interface SettingsScope<T> {
 
 ## Descriptors
 
-`describe()` serializes every registered namespace for configuration surfaces: the schemastery `toJSON()` envelope drives schema-rendered forms, the resolved value fills them, and the detached `base`/`user` layers let a form mark user-overridden fields by presence. `describe({ redactSecrets: true })` — mandatory on every wire surface — strips `role('secret')` fields from all three layers and enumerates their `{path, set}` slots so a page can render write-only inputs without ever receiving a secret.
+`describe()` returns verbatim descriptors to same-process consumers. Wire consumers use `describeForWire(ns?)`, which proves the complete schema graph safe before serializing it, strips `role('secret')` fields from the resolved, `base`, and `user` layers and from schema defaults, and enumerates `{path, set}` slots. A secret under a union or intersection, any transform, or an unsupported schema node rejects with a value-free error; selecting one namespace lets a write preflight before persistence.
 
 ```ts type-equiv
 /** One registered namespace as surfaced to configuration UIs. */
@@ -120,12 +120,21 @@ interface SettingsDescriptor {
   user?: unknown
   /** Owner's declared effect timing. */
   applies: SettingsApplies
-  /** Schema-declared secret positions; present only under `redactSecrets`. */
-  secrets?: RedactedSecret[]
 }
 ```
 
-A caller that holds only the redacted descriptor cannot safely rebuild a section, so removals travel as path ops instead. Each descriptor also carries a `revision` over the raw section; a write may send it back as `expectedRevision`, and one that no longer matches is refused rather than applied over the writer that landed first.
+A wire descriptor adds the required secret-position sidecar after the schema and layers pass that proof.
+
+```ts type-equiv
+/** One descriptor proven safe for a wire settings surface. */
+interface WireSettingsDescriptor extends SettingsDescriptor {
+  /** Schema-declared secret positions; values and defaults are absent. */
+  secrets: RedactedSecret[]
+}
+```
+
+A caller that holds only the wire descriptor cannot safely rebuild a section, so removals travel as path ops instead. Each descriptor also carries a `revision` over the raw section; a write may send it back as `expectedRevision`, and one that no longer matches is refused rather than applied over the writer that landed first.
+
 ```ts type-equiv
 /**
  * One path-addressed edit to a namespace's user section. Path mutation exists
@@ -138,18 +147,6 @@ A caller that holds only the redacted descriptor cannot safely rebuild a section
 type SettingsPathOp =
   | { op: 'set'; path: readonly string[]; value: unknown }
   | { op: 'unset'; path: readonly string[] }
-```
-
-```ts type-equiv
-/** Options for {@link SettingsProvider.describe}. */
-interface SettingsDescribeOptions {
-  /**
-   * Strip `role('secret')` fields from `value`/`base`/`user` and enumerate
-   * them in each descriptor's `secrets`. Every wire surface MUST pass this;
-   * the verbatim default exists for same-process configuration UIs only.
-   */
-  redactSecrets?: boolean
-}
 ```
 
 ## Change commits

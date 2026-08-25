@@ -87,3 +87,19 @@ describe('request image policy bounds', () => {
     }).toThrow(message)
   })
 })
+
+describe('provider header schema', () => {
+  it('marks the complete header dictionary as secret-bearing', () => {
+    const providers = Config.dict?.['providers']
+    const headers = providers?.inner?.dict?.['headers']
+
+    expect(headers?.type).toBe('dict')
+    expect(headers?.meta.role).toBe('secret')
+    expect(routeWith({
+      headers: {
+        Authorization: 'Bearer route-secret',
+        'api-key': 'route-secret',
+      },
+    })).not.toThrow()
+  })
+})

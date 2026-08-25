@@ -13,6 +13,7 @@ import type { ResolvedConfig } from './config.ts'
 import { instructionContentSha1, trimmedInstructionDigest } from './digest.ts'
 import {
   ancestorChain,
+  createSourceReadBudget,
   descendantDirsBetween,
   findProjectRoot,
   probeScopeInstruction,
@@ -297,6 +298,10 @@ export async function reconcileInstructionContext(
   for (const touchedPath of options.touchedPaths) {
     for (const dir of descendantDirsBetween(cwd, touchedPath)) addProjectScopes(scopes, dir)
   }
+  const userGlobalScope = candidateScopeKey(USER_GLOBAL_DIRECTORY, USER_GLOBAL_FILE)
+  if (resolved.dshHome === projectRoot && scopes.has(userGlobalScope)) {
+    scopes.delete(candidateScopeKey('.', USER_GLOBAL_FILE))
+  }
 
   const versions = versionStatesFor(session, versionCache)
   const seenAbsolutePaths = new Set<string>()
@@ -328,7 +333,30 @@ export async function reconcileInstructionContext(
     if (directoryScopes === undefined) scopesByDirectory.set(directory, [scope])
     else directoryScopes.push(scope)
   }
-  for (const [directory, directoryScopes] of scopesByDirectory) {
+  const scopeOrder = new Map([...scopes].map((scope, index) => [scope, index]))
+  const candidateOrder = new Map<string, number>()
+  for (const candidate of [
+    ...resolved.instructionFileCandidates,
+    ...resolved.localInstructionFileCandidates,
+  ]) {
+    if (!candidateOrder.has(candidate)) candidateOrder.set(candidate, candidateOrder.size)
+  }
+  const directorySpecificity = (directory: string): number => {
+    if (directory === USER_GLOBAL_DIRECTORY) return -1
+    if (directory === '.') return 0
+    return directory.split(/[\\/]/).length
+  }
+  const plannedDirectories = [...scopesByDirectory]
+    .toSorted(([left], [right]) => directorySpecificity(right) - directorySpecificity(left))
+  const budget = createSourceReadBudget(resolved.maxTotalSourceBytes)
+  for (const [directory, unsortedDirectoryScopes] of plannedDirectories) {
+    if (budget.exhausted) break
+    const directoryScopes = unsortedDirectoryScopes.toSorted((left, right) => {
+      const leftName = decodeScopeKey(left).candidateName
+      const rightName = decodeScopeKey(right).candidateName
+      return (candidateOrder.get(leftName) ?? Number.MAX_SAFE_INTEGER)
+        - (candidateOrder.get(rightName) ?? Number.MAX_SAFE_INTEGER)
+    })
     const probedScopes: string[] = []
     for (const scope of directoryScopes) {
       if (options.excludedBaselineScopes !== undefined
@@ -345,7 +373,24 @@ export async function reconcileInstructionContext(
     const versionUpdateStart = versionUpdates.length
     const addedAbsolutePaths: string[] = []
     const priorVersions = new Map(probedScopes.map(scope => [scope, versions.get(scope)]))
-    for (const scope of probedScopes) {
+    const rollbackDirectory = (): void => {
+      items.splice(itemStart)
+      versionUpdates.splice(versionUpdateStart)
+      for (const [candidateScope, prior] of priorVersions) {
+        if (prior === undefined) versions.delete(candidateScope)
+        else versions.set(candidateScope, prior)
+      }
+      for (const absolutePath of addedAbsolutePaths) seenAbsolutePaths.delete(absolutePath)
+      keptTrimmedByDir.delete(directory)
+    }
+    for (const [scopeIndex, scope] of probedScopes.entries()) {
+      if (budget.exhausted) {
+        if (probedScopes.slice(scopeIndex).some((remainingScope) => {
+          const previous = effective.get(remainingScope)
+          return previous !== undefined && previous.action !== 'remove'
+        })) rollbackDirectory()
+        break
+      }
       const previous = effective.get(scope)
       const probe = await probeScopeInstruction(scope, projectRoot, resolved, fileSystem, options.signal)
       if (probe.kind === 'unavailable') {
@@ -353,14 +398,7 @@ export async function reconcileInstructionContext(
         // Same-directory candidates form one deduplicated authority group. If an
         // active member cannot be observed, preserve the entire last-good group;
         // cache warmth must never decide whether a sibling transition is emitted.
-        items.splice(itemStart)
-        versionUpdates.splice(versionUpdateStart)
-        for (const [candidateScope, prior] of priorVersions) {
-          if (prior === undefined) versions.delete(candidateScope)
-          else versions.set(candidateScope, prior)
-        }
-        for (const absolutePath of addedAbsolutePaths) seenAbsolutePaths.delete(absolutePath)
-        keptTrimmedByDir.delete(directory)
+        rollbackDirectory()
         break
       }
       if (probe.kind === 'absent') {
@@ -388,8 +426,21 @@ export async function reconcileInstructionContext(
         continue
       }
 
-      const file = await readScopeInstruction(probedFile, resolved.maxSourceBytes, fileSystem, options.signal)
-      if (file === undefined) continue
+      const read = await readScopeInstruction(
+        probedFile,
+        resolved.maxSourceBytes,
+        budget,
+        fileSystem,
+        options.signal,
+      )
+      if (read.kind === 'unavailable') {
+        if (budget.exhausted) {
+          rollbackDirectory()
+          break
+        }
+        continue
+      }
+      const { file } = read
       const currentDigest = instructionContentSha1(file.content)
       const trimmedDigest = trimmedInstructionDigest(file.content)
       if (registerKeptTrimmed(directory, trimmedDigest)) {
@@ -421,6 +472,10 @@ export async function reconcileInstructionContext(
     }
   }
   if (items.length === 0) return undefined
+  items.sort((left, right) => (
+    (scopeOrder.get(left.change.scope) ?? Number.MAX_SAFE_INTEGER)
+    - (scopeOrder.get(right.change.scope) ?? Number.MAX_SAFE_INTEGER)
+  ))
   const rendered = renderInstructionChanges(items, resolved.maxBytes)
   // When no transition survived rendering (tiny budgets render notice-only
   // text), emit nothing and commit nothing — the uncommitted versions make the

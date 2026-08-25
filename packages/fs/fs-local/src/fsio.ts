@@ -118,14 +118,6 @@ export interface PathInfo {
   size: number
 }
 
-/** Result of probing a path without following the final symlink component. */
-export interface PathLinkInfo {
-  version: FsVersion
-  mode: number
-  type: 'file' | 'directory' | 'symlink' | 'other'
-  size: number
-}
-
 /** One local directory child with a resolved target and cheap metadata. */
 export interface LocalDirEntry {
   name: string
@@ -201,11 +193,6 @@ function pathType(info: Stats | BigIntStats): PathInfo['type'] {
   return 'other'
 }
 
-function pathLinkType(info: Stats | BigIntStats): PathLinkInfo['type'] {
-  if (info.isSymbolicLink()) return 'symlink'
-  return pathType(info)
-}
-
 async function probeStats<T extends Stats | BigIntStats>(
   absolutePath: string,
   readStats: (path: string) => Promise<T>,
@@ -234,22 +221,6 @@ export async function probe(absolutePath: string): Promise<PathInfo | null> {
     version: versionOf(info),
     mode: Number(info.mode & 0o777n),
     type: pathType(info),
-    size: Number(info.size),
-  }
-}
-
-/**
- * Probe a path without following the final symlink component.
- * @param absolutePath - the path entry to inspect with `lstat` semantics.
- * @returns path-entry metadata, or null when the entry is absent.
- */
-export async function probeNoFollow(absolutePath: string): Promise<PathLinkInfo | null> {
-  const info = await probeStats(absolutePath, path => lstat(path, { bigint: true }))
-  if (!info) return null
-  return {
-    version: versionOf(info),
-    mode: Number(info.mode & 0o777n),
-    type: pathLinkType(info),
     size: Number(info.size),
   }
 }

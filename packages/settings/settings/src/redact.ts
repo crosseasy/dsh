@@ -1,25 +1,26 @@
 /**
- * Structural secret redaction for settings values. `role('secret')` fields are
- * removed from a value before it crosses a wire boundary; a sidecar records
- * each schema-declared secret position and whether it currently holds a value,
- * so a configuration surface can render a write-only input without ever
- * receiving the secret itself.
+ * Fail-closed Settings wire descriptions. Supported schemas are inspected
+ * before any value or schema metadata is serialized; secrets are removed from
+ * every value layer and from schema defaults.
  * @module @deepseek-ai/dsh-settings/redact
  */
 
 import type z from '@deepseek-ai/schemastery'
 
-/**
- * Minimal structural view of a live schemastery node. Only the relations the
- * redactor walks are named; everything else on the instance is ignored.
- */
+/** Structural fields used to prove and serialize one live Schemastery graph. */
 interface SchemaNode {
+  uid?: number
   type?: string
-  meta?: { role?: unknown }
+  meta?: { role?: unknown; default?: unknown }
   /** `object` properties, keyed by property name. */
   dict?: Record<string, SchemaNode>
   /** `dict`/`array` element schema. */
   inner?: SchemaNode
+  /** `union`/`intersect` member schemas. */
+  list?: SchemaNode[]
+  /** `dict` key schema. */
+  sKey?: SchemaNode
+  toJSON?: () => unknown
 }
 
 /** One schema-declared secret position inside a redacted value. */
@@ -42,13 +43,90 @@ export interface RedactedValue {
   secrets: RedactedSecret[]
 }
 
+/** Inputs whose values and schema metadata form one wire description. */
+export interface WireDescriptionInput {
+  /** Current resolved value. */
+  value: unknown
+  /** Composition base layer, when declared. */
+  base?: unknown
+  /** Raw user layer, when present. */
+  user?: unknown
+}
+
+/** Schema and value layers proven safe to send to a settings client. */
+export interface WireDescription extends WireDescriptionInput {
+  /** Callback-free serialized Schemastery envelope with secret defaults removed. */
+  schema: unknown
+  /** Schema-declared secret positions in the resolved value. */
+  secrets: RedactedSecret[]
+}
+
+const WIRE_SCHEMA_ERROR = 'settings schema cannot be represented safely on the wire'
+const LEAF_TYPES = new Set(['bitset', 'boolean', 'const', 'never', 'number', 'string'])
+
 /** Whether a value is a plain data object the walker may recurse into. */
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value)
 }
 
-function walk(node: SchemaNode | undefined, value: unknown, path: string[], secrets: RedactedSecret[]): unknown {
-  if (node === undefined) return value
+/** Reject without naming schema metadata or values that may contain secrets. */
+function unsafeSchema(): never {
+  throw new TypeError(WIRE_SCHEMA_ERROR)
+}
+
+/** Prove the graph traversable and report whether this subtree declares a secret. */
+function inspectSchema(
+  node: SchemaNode | undefined,
+  visiting: Set<SchemaNode>,
+  inspected: Map<SchemaNode, boolean>,
+  nodesByUid: Map<number, SchemaNode>,
+): boolean {
+  if ((typeof node !== 'object' && typeof node !== 'function') || node === null) unsafeSchema()
+  const cached = inspected.get(node)
+  if (cached !== undefined) return cached
+  if (visiting.has(node)) unsafeSchema()
+  if (!Number.isInteger(node.uid) || node.type === undefined) unsafeSchema()
+  const prior = nodesByUid.get(node.uid as number)
+  if (prior !== undefined && prior !== node) unsafeSchema()
+  nodesByUid.set(node.uid as number, node)
+  visiting.add(node)
+
+  const selfSecret = node.meta?.role === 'secret'
+  let descendantSecret = false
+  if (LEAF_TYPES.has(node.type)) {
+    // Leaf metadata alone determines whether the value is secret.
+  } else if (node.type === 'object') {
+    if (!isRecord(node.dict)) unsafeSchema()
+    for (const child of Object.values(node.dict)) {
+      if (inspectSchema(child, visiting, inspected, nodesByUid)) descendantSecret = true
+    }
+  } else if (node.type === 'dict') {
+    if (node.inner === undefined || node.sKey === undefined) unsafeSchema()
+    const keySecret = inspectSchema(node.sKey, visiting, inspected, nodesByUid)
+    if (keySecret) unsafeSchema()
+    descendantSecret = inspectSchema(node.inner, visiting, inspected, nodesByUid)
+  } else if (node.type === 'array') {
+    if (node.inner === undefined) unsafeSchema()
+    descendantSecret = inspectSchema(node.inner, visiting, inspected, nodesByUid)
+  } else if (node.type === 'union' || node.type === 'intersect') {
+    if (!Array.isArray(node.list)) unsafeSchema()
+    for (const child of node.list) {
+      if (inspectSchema(child, visiting, inspected, nodesByUid)) descendantSecret = true
+    }
+    if (selfSecret || descendantSecret) unsafeSchema()
+  } else {
+    // Transform/lazy/function/is/any/tuple and extension-defined nodes cannot
+    // be proven callback-free and structurally redactable.
+    unsafeSchema()
+  }
+
+  visiting.delete(node)
+  const containsSecret = selfSecret || descendantSecret
+  inspected.set(node, containsSecret)
+  return containsSecret
+}
+
+function walk(node: SchemaNode, value: unknown, path: string[], secrets: RedactedSecret[]): unknown {
   if (node.meta?.role === 'secret') {
     secrets.push({ path, set: value !== undefined })
     return undefined
@@ -74,36 +152,83 @@ function walk(node: SchemaNode | undefined, value: unknown, path: string[], secr
       if (!isRecord(value)) return value
       const rebuilt: Record<string, unknown> = {}
       for (const [key, entry] of Object.entries(value)) {
-        const stripped = walk(node.inner, entry, [...path, key], secrets)
+        const stripped = walk(node.inner as SchemaNode, entry, [...path, key], secrets)
         if (stripped !== undefined) rebuilt[key] = stripped
       }
       return rebuilt
     }
     case 'array': {
       if (!Array.isArray(value)) return value
-      return value.map((entry, index) => walk(node.inner, entry, [...path, String(index)], secrets))
+      return value.map((entry, index) =>
+        walk(node.inner as SchemaNode, entry, [...path, String(index)], secrets))
     }
     default:
-      // TODO(settings-wire-redaction): Fail closed instead — a secret reachable
-      // only through a union, intersection, or transform is returned verbatim
-      // here, with nothing recording that it was missed.
       return value
   }
 }
 
-/**
- * Remove every `role('secret')` field a schema declares from a value. The
- * walker follows `object`, `dict`, and `array` containers; a secret must be
- * declared directly on a field reachable through those containers (a secret
- * buried inside a union branch or transform is not reachable and must not be
- * modeled that way). The input is never mutated.
- * @param schema - live schemastery schema describing the value.
- * @param value - the value to strip; `undefined` yields an empty record with
- *   object-property secret slots still enumerated.
- * @returns the stripped detached value and the ordered secret positions.
- */
-export function redactSecrets(schema: z<never>, value: unknown): RedactedValue {
+/** Redact one value after the schema graph has passed inspection. */
+function redactValue(schema: SchemaNode, value: unknown): RedactedValue {
   const secrets: RedactedSecret[] = []
   const stripped = walk(schema, value, [], secrets)
   return { value: stripped, secrets }
+}
+
+/**
+ * Remove every `role('secret')` field a schema declares from a value. The
+ * walker follows proven `object`, `dict`, and `array` containers. A secret
+ * under a union or intersection and every transform or unknown node rejects
+ * with a value-free error. The input is never mutated.
+ * @param schema - live schemastery schema describing the value.
+ * @param value - value to strip.
+ * @returns the stripped detached value and the ordered secret positions.
+ */
+export function redactSecrets(schema: z<never>, value: unknown): RedactedValue {
+  inspectSchema(schema, new Set(), new Map(), new Map())
+  return redactValue(schema, value)
+}
+
+/**
+ * Produce one Settings wire description after proving the complete live
+ * schema graph safe. Secret values are removed from every layer and every
+ * schema default; transforms and ambiguous secret paths reject before
+ * serialization with a value-free error.
+ * @param schema - live Schemastery schema describing every value layer.
+ * @param layers - resolved, composition, and user values to describe.
+ * @returns callback-free schema metadata, redacted layers, and secret slots.
+ */
+export function describeForWire(schema: z<never>, layers: WireDescriptionInput): WireDescription {
+  const nodesByUid = new Map<number, SchemaNode>()
+  inspectSchema(schema, new Set(), new Map(), nodesByUid)
+
+  let serialized: unknown
+  try {
+    serialized = schema.toJSON()
+  } catch {
+    unsafeSchema()
+  }
+  if (!isRecord(serialized) || !isRecord(serialized['refs'])) unsafeSchema()
+  for (const [uid, node] of nodesByUid) {
+    const encoded = serialized['refs'][String(uid)]
+    if (!isRecord(encoded) || !isRecord(encoded['meta'])) unsafeSchema()
+    if ('callback' in encoded || 'builder' in encoded) unsafeSchema()
+    if (!('default' in encoded['meta'])) continue
+    const redactedDefault = redactValue(node, node.meta?.default).value
+    if (redactedDefault === undefined) {
+      Reflect.deleteProperty(encoded['meta'], 'default')
+    } else {
+      encoded['meta']['default'] = redactedDefault
+    }
+  }
+
+  const resolved = redactValue(schema, layers.value)
+  const base = layers.base === undefined ? undefined : redactValue(schema, layers.base).value
+  const user = layers.user === undefined ? undefined : redactValue(schema, layers.user).value
+  return {
+    schema: serialized,
+    value: resolved.value,
+    ...base === undefined ? {} : { base },
+    ...user === undefined ? {} : { user },
+    secrets: resolved.secrets,
+  }
 }

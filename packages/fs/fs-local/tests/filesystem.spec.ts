@@ -160,36 +160,11 @@ describe('stat', () => {
   })
 })
 
-describe('lstat', () => {
-  it('reports path metadata without following the final symlink component', async () => {
-    await writeFile(join(dir, 'real.txt'), 'hello')
-    await symlink(join(dir, 'real.txt'), join(dir, 'link.txt'))
-
-    expect((await fs.lstat('real.txt'))?.type).toBe('file')
-    expect((await fs.lstat('link.txt'))?.type).toBe('symlink')
-    expect(await fs.lstat('missing.txt')).toBeUndefined()
-  })
-
-  it('resolves relative paths against opts.cwd and honors a pre-aborted signal', async () => {
-    const other = await mkdtemp(join(tmpdir(), 'dsh-fs-other-'))
-    try {
-      await writeFile(join(other, 'x.txt'), 'in other')
-      expect((await fs.lstat('x.txt', { cwd: other }))?.type).toBe('file')
-      await expect(fs.lstat('x.txt', { cwd: other }, AbortSignal.abort())).rejects.toMatchObject({ code: 'FS_ABORTED' })
-      await expect(fs.lstat('   ')).rejects.toMatchObject({ code: 'FS_NOT_FOUND' })
-    } finally {
-      await rm(other, { recursive: true, force: true })
-    }
-  })
-})
-
 describe('metadata cancellation', () => {
-  it('rejects stat and lstat when their signals abort while the metadata probes are in flight', async () => {
+  it('rejects stat when its signal aborts while the metadata probe is in flight', async () => {
     await writeFile(join(dir, 'slow.txt'), 'hello')
     const statStarted = Promise.withResolvers<undefined>()
     const statRelease = Promise.withResolvers<undefined>()
-    const lstatStarted = Promise.withResolvers<undefined>()
-    const lstatRelease = Promise.withResolvers<undefined>()
     let isolatedCtx: Context | undefined
     vi.resetModules()
     vi.doMock('node:fs/promises', async (importOriginal) => {
@@ -201,11 +176,6 @@ describe('metadata cancellation', () => {
           await statRelease.promise
           return actual.stat(path, { bigint: true })
         },
-        async lstat(path: string) {
-          lstatStarted.resolve(undefined)
-          await lstatRelease.promise
-          return actual.lstat(path, { bigint: true })
-        },
       }
     })
 
@@ -216,22 +186,16 @@ describe('metadata cancellation', () => {
       const isolatedFs = isolatedCtx.fs as InstanceType<typeof IsolatedLocalFileSystem>
       const target = await isolatedFs.resolve('slow.txt')
       const statController = new AbortController()
-      const lstatController = new AbortController()
       const pendingStat = isolatedFs.stat(target, statController.signal)
-      const pendingLstat = isolatedFs.lstat('slow.txt', undefined, lstatController.signal)
 
-      await Promise.all([statStarted.promise, lstatStarted.promise])
+      await statStarted.promise
       statController.abort()
-      lstatController.abort()
       const statRejected = expect(pendingStat).rejects.toMatchObject({ code: 'FS_ABORTED' })
-      const lstatRejected = expect(pendingLstat).rejects.toMatchObject({ code: 'FS_ABORTED' })
       statRelease.resolve(undefined)
-      lstatRelease.resolve(undefined)
 
-      await Promise.all([statRejected, lstatRejected])
+      await statRejected
     } finally {
       statRelease.resolve(undefined)
-      lstatRelease.resolve(undefined)
       await isolatedCtx?.fiber.dispose()
       vi.doUnmock('node:fs/promises')
       vi.resetModules()

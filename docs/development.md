@@ -81,13 +81,7 @@ Static analysis and tests resolve workspace imports through the base `paths` map
 
 Business services declare callable methods on the Host with `@Remote` or `@RemoteScope`; the Host build generates Host-for-Client types and runtime contributions, and the Client's `api-remotes` composition loads those contributions under `ctx.remote` and scoped `agentCtx.remote` namespaces. See [API Gateway](api-gateway.md) for the generated artifacts on both sides, their assembly relationships, the SRC development fallback, and the Web build order.
 
-If a relevant local check consumes built package output, build once first:
-
-```sh
-pnpm run build
-```
-
-`pnpm run hygiene` includes `publint`, which validates package entrypoints against the built `lib/*.js` files, and `verify-node-next-types`, which validates built declarations against a temporary NodeNext consumer. A fresh worktree has no bundled JS or declarations until `pnpm run build` runs; ordinary commits and pushes do not require that build unless their selected checks consume it.
+`pnpm run hygiene` owns its artifact prerequisite: it runs `pnpm run build`, then allows `publint`, `verify-built-package-invariants`, and `verify-node-next-types` to consume that build while independent source checks run in parallel. The command neither cleans the worktree nor relies on pre-existing `lib/`, so it has the same semantics in fresh and already-built worktrees. Build first only when running an artifact-specific leaf command directly.
 
 ### Environment variables
 

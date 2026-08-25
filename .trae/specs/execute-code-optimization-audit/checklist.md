@@ -1,0 +1,30 @@
+# 验收清单
+
+- [ ] Settings wire 对 union、intersection、transform、default、nested dict/array 和 adversarial error text fail closed，且直接对象 secret 仍输出 `{ path, set }`。
+- [ ] Settings read/write RPC 只使用 `describeForWire()`，任何 secret、secret default、callback source 或原始 rejected input 均未进入 wire、日志或错误响应。
+- [ ] `pnpm run hygiene` 在 clean artifact state 与 completed-build state 使用同一 gate graph 并得出相同结论，workspace constraints 仍拒绝真实意外 package directory。
+- [ ] Superseded preset generation 在所有 agent 与 cold-reader holders 释放后恰好 dispose 一次；并发 refresh 和 mount failure 不泄漏或误回收。
+- [ ] Settings registration disposer 返回时 watcher quiescent；replacement 在旧 persist 成功或失败后保持最新 resolved cache、revision 和可用 write queue。
+- [ ] Agent Instructions root marker 区分 present/absent/unavailable，不跨越不可用真实 root，并在动态失败或预算耗尽时保留 last-good state。
+- [ ] `maxTotalSourceBytes` 可配置且经过校验，baseline/reconciliation 共用 deep-first、deduplicated、exact UTF-8 byte accounting。
+- [ ] ACP subagent 复用现有 out-of-process helpers，保留 ACP teardown/error/output 语义并实现生产代码净删除。
+- [ ] `FileSystem.lstat`、`FsPathInfo` 和只为该 service method 存在的 provider helpers/tests 已移除；真实 Node/platform `lstat` 调用保留。
+- [ ] Session reference 的 ranking/preparation 不再进入 public Service catalog，Remote candidates 与 pre-step 行为保持不变。
+- [ ] `CompactionResult` 仅保留 `summarySeq`、`shadowedRange`、`shadowedSeqs`、`shadowedTokenCount`，所有当前生产消费者和类型文档同步。
+- [ ] Tools 与 llm-retry 的测试入口只从显式 `/testing` subpath 暴露，package root 不再公开 test-only internals。
+- [ ] `LocalPtySession` 的单次 send 使用一个 lifecycle owner，原有 race matrix 全部通过且生产代码净删除。
+- [ ] Bash/Pwsh persistent、one-shot executor 和 sandbox 共享私有 lifecycle core；dialect 行为保持分离，生产代码净删除且 `jscpd` exceptions 减少。
+- [ ] One-shot tool 公共逻辑只有在至少净删除 100 行且无需 dialect/config switch 时才提取；否则有完整 inventory 证明保持分离更简单。
+- [ ] Workflow 只由 `WorkflowRun.cancel()` 拥有运行期取消，pre-start 到 post-settlement 的全部 abort branches 最多生效一次且 dispose quiescent。
+- [ ] TypeScript JSON-RPC server/client 不再携带未使用的对向角色；TypeScript client 保留 Codex outbound notification，Python 删除 dormant server-role API。
+- [ ] JSON-RPC request-id correlation、malformed frames、notifications、concurrency、process exit 和当前 message-id prompt settlement 保持不变，双 SDK outputs 未漂移。
+- [ ] Plan、session stats、token usage、context pressure 和 context breakdown/request composition 的 production 与 fixture 对相同 event vectors 生成相同 wire views。
+- [ ] Client fixture 不再包含上述平行 folds，且未引入通用 projection package、完整 Host registry、client injection 或新的运行时 peer dependency。
+- [ ] 每项非机械改动已添加或更新正确的英文/中文/sidecar Agent Note，并完成 scoped supersession audit；archived Notes 未修改。
+- [ ] 受影响 README、JSDoc、subsystem docs、cookbook、type-equivalence、API/config/tool/persistence catalogs 与 translation pairing 全部同步。
+- [ ] 所有新增行为测试遵循 RED-GREEN-REFACTOR，失败原因和通过证据已记录。
+- [ ] 所有 focused unit、integration、built-artifact、keyless snapshot 和双 SDK expected-output 检查通过；每条 shell command 在 55 秒内结束。
+- [ ] Settings UI 使用外部 Chrome 和 CDP `9333` 完成真实装配验证，浏览器 console 无错误。
+- [ ] 独立最终 code review 未留下 Critical 或 Important finding，完整 diff 无 scope drift、debug residue、孤儿 import 或无依据兼容层。
+- [ ] `git diff --check` 通过，diff 不包含 `vendor/` 或 `.agents/notes/archived/`，现有用户改动未被回滚。
+- [ ] 未执行 `commit`、`push`、`merge`、`rebase` 或 `reset`。

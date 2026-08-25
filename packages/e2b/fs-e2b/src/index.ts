@@ -13,7 +13,6 @@ import type {
   FsEditOutcome,
   FsEditRequest,
   FsInfo,
-  FsPathInfo,
   FsTarget,
   FsWriteIntent,
   FsWriteOutcome,
@@ -209,26 +208,6 @@ export class E2BFileSystem extends FileSystem {
     return {
       version: entryVersion(entry),
       type: entryType(entry),
-      ...(entry.type === FileType.FILE ? { size: entry.size } : {}),
-    }
-  }
-
-  override async lstat(path: string, opts?: { cwd?: string }, signal?: AbortSignal): Promise<FsPathInfo | undefined> {
-    assertNotAborted(signal, 'lstat')
-    if (path.trim().length === 0) throw new FsError('file_path must be a non-empty string', 'FS_NOT_FOUND')
-    const displayPath = posix.resolve(opts?.cwd ?? this.ctx.e2b.cwd, path)
-    const entry = await this.probe(displayPath, displayPath, signal)
-    if (entry === undefined) return undefined
-    const type = entry.symlinkTarget !== undefined
-      ? 'symlink' as const
-      : entry.type === FileType.FILE
-        ? 'file' as const
-        : entry.type === FileType.DIR
-          ? 'directory' as const
-          : 'other' as const
-    return {
-      version: entryVersion(entry),
-      type,
       ...(entry.type === FileType.FILE ? { size: entry.size } : {}),
     }
   }

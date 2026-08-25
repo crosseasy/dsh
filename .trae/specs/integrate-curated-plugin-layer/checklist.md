@@ -1,0 +1,29 @@
+# 验收清单
+
+- [ ] `packages/curated/` 仅包含职责单一的 workspace 包，并遵循 ESM、Cordis peer/dev dependency、Host aggregate 和 invariant 约定。
+- [ ] curated bundle 的 manifest 声明有效 `dsh.bundle.patch`，patch 可由 Cordis `entryListSchema` 解析。
+- [ ] 候选目录中的每个 active source 都是完整 40 位 commit SHA，且有来源、许可证、包名、bundle patch 和审计时间。
+- [ ] 无法访问、许可证不清、无 bundle、Node 不兼容或要求核心补丁的候选被机器可读地拒绝，未进入 active profile。
+- [ ] `verify-lock` 拒绝 `latest`、branch、tag、短 SHA 和缺失审计字段，并且错误不回显秘密值。
+- [ ] `preflight` 拒绝重复 provider、entry、tool、command、service、UI slot、端口、SQLite、cache 和 env 冲突。
+- [ ] `preflight` 接受未激活的显式 fallback。
+- [ ] `ctx.curatedPolicy` 查询返回冻结且顺序稳定的结果，fiber dispose 后无 package-owned 注册残留。
+- [ ] 五个 profile 模板均可物化，重复运行幂等，不覆盖已有 manifest、用户 patch 或 pnpm workspace 文件。
+- [ ] `web-curated` 不含多 Agent、浏览器、Office、完整 IM 或自动进化记忆。
+- [ ] `web-coding` 只有一个主编排器；`web-research`、`web-enterprise`、`web-personal` 的能力互相隔离。
+- [ ] `web-enterprise` 禁用匿名视觉 fallback、IM 正文外发、自动安装脚本和未批准浏览器下载。
+- [ ] `smoke-profile` 在 55 秒内对有效 profile 给出成功 JSON，对缺 bundle、非法配置、超时和子进程失败给出阶段化非零结果。
+- [ ] `compare-benchmark` 正确计算均值、P50、P95、失败分布与加权分。
+- [ ] 五个非补偿门槛和三类回滚阈值均有自动化测试且能覆盖高总分候选。
+- [ ] P0/P1/P2 每个候选都有 verify-lock、preflight、smoke 结果；失败候选保留审计记录但不阻断可用 profile。
+- [ ] Loader/app-boot real-composition 测试覆盖 curated bundle/profile 的加载、禁用、卸载和错误路径。
+- [ ] 可本地模拟的搜索超时、429、浏览器失败、SQLite 锁、权限拒绝、非法 patch、断网和初始化失败均 fail-closed 或可单插件恢复。
+- [ ] 官方 `web`/`headless` profile、Agent loop、工具执行顺序、权限交互和 session wire format未发生行为变化。
+- [ ] 每个新包 README/JSDoc、Model Experience、Known Limitations 和 Agent Note 双语工件完整。
+- [ ] focused tests 与 coverage 通过。
+- [ ] `pnpm run constraints`、`pnpm run typecheck`、`pnpm run lint` 通过。
+- [ ] `pnpm run doc-sync` 相关门禁通过。
+- [ ] `pnpm run build` 与 `pnpm run hygiene` 的相关验证通过。
+- [ ] 独立代码审查和安全审查无 P0–P2 未解决发现。
+- [ ] 用户已有 `docs/arch/code-optimization-audit*` 移动保持原样。
+- [ ] `docs/plugin/superpowers/` 与 `.trae/specs/` 未加入 git staging，未执行 commit/push/merge/rebase/reset。

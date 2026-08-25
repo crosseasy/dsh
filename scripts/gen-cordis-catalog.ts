@@ -320,7 +320,6 @@ export const LINK_MAP: Readonly<Record<string, string>> = {
   FsEditRequest: 'filesystem.md',
   FsInfo: 'filesystem.md',
   FsObservation: 'filesystem.md',
-  FsPathInfo: 'filesystem.md',
   FsObservationActor: 'filesystem.md',
   FsTarget: 'filesystem.md',
   FsVersion: 'filesystem.md',

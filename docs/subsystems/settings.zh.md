@@ -95,7 +95,7 @@ interface SettingsScope<T> {
 
 ## 描述符
 
-`describe()` 为配置界面序列化每个已注册 namespace：schemastery 的 `toJSON()` 封装结构驱动 schema 渲染的表单，解析值填充表单，分离出的 `base`/`user` 层让表单按字段是否出现在 user 层标注「用户已覆盖」。`describe({ redactSecrets: true })`——每个对外传输接口都必须传入——从三层剥离 `role('secret')` 字段并枚举其 `{path, set}` slot，页面因此能渲染只写输入框而永远收不到机密值。
+`describe()` 向同进程消费方返回原样 descriptor。wire 消费方使用 `describeForWire(ns?)`：它在序列化前证明完整 schema 图安全，从解析值、`base`、`user` 层及 schema 默认值中剥离 `role('secret')` 字段，并枚举 `{path, set}` slot。union 或 intersection 下的 secret、任何 transform 或不受支持的 schema 节点会以不含值的错误拒绝；选择单个 namespace 可让写入在持久化前完成预检。
 
 ```ts type-equiv
 /** One registered namespace as surfaced to configuration UIs. */
@@ -120,12 +120,21 @@ interface SettingsDescriptor {
   user?: unknown
   /** Owner's declared effect timing. */
   applies: SettingsApplies
-  /** Schema-declared secret positions; present only under `redactSecrets`. */
-  secrets?: RedactedSecret[]
 }
 ```
 
-只持有脱敏 descriptor 的调用方无法安全地重建分节，因此删除改以路径 op 传递。每个 descriptor 还携带针对原始分节的 `revision`；写入可以把它作为 `expectedRevision` 送回，不再匹配的写入会被拒绝，而不会覆盖先落地的写入。
+wire descriptor 会在 schema 与各值层通过上述证明后，添加必需的 secret 位置伴随列表。
+
+```ts type-equiv
+/** One descriptor proven safe for a wire settings surface. */
+interface WireSettingsDescriptor extends SettingsDescriptor {
+  /** Schema-declared secret positions; values and defaults are absent. */
+  secrets: RedactedSecret[]
+}
+```
+
+只持有 wire descriptor 的调用方无法安全地重建分节，因此删除改以路径 op 传递。每个 descriptor 还携带针对原始分节的 `revision`；写入可以把它作为 `expectedRevision` 送回，不再匹配的写入会被拒绝，而不会覆盖先落地的写入。
+
 ```ts type-equiv
 /**
  * One path-addressed edit to a namespace's user section. Path mutation exists
@@ -138,18 +147,6 @@ interface SettingsDescriptor {
 type SettingsPathOp =
   | { op: 'set'; path: readonly string[]; value: unknown }
   | { op: 'unset'; path: readonly string[] }
-```
-
-```ts type-equiv
-/** Options for {@link SettingsProvider.describe}. */
-interface SettingsDescribeOptions {
-  /**
-   * Strip `role('secret')` fields from `value`/`base`/`user` and enumerate
-   * them in each descriptor's `secrets`. Every wire surface MUST pass this;
-   * the verbatim default exists for same-process configuration UIs only.
-   */
-  redactSecrets?: boolean
-}
 ```
 
 ## 变更提交

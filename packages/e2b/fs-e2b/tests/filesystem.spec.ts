@@ -320,7 +320,7 @@ async function expectCode(promise: Promise<unknown>, code: string): Promise<void
 }
 
 describe('E2BFileSystem identity, metadata, and reads', () => {
-  it('resolves remote paths, reports symlinks, and lists direct children in stable order', async () => {
+  it('resolves symlink targets and lists direct children in stable order', async () => {
     const remote = new FakeRemote()
     remote.file('/workspace/z.txt', 'z')
     remote.file('/workspace/a.txt', 'a')
@@ -332,11 +332,6 @@ describe('E2BFileSystem identity, metadata, and reads', () => {
 
     const link = await fs.resolve('link.txt')
     expect(link).toEqual({ targetKey: '/workspace/a.txt', displayPath: '/workspace/link.txt' })
-    await expect(fs.lstat('link.txt')).resolves.toMatchObject({ type: 'symlink', size: 1 })
-    await expect(fs.lstat('a.txt')).resolves.toMatchObject({ type: 'file', size: 1 })
-    await expect(fs.lstat('dir')).resolves.toEqual(expect.objectContaining({ type: 'directory' }))
-    await expect(fs.lstat('special')).resolves.toEqual(expect.objectContaining({ type: 'other' }))
-    await expect(fs.lstat('missing')).resolves.toBeUndefined()
     await expect(fs.stat(link)).resolves.toMatchObject({ type: 'file', size: 1 })
     const directory = await fs.resolve('.')
     const listed = await fs.listDir(directory)
@@ -514,7 +509,6 @@ describe('E2BFileSystem identity, metadata, and reads', () => {
     remote.file('/workspace/a', 'a')
     const { fs } = await setup(remote)
     await expectCode(fs.resolve('a', { signal: AbortSignal.abort() }), 'FS_ABORTED')
-    await expectCode(fs.lstat('a', undefined, AbortSignal.abort()), 'FS_ABORTED')
     await expectCode(fs.stat(await fs.resolve('a'), AbortSignal.abort()), 'FS_ABORTED')
     remote.nextReadError = new DOMException('aborted', 'AbortError')
     await expectCode(fs.readText(await fs.resolve('a')), 'FS_ABORTED')
@@ -525,7 +519,6 @@ describe('E2BFileSystem identity, metadata, and reads', () => {
     remote.file('/workspace/file', 'x')
     const { fs } = await setup(remote)
     await expectCode(fs.resolve('   '), 'FS_NOT_FOUND')
-    await expectCode(fs.lstat(''), 'FS_NOT_FOUND')
     await expectCode(fs.listDir(await fs.resolve('missing')), 'FS_NOT_FOUND')
     await expectCode(fs.listDir(await fs.resolve('/workspace/file')), 'FS_NOT_DIRECTORY')
     remote.nextListError = new Error('listing transport failed')

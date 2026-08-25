@@ -9,7 +9,14 @@ from pathlib import Path
 
 import pytest
 
-from deepseek_harness import DeepSeekHarness, HarnessClient, HarnessConfig, Notification, SdkProtocolError
+from deepseek_harness import (
+    DeepSeekHarness,
+    HarnessClient,
+    HarnessConfig,
+    InitializeResponse,
+    Notification,
+    SdkProtocolError,
+)
 
 
 def test_high_level_sdk_runs_turn_and_collects_final_response(tmp_path: Path) -> None:
@@ -599,10 +606,10 @@ for line in sys.stdin:
     method = msg.get("method")
     if method == "initialize":
         print(json.dumps({"jsonrpc": "2.0", "id": msg["id"], "result": {"serverInfo": {"name": "fake-dsh"}}}), flush=True)
-    elif method in {"emit-first", "emit-second"}:
-        print(json.dumps({"jsonrpc": "2.0", "method": "tick", "params": {"source": method}}), flush=True)
     elif method == "session/prompt":
-        print(json.dumps({"jsonrpc": "2.0", "id": msg["id"], "result": {"messageId": "message-1"}}), flush=True)
+        source = (msg.get("params") or {})["sessionId"]
+        print(json.dumps({"jsonrpc": "2.0", "method": "tick", "params": {"source": source}}), flush=True)
+        print(json.dumps({"jsonrpc": "2.0", "id": msg["id"], "result": {"messageId": source}}), flush=True)
     elif method == "shutdown":
         print(json.dumps({"jsonrpc": "2.0", "id": msg["id"], "result": {}}), flush=True)
         break
@@ -618,14 +625,13 @@ for line in sys.stdin:
             client.subscribe_notifications(broken_filter) as broken,
             client.subscribe_notifications(lambda notification: notification.method == "tick") as healthy,
         ):
-            client.notify("emit-first")
+            client.session_prompt("emit-first", [{"type": "text", "text": "first"}])
             with pytest.raises(RuntimeError, match="bad notification filter"):
                 broken.next()
             assert healthy.next().payload == {"source": "emit-first"}
             assert client._notifications.qsize() == 0
 
-            client.session_prompt("main", [{"type": "text", "text": "reader still works"}])
-            client.notify("emit-second")
+            client.session_prompt("emit-second", [{"type": "text", "text": "reader still works"}])
             assert healthy.next().payload == {"source": "emit-second"}
 
 
@@ -655,7 +661,7 @@ for line in sys.stdin:
             client.session_prompt("main", [{"type": "text", "text": "fix it"}])
 
 
-def test_client_routes_bridge_requests_and_sends_responses(tmp_path: Path) -> None:
+def test_client_ignores_unexpected_server_request_frames(tmp_path: Path) -> None:
     script = tmp_path / "fake_bridge.py"
     script.write_text(
         """
@@ -666,10 +672,8 @@ for line in sys.stdin:
     msg = json.loads(line)
     method = msg.get("method")
     if method == "initialize":
+        print(json.dumps({"jsonrpc": "2.0", "id": msg["id"], "method": "unexpected", "params": {"ignored": True}}), flush=True)
         print(json.dumps({"jsonrpc": "2.0", "id": msg["id"], "result": {"serverInfo": {"name": "fake-dsh"}}}), flush=True)
-        print(json.dumps({"jsonrpc": "2.0", "id": "bridge-req-1", "method": "llm.request", "params": {"requestId": "req-1", "sessionId": "main", "model": "dsagent", "messages": []}}), flush=True)
-    elif "id" in msg and "method" not in msg:
-        print(json.dumps({"jsonrpc": "2.0", "method": "response/seen", "params": {"result": msg.get("result")}}), flush=True)
     elif method == "shutdown":
         print(json.dumps({"jsonrpc": "2.0", "id": msg["id"], "result": {}}), flush=True)
         break
@@ -679,17 +683,13 @@ for line in sys.stdin:
     with HarnessClient(
         HarnessConfig(launch_args_override=(sys.executable, str(script)))
     ) as client:
-        client.initialize(provider="deepseek-official", cwd="/workspace", model="dsagent")
-
-        request = client.next_request()
-        assert request.id == "bridge-req-1"
-        assert request.method == "llm.request"
-        assert request.payload["requestId"] == "req-1"
-
-        client.respond(request.id, {"content_blocks": [{"type": "text", "text": "done"}]})
-        notification = client.next_notification()
-        assert notification.method == "response/seen"
-        assert notification.payload["result"]["content_blocks"][0]["text"] == "done"
+        response = client.initialize(provider="deepseek-official", cwd="/workspace", model="dsagent")
+        assert response.serverInfo.name == "fake-dsh"
+        assert not hasattr(client, "_requests")
+        assert not hasattr(client, "notify")
+        assert not hasattr(client, "next_request")
+        assert not hasattr(client, "respond")
+        assert not hasattr(client, "respond_error")
 
 
 def test_client_ignores_non_json_stdout_lines(tmp_path: Path) -> None:
@@ -812,6 +812,7 @@ for line in sys.stdin:
 
 
 def test_public_signatures_omit_unsupported_wire_parameters() -> None:
+    import deepseek_harness
     from deepseek_harness import DeepSeekHarnessConfig, Session
 
     assert "session_root" not in inspect.signature(HarnessClient.initialize).parameters
@@ -824,6 +825,7 @@ def test_public_signatures_omit_unsupported_wire_parameters() -> None:
     assert "max_tokens" in inspect.signature(HarnessClient.initialize).parameters
     assert "client_name" not in HarnessConfig.__dataclass_fields__
     assert "client_version" not in HarnessConfig.__dataclass_fields__
+    assert not hasattr(deepseek_harness, "IncomingRequest")
 
 
 def test_client_close_is_idempotent_before_and_after_start(tmp_path: Path) -> None:
@@ -873,7 +875,7 @@ sys.exit(42)
             client.initialize(provider="deepseek-official", cwd="/workspace", model="dsagent")
 
 
-def test_client_serializes_concurrent_writes(tmp_path: Path) -> None:
+def test_client_correlates_concurrent_requests(tmp_path: Path) -> None:
     script = tmp_path / "fake_bridge.py"
     output = tmp_path / "seen.jsonl"
     script.write_text(
@@ -882,14 +884,21 @@ import json
 import os
 import sys
 
+pending = []
 with open(os.environ["SEEN"], "w") as seen:
     for line in sys.stdin:
         seen.write(line)
         seen.flush()
         msg = json.loads(line)
-        if "id" in msg and msg.get("method") == "initialize":
+        method = msg.get("method")
+        if method == "initialize":
             print(json.dumps({"jsonrpc": "2.0", "id": msg["id"], "result": {"serverInfo": {"name": "fake-dsh"}}}), flush=True)
-        elif "id" in msg and msg.get("method") == "shutdown":
+        elif isinstance(method, str) and method.startswith("echo-"):
+            pending.append(msg)
+            if len(pending) == 20:
+                for request in reversed(pending):
+                    print(json.dumps({"jsonrpc": "2.0", "id": request["id"], "result": {"serverInfo": {"name": request["method"]}}}), flush=True)
+        elif method == "shutdown":
             print(json.dumps({"jsonrpc": "2.0", "id": msg["id"], "result": {}}), flush=True)
             break
 """.strip()
@@ -902,15 +911,31 @@ with open(os.environ["SEEN"], "w") as seen:
         )
     ) as client:
         client.initialize(provider="deepseek-official", cwd="/workspace", model="dsagent")
+        responses: dict[int, str | None] = {}
+        failures: list[BaseException] = []
+
+        def request(index: int) -> None:
+            try:
+                response = client.request(
+                    f"echo-{index}",
+                    {"index": index},
+                    response_model=InitializeResponse,
+                )
+                responses[index] = response.serverInfo.name
+            except BaseException as exc:
+                failures.append(exc)
+
         threads = [
-            threading.Thread(target=client.notify, args=(f"notice-{index}", {"index": index}))
-            for index in range(50)
+            threading.Thread(target=request, args=(index,))
+            for index in range(20)
         ]
         for thread in threads:
             thread.start()
         for thread in threads:
             thread.join()
 
+    assert failures == []
+    assert responses == {index: f"echo-{index}" for index in range(20)}
     for line in output.read_text().splitlines():
         json.loads(line)
 

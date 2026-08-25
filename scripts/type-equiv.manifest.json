@@ -1132,11 +1132,6 @@
     },
     {
       "doc": "docs/subsystems/filesystem.md",
-      "symbol": "FsPathInfo",
-      "source": "packages/fs/fs/src/types.ts"
-    },
-    {
-      "doc": "docs/subsystems/filesystem.md",
       "symbol": "FsDirEntry",
       "source": "packages/fs/fs/src/types.ts"
     },
@@ -1652,7 +1647,7 @@
     },
     {
       "doc": "docs/subsystems/settings.md",
-      "symbol": "SettingsDescribeOptions",
+      "symbol": "WireSettingsDescriptor",
       "source": "packages/settings/settings/src/index.ts"
     },
     {
