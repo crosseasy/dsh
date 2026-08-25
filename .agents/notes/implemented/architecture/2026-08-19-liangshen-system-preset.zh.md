@@ -8,7 +8,7 @@ Status: implemented
 
 Web Liangshen 包与 dsh-TUI 都分发名为 `liangshen` 的 preset，但它们通过 Host 启动代码将其安装到 Harness home 下的可写 preset 根目录。两者的 preset 内容不同；若保留任一同步器作为运行时组合，实际实现将取决于哪个 Host 先运行以及哪个包最后改写该目录。
 
-CLI 已经把 system preset 根目录放在 user root 之前。[agent preset 决策](2026-08-03-per-session-agent-presets.md)将这组有序目录作为部署名单，并让第一个根目录拥有重复 id。
+CLI 已经把 system preset 根目录放在 user root 之前。[agent preset 决策](2026-08-03-per-session-agent-presets.zh.md)将这组有序目录作为部署名单，并让第一个根目录拥有重复 id。
 
 ## Decision
 
@@ -24,7 +24,7 @@ CLI 已经把 system preset 根目录放在 user root 之前。[agent preset 决
 
 `apps/cli/tests/web-agent-presets.e2e.ts` 以原始 `Buffer` 读取五个规范文件，并固定各自的 SHA-256 摘要。因此，本地改写、换行符转换或不完整的来源更新都会在 assembled Web e2e 中失败，无法静默重定义该 preset。
 
-组合不挂载 `@linxin666/dsh-liangshen` Host 配置项，fusion 依赖中也不包含该包。它的 Host 插件只会把随包 preset 同步到 user root 并发布说明；在 system-root 组合之外执行这些操作只会产生第二个所有者，不会增加行为。该选择保留了[精选 fusion 组合包](2026-08-19-curated-fusion-bundle.md)确立的职责划分：fusion 选择 Web 插件，CLI preset 名单拥有 Liangshen。
+组合不挂载 `@linxin666/dsh-liangshen` Host 配置项，fusion 依赖中也不包含该包。它的 Host 插件只会把随包 preset 同步到 user root 并发布说明；在 system-root 组合之外执行这些操作只会产生第二个所有者，不会增加行为。该选择保留了[精选 fusion 组合包](2026-08-19-curated-fusion-bundle.zh.md)确立的职责划分：fusion 选择 Web 插件，CLI preset 名单拥有 Liangshen。
 
 dsh-TUI 0.8.3 仍会把随包的 `liangshen` 目录与 `.dsh-tui-managed.json` 标记写入 `$DSH_HOME/.agent-presets/liangshen`；该版本没有关闭同步的开关。因此，user-root 物理副本仍存在于磁盘上。它不参与发现、解析或激活，因为配置中的 system root 排在前面，first-root-wins 会选择规范目录。
 

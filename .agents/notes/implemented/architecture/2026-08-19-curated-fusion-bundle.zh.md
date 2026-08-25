@@ -12,7 +12,7 @@ TUI 和 Desktop 是独立宿主，各自持有配置项与生命周期职责。�
 
 ## Decision
 
-`@deepseek-ai/dsh-fusion` 是叠加在 `dsh-web-app` 之上的薄 meta-bundle（元组合包）。它声明纯数据的 `dsh.bundle.patch`，没有运行时 API 或协调插件，并按照 [profile 插件组合包决策](2026-08-05-profile-plugin-bundles.md)的显式分层规则直接插入选定的独立配置项。
+`@deepseek-ai/dsh-fusion` 是叠加在 `dsh-web-app` 之上的薄 meta-bundle（元组合包）。它声明纯数据的 `dsh.bundle.patch`，没有运行时 API 或协调插件，并按照 [profile 插件组合包决策](2026-08-05-profile-plugin-bundles.zh.md)的显式分层规则直接插入选定的独立配置项。
 
 manifest 为每个插入的包固定一个精确版本运行时依赖。patch 配置项名称与依赖键组成同一集合，因此 fusion 包是唯一的组合所有者，这些依赖都不会再作为 profile 组合包应用。
 

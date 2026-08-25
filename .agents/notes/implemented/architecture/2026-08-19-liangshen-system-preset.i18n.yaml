@@ -3,4 +3,4 @@
 # after editing either side, bring the other along and re-record with:
 #   pnpm run verify-translation-pairing --write .agents/notes/implemented/architecture/2026-08-19-liangshen-system-preset.md
 2026-08-19-liangshen-system-preset.md: ae1f4a7016b8922fb1f13d95b987106a03fdba12
-2026-08-19-liangshen-system-preset.zh.md: 3049c395d42f84f2e38ba5f46997c35bf125ea7a
+2026-08-19-liangshen-system-preset.zh.md: 5e1b338d1976e7cc2a5158c9eb0bbed60178bc47
