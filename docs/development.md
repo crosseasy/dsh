@@ -81,7 +81,7 @@ Static analysis and tests resolve workspace imports through the base `paths` map
 
 Business services declare callable methods on the Host with `@Remote` or `@RemoteScope`; the Host build generates Host-for-Client types and runtime contributions, and the Client's `api-remotes` composition loads those contributions under `ctx.remote` and scoped `agentCtx.remote` namespaces. See [API Gateway](api-gateway.md) for the generated artifacts on both sides, their assembly relationships, the SRC development fallback, and the Web build order.
 
-`pnpm run hygiene` owns its artifact prerequisite: it runs `pnpm run build`, then allows `publint`, `verify-built-package-invariants`, and `verify-node-next-types` to consume that build while independent source checks run in parallel. The command neither cleans the worktree nor relies on pre-existing `lib/`, so it has the same semantics in fresh and already-built worktrees. Build first only when running an artifact-specific leaf command directly.
+`pnpm run hygiene` owns its artifact prerequisite: it runs `pnpm run build`, then allows `publint`, `verify-built-package-invariants`, and `verify-node-next-types` to consume that build while independent source checks run in parallel. The command neither cleans the worktree nor relies on pre-existing `lib/`, so it has the same semantics in fresh and already-built worktrees. The workspace constraints gate ignores only deleted-package directories whose entries are the generated residue accepted by `pnpm run clean`; any unknown file in a manifest-less package directory still fails. Build first only when running an artifact-specific leaf command directly.
 
 ### Environment variables
 

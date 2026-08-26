@@ -33,8 +33,7 @@ import type {} from '@deepseek-ai/dsh-user-approval'
 import type { SandboxExecutionPolicy, SandboxMode } from '@deepseek-ai/dsh-sandbox'
 import { ESCALATION_TARGETS, approveEscalation, validateEscalationArgs } from '@deepseek-ai/dsh-sandbox'
 import type { SandboxPolicyService } from '@deepseek-ai/dsh-sandbox-policy'
-import type { ShellRunResult } from '@deepseek-ai/dsh-shell'
-import { parseExitStatus } from '@deepseek-ai/dsh-shell'
+import { SHELL_BACKGROUND_OUTPUT_PROPERTIES, parseExitStatus, projectShellForegroundResult } from '@deepseek-ai/dsh-shell'
 import { processOutcome } from './background.ts'
 import { renderPwshProcessRead, renderPwshResult } from './render.ts'
 import type { RenderablePwshResult } from './render.ts'
@@ -68,19 +67,6 @@ interface PwshToolArgs {
   run_in_background?: boolean
   sandbox_permissions?: string
   justification?: string
-}
-
-/** The canonical foreground result of one pwsh call (the `output.schema` value shape). */
-interface PwshForegroundResult {
-  kind: 'foreground'
-  exitCode: number | null
-  signal: NodeJS.Signals | null
-  timedOut: boolean
-  aborted: boolean
-  timeoutMs: number
-  stdout: { text: string; truncated: boolean; spillPath?: string }
-  stderr: { text: string; truncated: boolean; spillPath?: string }
-  sandbox?: { mode: string; denied: boolean; enforcement?: string; runnerFailed?: boolean }
 }
 
 /* jscpd:ignore-start -- minimal mirror of dsh-tool-bash's validation and execute plumbing (Agent Note). */
@@ -157,41 +143,6 @@ function resolveWorkdir(modelWorkdir: string | undefined, exec: { agent?: Agent 
   return modelWorkdir
 }
 
-/** Detach the executor DTO from readonly Service Definition types into plain JSON data. */
-function canonicalPwshResult(result: ShellRunResult): PwshForegroundResult {
-  const output = (stream: ShellRunResult['stdout']) => ({
-    text: stream.text,
-    truncated: stream.truncated,
-    ...stream.spillPath !== undefined ? { spillPath: stream.spillPath } : {},
-  })
-  return {
-    kind: 'foreground',
-    exitCode: result.exitCode,
-    signal: result.signal,
-    timedOut: result.timedOut,
-    aborted: result.aborted,
-    timeoutMs: result.timeoutMs,
-    /* jscpd:ignore-start -- the canonical projection and background-handle shape mirror dsh-tool-bash's by design (Agent Note). */
-    stdout: output(result.stdout),
-    stderr: output(result.stderr),
-    ...result.sandbox !== undefined ? {
-      sandbox: {
-        mode: result.sandbox.mode,
-        denied: result.sandbox.denied,
-        ...result.sandbox.enforcement !== undefined ? { enforcement: result.sandbox.enforcement } : {},
-        ...result.sandbox.runnerFailed !== undefined ? { runnerFailed: result.sandbox.runnerFailed } : {},
-      },
-    } : {},
-  }
-}
-
-/** Canonical background-handle properties shared by the pwsh output union. */
-const BACKGROUND_OUTPUT_PROPERTIES = {
-  kind: { type: 'string', required: true, const: 'background' },
-  jobId: { type: 'string', required: true },
-} as const
-/* jscpd:ignore-end */
-
 /* jscpd:ignore-start -- deliberate mirror of dsh-tool-bash's apply() preamble (pwsh-tool-and-executor Agent Note). */
 export function apply(ctx: Context, config: Config = {}): void {
   const backgroundEnabled = config.enableRunInBackground ?? true
@@ -199,7 +150,7 @@ export function apply(ctx: Context, config: Config = {}): void {
   const escalationModes: readonly SandboxMode[] = defaultMode === undefined ? [] : ESCALATION_TARGETS
   const sandboxPolicy: SandboxPolicyService | undefined = defaultMode === undefined ? undefined : ctx.get('sandboxPolicy')
   if (defaultMode !== undefined && sandboxPolicy === undefined) {
-    throw new Error('tool-pwsh: the mounted bash executor confines but ctx.sandboxPolicy is missing')
+    throw new Error('tool-pwsh: the mounted shell executor confines but ctx.sandboxPolicy is missing')
   }
   /* jscpd:ignore-end */
   /** Resolve the complete standing policy for this call when a confining executor is mounted. */
@@ -290,7 +241,7 @@ export function apply(ctx: Context, config: Config = {}): void {
           {
             type: 'object',
             additionalProperties: false,
-            properties: BACKGROUND_OUTPUT_PROPERTIES,
+            properties: SHELL_BACKGROUND_OUTPUT_PROPERTIES,
           },
           {
             type: 'object',
@@ -403,7 +354,7 @@ export function apply(ctx: Context, config: Config = {}): void {
         error.name = 'AbortError'
         throw error
       }
-      return canonicalPwshResult(result)
+      return projectShellForegroundResult(result)
     },
     /* jscpd:ignore-end */
     /* jscpd:ignore-start -- the background call card mirrors presentBashCall's by design (Agent Note). */

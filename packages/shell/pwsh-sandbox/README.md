@@ -4,12 +4,12 @@ English | [中文](README.zh.md)
 
 Sandbox-consuming PowerShell implementation of the [`ctx.shell` executor seam](../shell/): every command runs as `pwsh -NoLogo -NoProfile -NonInteractive -Command <command>` **confined through `ctx.sandbox`**, with the selected mode, enforcement, and denial facts stamped on each settled result. The pwsh twin of [`@deepseek-ai/dsh-bash-sandbox`](../bash-sandbox/), a call-for-call mirror per the [pwsh executor and tool decision](../../../.agents/notes/implemented/feature/2026-08-01-pwsh-tool-and-executor.md) — the confinement substance is platform-neutral: on Windows the sandbox seam resolves to the ACL restricted-token runner chain ([`@deepseek-ai/dsh-sandbox-windows-acl`](../../sandbox/sandbox-windows-acl/)), on Linux/macOS to bwrap/Landlock/Seatbelt.
 
-The executor inherits [`@deepseek-ai/dsh-pwsh-local`](../pwsh-local/)'s process mechanics and consumes its argv-level seam (`argv()` / `runArgv()` / `startArgv()` / `onProcessDone()`) to wrap the exact pwsh invocation through the provider. The sandbox policy (mode + workspace root) is NOT this package's config: it rides each call from `ctx.sandboxPolicy` (tool calls pass the calling session's resolved policy; direct calls fall back to deployment policy).
+The executor reuses [`@deepseek-ai/dsh-pwsh-local`](../pwsh-local/)'s executable probing and argv construction, then drives the shared one-shot process lifecycle and sandbox settlement in [`@deepseek-ai/dsh-shell-runtime`](../shell-runtime/). The sandbox policy (mode + workspace root) is NOT this package's config: it rides each call from `ctx.sandboxPolicy` (tool calls pass the calling session's resolved policy; direct calls fall back to deployment policy).
 
 ## Behavior
 
 - `danger-full-access`: commands run through the local executor unchanged; results carry `sandbox: { mode, denied: false }`.
-- Confined modes (`read-only`, `workspace-write`): the pwsh argv is wrapped by `ctx.sandbox.confine()`; runner-launch refusal fails closed with `SANDBOX_UNAVAILABLE` (foreground throw, background `runnerFailed` fact), and a denied write classifies against the selected backend's `denialSignatures` into `sandbox.denied`.
+- Confined modes (`read-only`, `workspace-write`): the pwsh argv is wrapped by `ctx.sandbox.confine()`; runner-launch refusal fails closed with `SANDBOX_UNAVAILABLE` (foreground throw, background `runnerFailed` fact), and shared settlement classifies denied writes against the selected backend's `denialSignatures` into `sandbox.denied`.
 
 ## Model Experience
 

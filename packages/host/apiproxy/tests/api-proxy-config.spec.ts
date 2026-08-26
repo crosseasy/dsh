@@ -196,6 +196,12 @@ const AdapterConfig = z.object({
   baseURL: z.string(),
 })
 
+type UnsafeSecretSchemaCase = readonly [
+  kind: string,
+  schema: z<never>,
+  doc: Record<string, unknown> | undefined,
+]
+
 async function harness(options?: {
   settings?: false | {
     doc?: Record<string, unknown>
@@ -298,10 +304,10 @@ describe('settings domain', () => {
     expect(JSON.stringify(value)).not.toContain('user-secret')
   })
 
-  it.each([
+  const unsafeSecretSchemaCases: UnsafeSecretSchemaCase[] = [
     [
       'union',
-      z.object({ token: z.union([z.string().role('secret'), z.number()]) }),
+      z.object({ token: z.union([z.string().role('secret'), z.number()]) }) as z<never>,
       { token: 'union-secret-marker' },
     ],
     [
@@ -309,7 +315,7 @@ describe('settings domain', () => {
       z.intersect([
         z.object({ token: z.string().role('secret') }),
         z.object({ endpoint: z.string() }),
-      ]),
+      ]) as z<never>,
       { token: 'intersection-secret-marker', endpoint: 'https://example.test' },
     ],
     [
@@ -319,10 +325,12 @@ describe('settings domain', () => {
           z.string().role('secret'),
           value => `transform-callback-marker:${value}`,
         ),
-      }),
+      }) as z<never>,
       undefined,
     ],
-  ])('refuses a namespace with a secret behind %s without returning sensitive metadata', async (_kind, schema, doc) => {
+  ]
+
+  it.each(unsafeSecretSchemaCases)('refuses a namespace with a secret behind %s without returning sensitive metadata', async (_kind, schema, doc) => {
     const ctx = await harness({
       settings: doc === undefined ? {} : { doc: { 'llm-deepseek': doc } },
     })
@@ -344,7 +352,7 @@ describe('settings domain', () => {
     const schema = z.object({
       token: z.transform(
         z.string().role('secret'),
-        value => {
+        (value) => {
           throw new Error(`transform-callback-marker:${value}`)
         },
       ),

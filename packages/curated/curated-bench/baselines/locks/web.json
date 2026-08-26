@@ -1,0 +1,10 @@
+{
+  "schemaVersion": 1,
+  "kind": "curated-lock-snapshot",
+  "source": "docs/plugin/superpowers/03-实施路线图.md#task-p0-1固定版本与导出官方基线配置",
+  "createdAt": "2026-08-25",
+  "profile": "web",
+  "candidateCount": 0,
+  "activeCount": 0,
+  "catalogRef": "official shipped web profile"
+}

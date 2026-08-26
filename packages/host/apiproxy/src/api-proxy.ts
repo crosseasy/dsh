@@ -34,7 +34,7 @@ import {
   InvalidPresetIdError, PresetExistsError, PresetMountError,
   PresetNotWritableError, resolveSessionPreset, UnknownPresetError,
 } from '@deepseek-ai/dsh-agent-presets'
-import type { PresetBearingSession } from '@deepseek-ai/dsh-agent-presets'
+import type { PresetBearingSession, StandingPresetLease } from '@deepseek-ai/dsh-agent-presets'
 import type {} from '@deepseek-ai/dsh-tools'
 import type {
   ApiProxy, ConfigurableProviderView, CredentialView, GoalRef, HistoryEntry, HostFrame,
@@ -651,6 +651,19 @@ interface PendingQuestion {
   reject: (error: UserQuestionError) => void
   signal?: AbortSignal
   onAbort?: () => void
+}
+
+/** Scope held for one presenter or skill-catalog read. */
+interface PresenterScopeLease {
+  /** Registry scope used for presenter or skill lookups. */
+  readonly scope: ScopeKey | undefined
+  /** Release any standing preset generation held for the read. */
+  release(): Promise<void>
+}
+
+/** No-op lease for live agents and global fallbacks. */
+function emptyPresenterScopeLease(scope?: ScopeKey): PresenterScopeLease {
+  return { scope, release: () => Promise.resolve() }
 }
 
 /** Validate one answer batch against the exact question request it resolves. */
@@ -1515,7 +1528,8 @@ export function createApiProxy(ctx: Context, defaults: ApiProxyDefaults): ApiPro
   }
 
   /**
-   * The registry view scope a transcript's presenters resolve in.
+   * The registry view scope a transcript's presenters resolve in, with any
+   * temporary standing-generation hold needed for a cold read.
    *
    * A live agent is that scope itself (its chain passes through its preset's
    * standing layer). A cold session resolves its preset from the LOG, and the
@@ -1532,26 +1546,27 @@ export function createApiProxy(ctx: Context, defaults: ApiProxyDefaults): ApiPro
    * made of.
    * @param sessionId - the transcript being read.
    * @param session - that session's header and log (attached or inspected).
-   * @returns the scope to pass to presenter lookups, or undefined for global.
+   * @returns the scope lease to pass to presenter lookups, or undefined scope for global.
    */
-  async function presenterScopeFor(
+  async function presenterScopeLeaseFor(
     sessionId: SessionId,
     session: PresetBearingSession,
-  ): Promise<ScopeKey | undefined> {
+  ): Promise<PresenterScopeLease> {
     const live = ctx.get('agents')?.get(sessionId)
-    if (live !== undefined) return live
+    if (live !== undefined) return emptyPresenterScopeLease(live)
     const presets = ctx.get('agentPresets')
-    if (presets === undefined) return undefined
+    if (presets === undefined) return emptyPresenterScopeLease()
     try {
       // An unrecorded preset (a log from before the roster existed) renders
       // through the DEFAULT preset's standing layer: that is the composition
       // an unnamed session composes today, and presenters are pure display,
       // so the worst a mismatch produces is the generic card it had anyway.
-      return await presets.standingKeyFor(resolveSessionPreset(session))
+      const lease: StandingPresetLease = await presets.acquireStanding(resolveSessionPreset(session))
+      return { scope: lease.key, release: () => lease.release() }
     } catch {
       // Swallows only the unknown/unusable-preset rejection from the roster:
       // a deleted or broken preset must degrade this read, never fail it.
-      return undefined
+      return emptyPresenterScopeLease()
     }
   }
 
@@ -2178,14 +2193,18 @@ export function createApiProxy(ctx: Context, defaults: ApiProxyDefaults): ApiPro
           // missing every preset-owned key; and an attached session keeps
           // appending, so awaiting between the two reads would pair events cut
           // at N with a baseline folded to N+1.
-          const scope = await presenterScopeFor(sessionId, sourceSession(source))
-          const cut = historyCutOf(source, beforeSeq === undefined)
-          const page = historyPage(ctx, cut.events, beforeSeq, maxMessages, scope)
-          return ok(request, {
-            events: page.events,
-            hasMore: page.hasMore,
-            ...cut.projections === undefined ? {} : { projections: cut.projections },
-          })
+          const lease = await presenterScopeLeaseFor(sessionId, sourceSession(source))
+          try {
+            const cut = historyCutOf(source, beforeSeq === undefined)
+            const page = historyPage(ctx, cut.events, beforeSeq, maxMessages, lease.scope)
+            return ok(request, {
+              events: page.events,
+              hasMore: page.hasMore,
+              ...cut.projections === undefined ? {} : { projections: cut.projections },
+            })
+          } finally {
+            await lease.release()
+          }
         } catch (error: unknown) {
           if (error instanceof SessionNotFound) {
             return err(request, { code: 'session-not-found', message: error.message, details: { sessionId } })
@@ -3158,9 +3177,9 @@ export function createApiProxy(ctx: Context, defaults: ApiProxyDefaults): ApiPro
         // The scope presenters resolve in — the live agent, else the recorded
         // preset's standing key, else the global layer — so a cold session's
         // '/' popup lists the catalog its composition actually serves.
-        const scope = await presenterScopeFor(sessionId, session)
+        const lease = await presenterScopeLeaseFor(sessionId, session)
         try {
-          const skills = (await skillRegistry.list({ cwd, scope })).filter(isUserInvocable)
+          const skills = (await skillRegistry.list({ cwd, scope: lease.scope })).filter(isUserInvocable)
           return ok(request, {
             skills: skills.map(skill => ({
               name: skill.name,
@@ -3171,6 +3190,8 @@ export function createApiProxy(ctx: Context, defaults: ApiProxyDefaults): ApiPro
           })
         } catch (error: unknown) {
           return err(request, { code: 'internal', message: `skill listing failed: ${String(error)}`, details: {} })
+        } finally {
+          await lease.release()
         }
       },
     },

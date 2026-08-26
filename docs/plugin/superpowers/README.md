@@ -1,14 +1,20 @@
 # DeepSeek Harness 精选插件层（dsh-curated）执行计划
 
-> 本目录是一份**执行计划**，不是产品文档，也**不纳入 git 仓库**（按用户规则：plan/spec markdown 不提交）。
-> 计划蓝本来自飞书文档《DeepSeek Harness 高质量插件集成与评测方案》。
-> 计划**只规划、不写代码**；每个任务都带有耗时 < 1 分钟的叶级验收门禁。
+> 本目录是本地执行规划与状态记录，不是产品文档，也**不加入 git staging**。计划蓝本来自飞书文档《DeepSeek Harness 高质量插件集成与评测方案》。规划任务带有耗时 < 1 分钟的叶级验收门禁；当前状态以实现、测试和明确标为 pending 的长周期资产为准。
 
 ## 这份计划要做什么
 
-在**当前 monorepo 内**新增一组 `@deepseek-ai/dsh-*` 包，产出一个可锁版本、可回滚、按能力域互斥的**精选插件层**（内部 bundle + 多个 profile + 准入策略 + 评测基线 + 脚本），把第三方插件生态收敛为默认 12–16 个插件的精选栈，其余进入场景包或实验池。
+在**当前 monorepo 内**新增一组 `@deepseek-ai/dsh-*` 包，产出一个可锁版本、可回滚、按能力域互斥的**精选插件层**（内部 bundle + 多个 profile + 准入策略 + 评测基线 + 脚本）。`web-curated` 的目标基线固定为 12 个候选；当前只有 10 个通过准入并进入模板，`dsh-context` 因缺少 Node 兼容证据被拒绝，`dsh-config-manager` 因缺少 profile 级 dry-run 控制被拒绝。
 
 **核心边界**：不修改 DeepSeek Harness 核心；一切通过 documented seams（`ctx.tools`、`ctx.llm`、`ctx.subagents`、`ctx.sandbox`、`session/event`、`tools/pre-execute` 等）扩展与组合。落地形态遵循本仓库既有的 bundle/profile 机制（见 [packages/bundle/README.md](../../../packages/bundle/README.md) 与 [app-boot Profiles](../../../packages/boot/app-boot/README.md#profiles)）。
+
+## 当前实现状态
+
+五个精选 profile 均可确定性物化且不覆盖已有文件。`web-curated`、`web-coding` 与 `web-enterprise` 当前使用同一组 10 个可准入的 active 基线候选；`web-research` 在该基线上增加已通过目录准入的 `plugin-session-export`。`dsh-mneme`、`dsh-vision-router` 与其他高风险候选保持 inactive；`web-personal` 只含安装自带的三个基础 bundle。
+
+静态准入由八个维度计算，Node/core-patch、能力冲突、元数据 secret 和委托给第三方权限插件的 fail-closed 配置均有拒绝检查。Observed preflight 和 smoke 必须读取调用方提供的真实已安装 profile 与精确解析工件；无 profile root 时失败，fixture 只产生非观测结果，不生成 synthetic shim。
+
+搜索、记忆、浏览器、MCP、真实故障注入与 canary 等长周期工作仍为 pending，不构成当前完成证据。Benchmark 比较仅接受任务与环境集合一致、每任务至少 5 次重复的 observed 输入，以未舍入值判定阈值，并携带摘要校验的不可变 lock/profile 回滚快照。
 
 ## 文档索引
 

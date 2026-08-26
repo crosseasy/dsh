@@ -1,0 +1,24 @@
+{
+  "schemaVersion": 1,
+  "kind": "curated-profile-snapshot",
+  "source": "packages/curated/curated-profiles/src/index.ts",
+  "createdAt": "2026-08-25",
+  "profile": "web-curated",
+  "bundles": [
+    "@deepseek-ai/dsh-base",
+    "@deepseek-ai/dsh-web-app",
+    "@deepseek-ai/dsh-curated-base",
+    "@deepseek-ai/dsh-toolkit",
+    "dsh-context",
+    "dsh-web-search-pro",
+    "dsh-memento",
+    "dsh-mcp-panel",
+    "dsh-checkpoint-rewind",
+    "dsh-lsp-actions",
+    "dsh-permission-rules",
+    "dsh-smooth-stream",
+    "upstream-radar",
+    "@loongsuite/dsh-plugin",
+    "dsh-config-manager"
+  ]
+}

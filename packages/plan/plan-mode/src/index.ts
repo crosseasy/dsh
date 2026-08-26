@@ -24,8 +24,6 @@
  */
 
 import { Context, Service } from '@deepseek-ai/cordis'
-import { z as zod } from 'zod'
-import type { ZodType } from 'zod'
 import type { Agent, PreStepDecision } from '@deepseek-ai/dsh-agent'
 import { createUserMessage } from '@deepseek-ai/dsh-llm'
 import type { Session, SessionEvent, UserMessage } from '@deepseek-ai/dsh-session'
@@ -33,10 +31,10 @@ import { defineTool } from '@deepseek-ai/dsh-tools'
 import type {} from '@deepseek-ai/dsh-system-prompt'
 import { UserQuestionError } from '@deepseek-ai/dsh-user-questions'
 // Type-only edge: resolves `ctx.commands` for the optional command child.
-import type { CommandId } from '@deepseek-ai/dsh-commands'
+import type {} from '@deepseek-ai/dsh-commands'
 // Type-only: resolves ctx.sessionProjections for the optional unit child.
 import type {} from '@deepseek-ai/dsh-session-projection'
-import type { PlanProjection } from './types.ts'
+import { planProjectionDefinition } from './projection.ts'
 // The `plan` projection-key declaration lives in src/types.ts (its one home);
 // this re-export projects the type face onto the package root AND keeps the
 // module edge in the emitted index.d.ts, so aggregate programs consuming the
@@ -137,41 +135,6 @@ export function foldPlanMode(events: readonly SessionEvent[], end = events.lengt
   return active
 }
 
-/**
- * Projection unit state: the logged mode, the latest successful `/plan`
- * selection not yet resolved by a `plan/mode` commit, and an execution whose
- * paired `command/done` has not settled. Plain JSON (persisted-cache
- * precondition).
- */
-interface PlanUnitState {
-  active: boolean
-  /** The selection's target mode; null when no selection is outstanding. */
-  wanted: boolean | null
-  /** The latest plan command awaiting its paired settlement. */
-  running: { commandId: CommandId; wanted: boolean } | null
-}
-
-declare module '@deepseek-ai/dsh-session-projection/types' {
-  interface SessionProjectionStateMap {
-    plan: PlanUnitState
-  }
-}
-
-const planUnitStateSchema: ZodType<PlanUnitState> = zod.object({
-  active: zod.boolean(),
-  wanted: zod.boolean().nullable(),
-  running: zod.object({
-    commandId: zod.string() as unknown as ZodType<CommandId>,
-    wanted: zod.boolean(),
-  }).strict().nullable(),
-}).strict()
-
-/** Wire payload schema of the `plan` projection. */
-const planProjectionSchema: ZodType<PlanProjection> = zod.object({
-  active: zod.boolean(),
-  pending: zod.boolean(),
-})
-
 /** Whether the log holds an opened turn without its closing `turn/end`. */
 function hasOpenTurn(events: readonly SessionEvent[]): boolean {
   let open = false
@@ -259,36 +222,7 @@ export class PlanModeController extends Service {
     // it from the log alone. The unit child activates only when a projection
     // registry is composed (headless assemblies stay unaffected).
     ctx.inject(['sessionProjections'], (projectionCtx) => {
-      projectionCtx.sessionProjections.register<'plan', PlanUnitState>({
-        key: 'plan',
-        stateSchema: planUnitStateSchema,
-        init: () => ({ active: false, wanted: null, running: null }),
-        apply: (state, event) => {
-          if (event.type === 'command/run' && event.data.name === 'plan') {
-            if (event.data.args === undefined) return state
-            const wanted = event.data.args.trim() !== 'off'
-            return { ...state, running: { commandId: event.data.commandId, wanted } }
-          }
-          if (event.type === 'command/done' && event.data.commandId === state.running?.commandId) {
-            const wanted = event.data.kind === 'success' && state.running.wanted !== state.active
-              ? state.running.wanted
-              : null
-            return { ...state, wanted, running: null }
-          }
-          if (event.type === 'plan/mode') {
-            return { ...state, active: event.data.active, wanted: null }
-          }
-          return state
-        },
-        wire: {
-          viewSchema: planProjectionSchema,
-          view: (state) => {
-            const wanted = state.running?.wanted ?? state.wanted
-            return { active: state.active, pending: wanted !== null && wanted !== state.active }
-          },
-        },
-        stateVersion: 2,
-      })
+      projectionCtx.sessionProjections.register(planProjectionDefinition)
     })
 
     // The command child activates only when a command registry is composed.

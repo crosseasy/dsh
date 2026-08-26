@@ -79,6 +79,31 @@ describe('JsonRpcLineClientTransport', () => {
     transport.close()
   })
 
+  it('answers handled server requests and reports handler errors', async () => {
+    const { input, output, transport } = clientHarness()
+    const seen: JsonObject[] = []
+    transport.onRequest(async (method, params) => {
+      seen.push({ method, params })
+      if (method === 'explode') throw new Error('handler boom')
+      return { ok: true }
+    })
+    transport.start()
+
+    input.write('{"jsonrpc":"2.0","id":"one","method":"server-call","params":[]}\n')
+    input.write('{"jsonrpc":"2.0","id":"two","method":"explode","params":{"x":1}}\n')
+    await settle()
+
+    expect(seen).toEqual([
+      { method: 'server-call', params: {} },
+      { method: 'explode', params: { x: 1 } },
+    ])
+    expect(readFrames(output)).toEqual([
+      { jsonrpc: '2.0', id: 'one', result: { ok: true } },
+      { jsonrpc: '2.0', id: 'two', error: { code: -32603, message: 'handler boom' } },
+    ])
+    transport.close()
+  })
+
   it('sends the outbound notification required by Codex initialization', () => {
     const { output, transport } = clientHarness()
 

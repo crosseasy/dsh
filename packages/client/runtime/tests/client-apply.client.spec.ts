@@ -63,11 +63,11 @@ describe('runtime client apply', () => {
     expect(bench.ctx.slots.spec('root')).toEqual({ kind: 'single', scope: 'root' })
     const sessions = bench.ctx.get('sessions')
     const workspaces = bench.ctx.get('workspaces')
-    expect(sessions !== undefined).toBe(true)
-    expect(workspaces !== undefined).toBe(true)
-    // The bound the wire schema enforces, not a per-connection negotiation.
-    expect((sessions as SessionRuntime).searchResultLimit).toBe(SESSION_SEARCH_RESULT_LIMIT)
+    if (sessions === undefined) throw new Error('SessionRuntime missing after runtime apply')
     if (workspaces === undefined) throw new Error('WorkspaceRuntime missing after runtime apply')
+    const sessionRuntime = sessions as unknown as SessionRuntime
+    // The bound the wire schema enforces, not a per-connection negotiation.
+    expect(sessionRuntime.searchResultLimit).toBe(SESSION_SEARCH_RESULT_LIMIT)
     expect(bench.sinks).toBeDefined()
 
     // Frame sinks reach the object layer: a host session-added lands in the list store.
@@ -76,7 +76,7 @@ describe('runtime client apply', () => {
       payload: { type: 'host/session-added', blank: true, sessionId: 's-new' } as never,
     })
     await Promise.resolve()
-    expect((sessions as { list: { getSnapshot(): { ids: string[] } } }).list.getSnapshot().ids).toContain('s-new')
+    expect(sessionRuntime.list.getSnapshot().ids).toContain('s-new')
     bench.sinks?.onHostEnvelope?.({
       rpcId: 'r-workspace' as never,
       payload: {
@@ -107,8 +107,8 @@ describe('runtime client apply', () => {
     bench.sinks?.onConnected?.({ version: '0', cwd: '/f', attachedSessions: 0, home: '/h', canOpenPath: true })
     await flushMicrotasks()
 
-    const sessions = bench.ctx.get('sessions') as SessionRuntime
-    const workspaces = bench.ctx.get('workspaces') as WorkspaceRuntime
+    const sessions = bench.ctx.get('sessions') as unknown as SessionRuntime
+    const workspaces = bench.ctx.get('workspaces') as unknown as WorkspaceRuntime
     expect(bench.api.callsOf('session.create')).toEqual([{ workspaceId: 'w-recent' }])
     expect(sessions.list.getSnapshot().current).toBe('fk-new')
 
@@ -121,7 +121,7 @@ describe('runtime client apply', () => {
 
   it('wires registry changes into resident Sessions during the runtime apply pass', async () => {
     const bench = await mount()
-    const sessions = bench.ctx.get('sessions') as SessionRuntime
+    const sessions = bench.ctx.get('sessions') as unknown as SessionRuntime
     bench.sinks?.onHostEnvelope?.({
       rpcId: 'r-registry' as never,
       payload: { type: 'host/session-added', blank: true, sessionId: 's-registry' } as never,

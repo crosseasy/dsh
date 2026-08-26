@@ -76,41 +76,42 @@ function unsafeSchema(): never {
 
 /** Prove the graph traversable and report whether this subtree declares a secret. */
 function inspectSchema(
-  node: SchemaNode | undefined,
+  node: unknown,
   visiting: Set<SchemaNode>,
   inspected: Map<SchemaNode, boolean>,
   nodesByUid: Map<number, SchemaNode>,
 ): boolean {
   if ((typeof node !== 'object' && typeof node !== 'function') || node === null) unsafeSchema()
-  const cached = inspected.get(node)
+  const schemaNode = node as SchemaNode
+  const cached = inspected.get(schemaNode)
   if (cached !== undefined) return cached
-  if (visiting.has(node)) unsafeSchema()
-  if (!Number.isInteger(node.uid) || node.type === undefined) unsafeSchema()
-  const prior = nodesByUid.get(node.uid as number)
-  if (prior !== undefined && prior !== node) unsafeSchema()
-  nodesByUid.set(node.uid as number, node)
-  visiting.add(node)
+  if (visiting.has(schemaNode)) unsafeSchema()
+  if (!Number.isInteger(schemaNode.uid) || schemaNode.type === undefined) unsafeSchema()
+  const prior = nodesByUid.get(schemaNode.uid as number)
+  if (prior !== undefined && prior !== schemaNode) unsafeSchema()
+  nodesByUid.set(schemaNode.uid as number, schemaNode)
+  visiting.add(schemaNode)
 
-  const selfSecret = node.meta?.role === 'secret'
+  const selfSecret = schemaNode.meta?.role === 'secret'
   let descendantSecret = false
-  if (LEAF_TYPES.has(node.type)) {
+  if (LEAF_TYPES.has(schemaNode.type)) {
     // Leaf metadata alone determines whether the value is secret.
-  } else if (node.type === 'object') {
-    if (!isRecord(node.dict)) unsafeSchema()
-    for (const child of Object.values(node.dict)) {
+  } else if (schemaNode.type === 'object') {
+    if (!isRecord(schemaNode.dict)) unsafeSchema()
+    for (const child of Object.values(schemaNode.dict)) {
       if (inspectSchema(child, visiting, inspected, nodesByUid)) descendantSecret = true
     }
-  } else if (node.type === 'dict') {
-    if (node.inner === undefined || node.sKey === undefined) unsafeSchema()
-    const keySecret = inspectSchema(node.sKey, visiting, inspected, nodesByUid)
+  } else if (schemaNode.type === 'dict') {
+    if (schemaNode.inner === undefined || schemaNode.sKey === undefined) unsafeSchema()
+    const keySecret = inspectSchema(schemaNode.sKey, visiting, inspected, nodesByUid)
     if (keySecret) unsafeSchema()
-    descendantSecret = inspectSchema(node.inner, visiting, inspected, nodesByUid)
-  } else if (node.type === 'array') {
-    if (node.inner === undefined) unsafeSchema()
-    descendantSecret = inspectSchema(node.inner, visiting, inspected, nodesByUid)
-  } else if (node.type === 'union' || node.type === 'intersect') {
-    if (!Array.isArray(node.list)) unsafeSchema()
-    for (const child of node.list) {
+    descendantSecret = inspectSchema(schemaNode.inner, visiting, inspected, nodesByUid)
+  } else if (schemaNode.type === 'array') {
+    if (schemaNode.inner === undefined) unsafeSchema()
+    descendantSecret = inspectSchema(schemaNode.inner, visiting, inspected, nodesByUid)
+  } else if (schemaNode.type === 'union' || schemaNode.type === 'intersect') {
+    if (!Array.isArray(schemaNode.list)) unsafeSchema()
+    for (const child of schemaNode.list) {
       if (inspectSchema(child, visiting, inspected, nodesByUid)) descendantSecret = true
     }
     if (selfSecret || descendantSecret) unsafeSchema()
@@ -120,9 +121,9 @@ function inspectSchema(
     unsafeSchema()
   }
 
-  visiting.delete(node)
+  visiting.delete(schemaNode)
   const containsSecret = selfSecret || descendantSecret
-  inspected.set(node, containsSecret)
+  inspected.set(schemaNode, containsSecret)
   return containsSecret
 }
 

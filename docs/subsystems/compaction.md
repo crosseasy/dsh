@@ -24,23 +24,13 @@ These variants are merged inside a `declare module '@deepseek-ai/dsh-session/typ
 
 ## `CompactionResult`
 
-What a successful compaction returns to its caller: the bookkeeping-event seqs, safe summary projection, shadowed range and seqs, and estimated token count.
+What a successful compaction returns to its caller: the summary event seq, shadowed range and seqs, and estimated token count. The durable `compaction/*` events own transaction identity, command correlation, start/end seqs, and raw summary content.
 
 ```ts type-equiv
 /** Result of a successful compaction operation. */
 interface CompactionResult {
-  /** Stable identity shared by this compaction's complete durable lifecycle. */
-  compactionId: CompactionId
-  /** Human command that initiated this compaction, when it was manual. */
-  sourceCommandId?: CommandId
-  /** The seq of the appended `compaction/start` event. */
-  startSeq: number
   /** The seq of the appended `compaction/summary` event. */
   summarySeq: number
-  /** The seq of the appended `compaction/end` event. */
-  endSeq: number
-  /** The summary content blocks produced by the backend. */
-  summary: ContentBlock[]
   /**
    * The surface-boundary pair that was shadowed: the seqs of the first
    * (`start`) and last (`end`) surface nodes of the replaced range. A
@@ -185,7 +175,7 @@ abstract compactNow( agent: ManualCompactAgentContext, signal: AbortSignal, sour
  * @param agent - context whose session is mutated and whose routing options guide summarization.
  * @param signal - optional cancellation; model-backed implementations must forward it.
  * @throws when compaction is active or the range is missing, reversed, or unbalanced.
- * @returns the appended event seqs, summary, replaced range, and token accounting.
+ * @returns the summary event seq, replaced range, and token accounting.
  */
 abstract compactRegion( start: number, end: number, agent: CompactionAgentContext, signal?: AbortSignal, ): Promise<CompactionResult>
 ```

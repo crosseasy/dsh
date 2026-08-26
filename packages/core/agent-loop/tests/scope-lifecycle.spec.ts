@@ -4,7 +4,8 @@ import { Context, symbols, type EffectMeta, type Fiber } from '@deepseek-ai/cord
 import LlmRuntime from '@deepseek-ai/dsh-llm'
 import SessionStore, { SessionId, type SessionEvent } from '@deepseek-ai/dsh-session'
 import SystemPrompt from '@deepseek-ai/dsh-system-prompt'
-import ToolRuntime, { defineContentToolFixture } from '@deepseek-ai/dsh-tools'
+import ToolRuntime from '@deepseek-ai/dsh-tools'
+import { defineContentToolFixture } from '@deepseek-ai/dsh-tools/testing'
 import AgentRegistry, { agentEvents, assembleContextFor } from '@deepseek-ai/dsh-agent'
 
 import type { Agent } from '@deepseek-ai/dsh-agent'

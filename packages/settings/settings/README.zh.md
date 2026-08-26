@@ -8,7 +8,7 @@
 
 - `documentPath` — 提供方拥有用户可编辑文件时，该字段是文件的绝对路径；非文件提供方保留 `undefined`。Host 配置适配器据此派生可用性，而浏览器协议只暴露一个布尔能力，绝不暴露文件系统目标。
 - `prepareDocument()` — 让文档做好供原生编辑器打开的准备后返回该路径。基类实现返回 `documentPath`；文件提供方可先创建缺失的文档。
-- `register(ns, schema, { base?, applies? })` — 返回 owner 的 `SettingsScope`（`get`/`watch`/`update`）。注册是调用方插件 fiber 上的 effect：dispose（资源释放）该 fiber 即移除 namespace 及其观察者。schema 拒绝的存量分节会使注册本身失败；重复 namespace 立即报错。
+- `register(ns, schema, { base?, applies? })` — 返回 owner 的 `SettingsScope`（`get`/`watch`/`update`）。注册是调用方插件 fiber 上的 effect：dispose（资源释放）该 fiber 会把 scope 标为 inactive、移除 namespace 及其观察者、跳过尚未启动的 watcher 调用，并在返回前等待已启动的 watcher 调用结算。已 dispose 的 scope 会拒绝后续写入或 watcher；schema 拒绝的存量分节会使注册本身失败；重复 namespace 立即报错。
 - `describe()` — 每个 namespace 一条原样描述（`schema.toJSON()` 封装、解析值、分离出的 `base`/`user` 层、`applies`），供同进程消费方使用；字段出现在 `user` 中即标记其被用户覆盖。
 - `describeForWire(ns?)` — 唯一受支持的 wire 描述路径。它在序列化前证明完整 schema 图安全，从每个值层和 schema 默认值中剥离 `role('secret')` 字段，并附加 `secrets` slot 列表（`{ path, set }`）。union 或 intersection 下的 secret、任何 transform 或不受支持的 schema 节点会让 namespace 以不含值的错误被拒绝；选择 `ns` 可在持久化前完成写入预检。
 - `get(ns)` — 解析值；未注册时为 `undefined`。
@@ -17,7 +17,7 @@
 - `mutate(ns, ops)` — 在写入排到队首那一刻的分节上，按序施加 `{ op: 'set' | 'unset', path }` 编辑。这是任何持有**不完整**视图的调用方的删除路径：配置 UI 读到的是脱敏后的 descriptor，据此重建分节再整体替换，会把 wire 从未回传的每个机密都删掉，而一条 op 只点名它真正要改的那个字段。
 - 每次写入都可携带可选的 `expectedRevision`。每个 descriptor 都带有该 namespace 的 `revision`——一个针对其**原始**分节的单调计数器；期望值不再匹配的写入会以 `SettingsConflictError`（`code: 'SETTINGS_CONFLICT'`，并附上两个 revision）被拒绝，而不是覆盖先完成写入的写入方。写队列只保证写入的先后次序，它本身分辨不出持有新鲜快照的写入方与持有陈旧快照的写入方。
 - 解析值是深冻结快照。每次提交后观察者收到 `(next, prev)`：同一回调的调用异步、逐次、按提交顺序执行（慢的旧调用绝不会晚于较新的调用生效），异常——同步抛出与异步拒绝——均被隔离。watch 的 disposer 返回后不再启动新的调用（已排队的那一次会被跳过）；已启动的调用仍会结算。`settings/updated` 事件逐监听器扇出，一个抛错的 listener 不会饿死其余 listener；异步 listener 的拒绝会被隔离并记入日志，这正是 `INVARIANT` 编码的失败只从同步 listener 重新抛出的原因。
-- 服务卸载先拒绝新写入与观察者调用的启动，再排干全部排队写入与已启动的观察者调用后才完成；registrant fiber 在写入途中被 dispose 时，该写入仍到达存储，但不会提交，也不会通知任何人。
+- 服务卸载先拒绝新写入与观察者调用的启动，再排干全部排队写入与已启动的观察者调用后才完成。registrant fiber 在写入途中被 dispose 时，该写入仍到达存储；如果落地时另一个 registration 已经拥有该 namespace，该 owner 会从已提交的原始分节重新解析、推进 revision，并按自己的 watcher 规则通知。若替换 owner 拒绝该分节，则沿用 publish 路径的 last-good 告警行为，并保持替换 cache 不变。
 
 ## 提供方约定
 

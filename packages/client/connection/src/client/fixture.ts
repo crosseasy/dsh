@@ -9,7 +9,6 @@ import {
   createAssistantMessage,
   createToolResultMessage,
   createUserMessage,
-  isTokenDelta,
 } from '@deepseek-ai/dsh-llm/message'
 import { CallId } from '@deepseek-ai/dsh-llm/brand'
 import type {
@@ -30,7 +29,10 @@ import type {
 // wire-fabrication boundary (the schema layer's one-cast-point posture).
 import type { CommandId } from '@deepseek-ai/dsh-commands/brand'
 import type { CommandDescriptor, CommandExecution, CommandResult } from '@deepseek-ai/dsh-commands/types'
-import { deriveEventMessage, foldSurface } from '@deepseek-ai/dsh-session/surface'
+import { foldSurface } from '@deepseek-ai/dsh-session/surface'
+import { foldContextBreakdownProjection, foldContextPressureProjection, foldTokenUsageProjection } from '@deepseek-ai/dsh-token-meter/client'
+import { foldPlanProjection, foldPlanProjectionState } from '@deepseek-ai/dsh-plan-mode/client'
+import { foldSessionStatsProjection } from '@deepseek-ai/dsh-session-stats/client'
 import type {
   ApiProxy, ClientRequest, ClientResponse, HistoryEntry, HostFrame, MuxFrame, RpcReceipt,
   ModelProviderGroup, ModelSelection, RpcRequest, RpcResponse, RpcResult, ServerRequest, ServerResponse, SessionSummary,
@@ -744,44 +746,17 @@ function viewFor(event: SessionEvent, log: readonly SessionEvent[]): ToolEventVi
   return undefined
 }
 
-/**
- * Fixture parallel of the plan unit's lifecycle fold. The paired
- * `command/done` retains successful plan selections and drops failures;
- * `plan/mode` commits one. `wanted` is exposed for the prompt boundary (the
- * fixture's step/start parallel).
- */
-function foldPlan(log: readonly SessionEvent[]): { active: boolean; pending: boolean; wanted: boolean | null } {
-  let active = false
-  let wanted: boolean | null = null
-  let running: { commandId: unknown; wanted: boolean } | null = null
-  for (const event of log) {
-    const item = event as unknown as { type: string; data?: Record<string, unknown> }
-    if (item.type === 'command/run' && item.data?.['name'] === 'plan') {
-      const args = item.data['args']
-      if (typeof args !== 'string') continue
-      running = { commandId: item.data['commandId'], wanted: args.trim() !== 'off' }
-    } else if (item.type === 'command/done'
-      && item.data !== undefined
-      && running !== null
-      && item.data['commandId'] === running.commandId) {
-      wanted = item.data['kind'] === 'success' && running.wanted !== active ? running.wanted : null
-      running = null
-    } else if (item.type === 'plan/mode') {
-      active = item.data?.['active'] === true
-      wanted = null
-    }
-  }
-  const selected = running?.wanted ?? wanted
-  return { active, pending: selected !== null && selected !== active, wanted: selected }
+/** Product plan projection state plus the wire view used by fixture command boundaries. */
+function foldPlan(log: readonly SessionEvent[]): ReturnType<typeof foldPlanProjectionState> & { pending: boolean } {
+  const state = foldPlanProjectionState(log)
+  return { ...state, pending: foldPlanProjection(log).pending }
 }
 
 /** The plan projection's wire view over the full log. */
-function planViewOf(log: readonly SessionEvent[]): { active: boolean; pending: boolean } {
-  const plan = foldPlan(log)
-  return { active: plan.active, pending: plan.pending }
+function planViewOf(log: readonly SessionEvent[]): ReturnType<typeof foldPlanProjection> {
+  return foldPlanProjection(log)
 }
 
-/** Fixture parallel of the host's projection units: whole current values per key over the full log. */
 /** Fixture preset table (the host PermissionPresetService defaults). */
 const PERMISSION_PRESETS: Record<string, { sandbox: string; approval: string; description: string }> = {
   'workspace-write': { sandbox: 'workspace-write', approval: 'ask', description: 'Write inside the workspace and permitted temporary directories; wider retries require approval.' },
@@ -820,203 +795,15 @@ function permissionSelectOf(
   }
 }
 
-interface FixtureTokenUsageProjection {
-  uncachedInputTokens: number
-  outputTokens: number
-  cacheReadTokens: number
-  cacheWriteTokens: number
-}
-
-interface FixtureUsageSample {
-  turn: number
-  step: number
-  usage: TokenUsage
-}
-
-/** Read one provider usage sample from either durable carrier. */
-function usageSampleOf(event: SessionEvent): FixtureUsageSample | undefined {
-  const item = event as unknown as {
-    type: string
-    data: {
-      turn?: number
-      step?: number
-      usage?: TokenUsage
-      chunk?: { type?: string; usage?: TokenUsage }
-    }
-  }
-  const usage = item.type === 'assistant/chunk' && item.data.chunk?.type === 'usage'
-    ? item.data.chunk.usage
-    : item.type === 'assistant/message'
-      ? item.data.usage
-      : undefined
-  return usage === undefined || item.data.turn === undefined || item.data.step === undefined
-    ? undefined
-    : { turn: item.data.turn, step: item.data.step, usage }
-}
-
-/** Fixture parallel of token-meter's last-sample-replacing usage projection. */
-function tokenUsageOf(log: readonly SessionEvent[]): FixtureTokenUsageProjection {
-  const totals: FixtureTokenUsageProjection = {
-    uncachedInputTokens: 0,
-    outputTokens: 0,
-    cacheReadTokens: 0,
-    cacheWriteTokens: 0,
-  }
-  let last: {
-    turn: number
-    step: number
-    buckets: FixtureTokenUsageProjection
-  } | null = null
-  for (const event of log) {
-    const sample = usageSampleOf(event)
-    if (sample === undefined) continue
-    const buckets: FixtureTokenUsageProjection = {
-      uncachedInputTokens: sample.usage.inputTokens,
-      outputTokens: sample.usage.outputTokens,
-      cacheReadTokens: sample.usage.cacheReadTokens ?? 0,
-      cacheWriteTokens: sample.usage.cacheWriteTokens ?? 0,
-    }
-    const previous = last?.turn === sample.turn && last.step === sample.step
-      ? last.buckets
-      : undefined
-    totals.uncachedInputTokens += buckets.uncachedInputTokens - (previous?.uncachedInputTokens ?? 0)
-    totals.outputTokens += buckets.outputTokens - (previous?.outputTokens ?? 0)
-    totals.cacheReadTokens += buckets.cacheReadTokens - (previous?.cacheReadTokens ?? 0)
-    totals.cacheWriteTokens += buckets.cacheWriteTokens - (previous?.cacheWriteTokens ?? 0)
-    last = { turn: sample.turn, step: sample.step, buckets }
-  }
-  return totals
-}
-
-/** Fixture parallel of session-stats' whole-log counting and wall-time fold. */
-function sessionStatsOf(log: readonly SessionEvent[]): {
-  turns: number
-  steps: number
-  llmMs: number
-  toolMs: number
-  ttftMs: number
-  ttftSteps: number
-  decodeMs: number
-  decodeTokens: number
-} {
-  const value = { turns: 0, steps: 0, llmMs: 0, toolMs: 0, ttftMs: 0, ttftSteps: 0, decodeMs: 0, decodeTokens: 0 }
-  let lastTurn: number | null = null
-  let openStep: { turn: number; step: number; startTime: number; firstTokenTime: number | null } | null = null
-  const pendingCalls = new Map<string, number>()
-  for (const event of log) {
-    switch (event.type) {
-      case 'step/start':
-        openStep = { turn: event.data.turn, step: event.data.step, startTime: event.time, firstTokenTime: null }
-        break
-      case 'assistant/chunk':
-        if (openStep !== null && openStep.turn === event.data.turn && openStep.step === event.data.step
-          && openStep.firstTokenTime === null && isTokenDelta(event.data.chunk)) {
-          openStep.firstTokenTime = event.time
-        }
-        break
-      case 'assistant/message': {
-        if (openStep === null || openStep.turn !== event.data.turn || openStep.step !== event.data.step) break
-        value.llmMs += Math.max(0, event.time - openStep.startTime)
-        if (openStep.firstTokenTime !== null) {
-          value.ttftMs += Math.max(0, openStep.firstTokenTime - openStep.startTime)
-          value.ttftSteps += 1
-          const outputTokens = event.data.usage?.outputTokens
-          if (typeof outputTokens === 'number' && Number.isFinite(outputTokens) && outputTokens >= 0) {
-            value.decodeMs += Math.max(0, event.time - openStep.firstTokenTime)
-            value.decodeTokens += outputTokens
-          }
-        }
-        openStep = null
-        break
-      }
-      case 'tool/call':
-        pendingCalls.set(event.data.callId, event.time)
-        break
-      case 'tool/result': {
-        const callId = event.data.message.source.callId
-        const dispatched = pendingCalls.get(callId)
-        if (dispatched === undefined) break
-        pendingCalls.delete(callId)
-        value.toolMs += Math.max(0, event.time - dispatched)
-        break
-      }
-      case 'step/end':
-        if (event.data.turn !== lastTurn) {
-          value.turns += 1
-          lastTurn = event.data.turn
-        }
-        value.steps += 1
-        openStep = null
-        break
-      case 'turn/end':
-        pendingCalls.clear()
-        break
-      default:
-        break
-    }
-  }
-  return value
-}
+const tokenUsageOf = foldTokenUsageProjection
+const sessionStatsOf = foldSessionStatsProjection
+const contextBreakdownOf = foldContextBreakdownProjection
+const contextPressureOf = foldContextPressureProjection
 
 interface FixtureRequestContext {
   provider: string
   model: string
   contextWindow?: number
-}
-
-interface FixtureContextBreakdownProjection {
-  systemTokens: number
-  toolsTokens: number
-  messageTokens: number
-}
-
-/** Fixed token-meter heuristic constants mirrored by this client-only fixture. */
-const CHARS_PER_TOKEN = 4
-const BLOCK_OVERHEAD = 4
-const ROLE_OVERHEAD = 4
-
-/** Price fixture content with token-meter's fixed-density heuristic. */
-function estimateFixtureContent(blocks: readonly ContentBlock[]): number {
-  const densityPrice = (value: string): number => Math.ceil(value.length / CHARS_PER_TOKEN)
-  return blocks.reduce((tokens, block) => {
-    if (block.type === 'text' || block.type === 'reasoning') {
-      return tokens + densityPrice(block.text) + BLOCK_OVERHEAD
-    }
-    if (block.type === 'tool-call') {
-      return tokens + densityPrice(block.name) + densityPrice(block.arguments) + BLOCK_OVERHEAD
-    }
-    // ContentBlockMap is merge-extensible: this client graph sees only the
-    // base four members, but fixture turns do carry extended blocks at
-    // runtime, so the structural JSON fallback below is live code.
-    if (block.type === 'tool-result') {
-      return tokens + estimateFixtureContent(block.content) + BLOCK_OVERHEAD
-    }
-    return tokens + densityPrice(JSON.stringify(block)) + BLOCK_OVERHEAD
-  }, 0)
-}
-
-/** Fixture parallel of token-meter's heuristic context-composition projection. */
-function contextBreakdownOf(log: readonly SessionEvent[]): FixtureContextBreakdownProjection {
-  const headerEvent = log.findLast(event => event.type === 'request/header')
-  const header = headerEvent === undefined
-    ? undefined
-    : headerEvent.data.header
-  let messageTokens = 0
-  for (const seq of foldSurface(log).nodes) {
-    const event = log[seq]
-    if (event === undefined) continue
-    const message = deriveEventMessage(event)
-    if (message !== null) messageTokens += estimateFixtureContent(message.content) + ROLE_OVERHEAD
-  }
-  return {
-    systemTokens: header?.system === undefined
-      ? 0
-      : Math.ceil(header.system.length / CHARS_PER_TOKEN) + ROLE_OVERHEAD,
-    toolsTokens: header?.tools === undefined || header.tools.length === 0
-      ? 0
-      : Math.ceil(JSON.stringify(header.tools).length / CHARS_PER_TOKEN) + BLOCK_OVERHEAD,
-    messageTokens,
-  }
 }
 
 /** Latest log-only route context, or undefined before any request ran. */
@@ -1029,31 +816,8 @@ function lastRequestContext(
     : (event as unknown as { data: FixtureRequestContext }).data
 }
 
-/**
- * Fixture parallel of token-meter's request-pressure projection: the last
- * provider-reported prompt size paired with the last recorded capacity. The
- * two need not come from one request — see the token-meter README. The host's
- * `projectedTokens` is deliberately absent: reproducing it would mean
- * reimplementing the estimator client-side, and every consumer falls back to
- * the bare sample, so a fixture-driven view simply lags a compaction the way
- * the projection did before that field existed.
- */
-function contextPressureOf(
-  log: readonly SessionEvent[],
-): { pressureTokens?: number; contextWindow?: number } {
-  let pressureTokens: number | undefined
-  for (const event of log) {
-    const sample = usageSampleOf(event)
-    if (sample === undefined) continue
-    pressureTokens = sample.usage.inputTokens
-      + (sample.usage.cacheReadTokens ?? 0)
-      + (sample.usage.cacheWriteTokens ?? 0)
-  }
-  const contextWindow = lastRequestContext(log)?.contextWindow
-  return {
-    ...pressureTokens === undefined ? {} : { pressureTokens },
-    ...contextWindow === undefined ? {} : { contextWindow },
-  }
+function sameProjectionValue(left: unknown, right: unknown): boolean {
+  return JSON.stringify(left) === JSON.stringify(right)
 }
 
 function projectionValuesOf(log: readonly SessionEvent[]): Record<string, unknown> {
@@ -1062,27 +826,14 @@ function projectionValuesOf(log: readonly SessionEvent[]): Record<string, unknow
   if (titleEvent !== undefined) {
     values['title'] = (titleEvent as unknown as { data: { title: string } }).data.title
   }
-  // Always present (tool-todo unit composed): null when no plan stands.
   values['todos'] = backscanTodos(log) ?? null
-  // Always present (permission service composed): the whole select.
   values['permissions'] = permissionSelectOf(log)
-  // Always present (plan-mode unit composed): the {active, pending} view.
   values['plan'] = planViewOf(log)
-  // Always present (GoalService unit composed): null before create / after clear.
   values['goal'] = backscanGoal(log)
-  // Always present (token-meter composed): full-log provider billing.
   values['tokenUsage'] = tokenUsageOf(log)
-  // Always present (token-meter composed): last request pressure and capacity.
   values['contextPressure'] = contextPressureOf(log)
-  // Always present (token-meter composed): heuristic request composition.
   values['contextBreakdown'] = contextBreakdownOf(log)
-  // Always present (session-stats unit composed): whole-log turn/step counts.
   values['sessionStats'] = sessionStatsOf(log)
-  // Always present (attachment service composed): the deployment image
-  // limits, constant per boot (mirrors the attachment-local defaults).
-  // Deliberate host divergence: the real gateway never pushes an imageLimits
-  // change frame (constant unit), but the fixture's uniform baseline replay
-  // frames every key here, incidentally exercising higher-seq-wins.
   values['imageLimits'] = {
     maxImageBytes: 5 * 1024 * 1024,
     maxImagesPerMessage: 20,
@@ -1094,48 +845,36 @@ function projectionValuesOf(log: readonly SessionEvent[]): Record<string, unknow
   return values
 }
 
-/** Host push-frame parallel: emit one session/projection frame per key the given event advanced. */
+type ProductProjectionKey = 'plan' | 'tokenUsage' | 'contextPressure' | 'contextBreakdown' | 'sessionStats'
+
+function productProjectionValueOf(key: ProductProjectionKey, log: readonly SessionEvent[]): unknown {
+  switch (key) {
+    case 'plan':
+      return planViewOf(log)
+    case 'tokenUsage':
+      return tokenUsageOf(log)
+    case 'contextPressure':
+      return contextPressureOf(log)
+    case 'contextBreakdown':
+      return contextBreakdownOf(log)
+    case 'sessionStats':
+      return sessionStatsOf(log)
+    default:
+      return key satisfies never
+  }
+}
+
+/** Host push-frame parallel: emit one session/projection frame per key whose product fold wire view changed. */
 function projectionFramesOf(id: SessionId, log: readonly SessionEvent[], event: SessionEvent): Extract<MuxFrame, { type: 'session/projection' }>[] {
   const type = (event as { type: string }).type
   const frames: Extract<MuxFrame, { type: 'session/projection' }>[] = []
-  // One usage sample advances both token-meter units.
-  if (usageSampleOf(event) !== undefined) {
-    frames.push(
-      { type: 'session/projection', sessionId: id, key: 'tokenUsage', value: tokenUsageOf(log), seq: event.seq },
-      { type: 'session/projection', sessionId: id, key: 'contextPressure', value: contextPressureOf(log), seq: event.seq },
-    )
-  }
-  if (type === 'request/context') {
-    frames.push({
-      type: 'session/projection',
-      sessionId: id,
-      key: 'contextPressure',
-      value: contextPressureOf(log),
-      seq: event.seq,
-    })
-  }
-  if (type === 'request/header'
-    || type === 'user/message'
-    || type === 'assistant/message'
-    || type === 'tool/result') {
-    frames.push({
-      type: 'session/projection',
-      sessionId: id,
-      key: 'contextBreakdown',
-      value: contextBreakdownOf(log),
-      seq: event.seq,
-    })
-  }
-  // The stats fold's view advances on message assembly and tool settlement
-  // (wall times) and on step close (counts).
-  if (type === 'assistant/message' || type === 'tool/result' || type === 'step/end') {
-    frames.push({
-      type: 'session/projection',
-      sessionId: id,
-      key: 'sessionStats',
-      value: sessionStatsOf(log),
-      seq: event.seq,
-    })
+  const index = log.indexOf(event)
+  const previousLog = log.slice(0, index < 0 ? event.seq : index)
+  for (const key of ['plan', 'tokenUsage', 'contextPressure', 'contextBreakdown', 'sessionStats'] as const) {
+    const value = productProjectionValueOf(key, log)
+    if (!sameProjectionValue(productProjectionValueOf(key, previousLog), value)) {
+      frames.push({ type: 'session/projection', sessionId: id, key, value, seq: event.seq })
+    }
   }
   if (frames.length > 0) return frames
   if (type === 'session/title') {

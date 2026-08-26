@@ -6,551 +6,1565 @@ source:
     file: README.zh-CN.md
   matrix: docs/plugin/superpowers/02-插件矩阵与择优.md
 candidates:
-  - id: dsh-toolkit
-    priority: P0
-    capability: deterministic-tools
-    repository: https://github.com/dsh-external/dsh-toolkit
-    repositoryPath: null
-    commit: 2113d11a4e4510720251aa49a800bab917b14330
-    auditedAt: "2026-08-25"
-    manifestPath: package.json
-    expectedPackage: "@deepseek-ai/dsh-toolkit"
-    nodeEngine: "^22.19.0 || >=24.0.0"
-    license: MIT
-    bundlePatch: ./cordis.patch.yml
-    testFiles: 43
-    ciWorkflows: 0
-    installScripts: {}
-    externalDependencies: []
-    networkAccess: []
-    credentials: []
-    targetProfiles: [web-curated]
-    active: true
-    auditWarnings: []
-    rejections: []
-  - id: dsh-context
-    priority: P0
-    capability: context-observability
-    repository: https://github.com/bowenliang123/dsh-context
-    repositoryPath: null
-    commit: 8531298303ff0014bd732802d69a98a1397ebea7
-    auditedAt: "2026-08-25"
-    manifestPath: package.json
-    expectedPackage: dsh-context
-    nodeEngine: null
-    license: Apache-2.0
-    bundlePatch: ./cordis.patch.yml
-    testFiles: 19
-    ciWorkflows: 2
-    installScripts: {}
-    externalDependencies: []
-    networkAccess: []
-    credentials: []
-    targetProfiles: [web-curated]
-    active: true
-    auditWarnings:
-      - package manifest does not declare engines.node; no incompatible engine was observed in read-only metadata
-    rejections: []
-  - id: dsh-web-search-pro
-    priority: P0
-    capability: web-search
-    repository: https://github.com/anweat/dsh-web-search-pro
-    repositoryPath: null
-    commit: 4274ab148d926060a4e5e1399ac9e87894ed1a83
-    auditedAt: "2026-08-25"
-    manifestPath: package.json
-    expectedPackage: dsh-web-search-pro
-    nodeEngine: "^22.19 || >=24"
-    license: MIT
-    bundlePatch: ./cordis.patch.yml
-    testFiles: 5
-    ciWorkflows: 1
-    installScripts:
-      prepare: pnpm run build
-    externalDependencies: [cross-spawn, js-yaml, jsdom]
-    networkAccess: [web-search-engines, rendered-web-fetch]
-    credentials: [optional-search-provider-keys]
-    targetProfiles: [web-curated]
-    active: true
-    auditWarnings:
-      - package declares a prepare script; audit recorded it but did not execute it
-    rejections: []
-  - id: dsh-memento
-    priority: P0
-    capability: memory
-    repository: https://github.com/PerryLink/dsh-memento
-    repositoryPath: null
-    commit: ee198efd71dc60f5cd1cd2019e20c63028d2d182
-    auditedAt: "2026-08-25"
-    manifestPath: package.json
-    expectedPackage: dsh-memento
-    nodeEngine: "^22.19.0 || >=24.0.0"
-    license: Apache-2.0
-    bundlePatch: ./cordis.patch.yml
-    testFiles: 15
-    ciWorkflows: 3
-    installScripts: {}
-    externalDependencies: []
-    networkAccess: []
-    credentials: []
-    targetProfiles: [web-curated]
-    active: true
-    auditWarnings: []
-    rejections: []
-  - id: dsh-mcp-panel
-    priority: P0
-    capability: mcp-management
-    repository: https://github.com/PerryLink/dsh-mcp-panel
-    repositoryPath: null
-    commit: da7ee900539a0bcb65e0c40b94376f9f4334008d
-    auditedAt: "2026-08-25"
-    manifestPath: package.json
-    expectedPackage: dsh-mcp-panel
-    nodeEngine: "^22.19.0 || >=24.0.0"
-    license: Apache-2.0
-    bundlePatch: ./cordis.patch.yml
-    testFiles: 16
-    ciWorkflows: 3
-    installScripts:
-      prepare: node scripts/prepare.mjs
-    externalDependencies: [tsdown, typescript, zod]
-    networkAccess: [configured-mcp-servers]
-    credentials: [mcp-server-credentials]
-    targetProfiles: [web-curated]
-    active: true
-    auditWarnings:
-      - package declares a prepare script; audit recorded it but did not execute it
-    rejections: []
-  - id: dsh-checkpoint-rewind
-    priority: P0
-    capability: checkpoint-rollback
-    repository: https://github.com/PerryLink/dsh-checkpoint-rewind
-    repositoryPath: null
-    commit: 377174b99200ea2f004f03f679f39515505c38f3
-    auditedAt: "2026-08-25"
-    manifestPath: package.json
-    expectedPackage: dsh-checkpoint-rewind
-    nodeEngine: "^22.19.0 || >=24.0.0"
-    license: Apache-2.0
-    bundlePatch: ./cordis.patch.yml
-    testFiles: 17
-    ciWorkflows: 3
-    installScripts: {}
-    externalDependencies: [zod]
-    networkAccess: []
-    credentials: []
-    targetProfiles: [web-curated]
-    active: true
-    auditWarnings: []
-    rejections: []
-  - id: dsh-lsp-actions
-    priority: P0
-    capability: lsp-actions
-    repository: https://github.com/PerryLink/dsh-lsp-actions
-    repositoryPath: null
-    commit: f86d45c10ce248ae4d0d30118354e3ff07432b0e
-    auditedAt: "2026-08-25"
-    manifestPath: package.json
-    expectedPackage: dsh-lsp-actions
-    nodeEngine: "^22.19.0 || >=24.0.0"
-    license: Apache-2.0
-    bundlePatch: ./cordis.patch.yml
-    testFiles: 18
-    ciWorkflows: 3
-    installScripts:
-      prepare: tsc --noEmitOnError && node scripts/fix-dts.mjs
-    externalDependencies: []
-    networkAccess: []
-    credentials: []
-    targetProfiles: [web-curated]
-    active: true
-    auditWarnings:
-      - package declares a prepare script; audit recorded it but did not execute it
-    rejections: []
-  - id: dsh-permission-rules
-    priority: P0
-    capability: permission-policy
-    repository: https://github.com/PerryLink/dsh-permission-rules
-    repositoryPath: null
-    commit: 36984920b1bfad1d542d1e937f7c99df8d1d848c
-    auditedAt: "2026-08-25"
-    manifestPath: package.json
-    expectedPackage: dsh-permission-rules
-    nodeEngine: "^22.19.0 || >=24.0.0"
-    license: Apache-2.0
-    bundlePatch: ./cordis.patch.yml
-    testFiles: 20
-    ciWorkflows: 3
-    installScripts:
-      prepare: node scripts/prepare.mjs
-    externalDependencies: [chokidar, tsdown, typescript, yaml, zod]
-    networkAccess: []
-    credentials: []
-    targetProfiles: [web-curated]
-    active: true
-    auditWarnings:
-      - package declares a prepare script; audit recorded it but did not execute it
-    rejections: []
-  - id: loongsuite-dsh-plugin
-    priority: P0
-    capability: otel-telemetry
-    repository: https://github.com/loongsuite/dsh-plugin
-    repositoryPath: null
-    commit: 5e893af6172beb703a98b56ccc5e443495287732
-    auditedAt: "2026-08-25"
-    manifestPath: package.json
-    expectedPackage: "@loongsuite/dsh-plugin"
-    nodeEngine: ">=22.19.0"
-    license: Apache-2.0
-    bundlePatch: ./cordis.patch.yml
-    testFiles: 7
-    ciWorkflows: 1
-    installScripts: {}
-    externalDependencies:
-      - "@loongsuite/otel-util-genai"
-      - "@opentelemetry/api"
-      - "@opentelemetry/exporter-metrics-otlp-proto"
-      - "@opentelemetry/exporter-trace-otlp-proto"
-      - "@opentelemetry/resources"
-      - "@opentelemetry/sdk-metrics"
-      - "@opentelemetry/sdk-trace-base"
-      - "@opentelemetry/semantic-conventions"
-    networkAccess: [otlp-export]
-    credentials: [otel-exporter-headers]
-    targetProfiles: [web-curated, web-enterprise]
-    active: true
-    auditWarnings: []
-    rejections: []
-  - id: dsh-config-manager
-    priority: P0
-    capability: config-backup-import
-    repository: https://github.com/xiajiajun516/dsh-config-manager
-    repositoryPath: null
-    commit: 9461261258eec98f3861737128aae4f75c5c9161
-    auditedAt: "2026-08-25"
-    manifestPath: package.json
-    expectedPackage: dsh-config-manager
-    nodeEngine: "^22.19.0 || >=24.0.0"
-    license: MIT
-    bundlePatch: ./cordis.patch.yml
-    testFiles: 18
-    ciWorkflows: 1
-    installScripts: {}
-    externalDependencies: [js-yaml]
-    networkAccess: []
-    credentials: []
-    targetProfiles: [web-curated]
-    active: true
-    auditWarnings: []
-    rejections: []
-  - id: dsh-smooth-stream
-    priority: P1
-    capability: stream-rendering
-    repository: https://github.com/Laplace-bit/dsh-smooth-stream
-    repositoryPath: null
-    commit: b8c5eefc1584a5a1d69116a0b038acd2abc4adb6
-    auditedAt: "2026-08-25"
-    manifestPath: package.json
-    expectedPackage: dsh-smooth-stream
-    nodeEngine: "^22.19.0 || >=24.0.0"
-    license: MIT
-    bundlePatch: ./cordis.patch.yml
-    testFiles: 4
-    ciWorkflows: 0
-    installScripts:
-      prepare: tsdown
-    externalDependencies: []
-    networkAccess: []
-    credentials: []
-    targetProfiles: [web-curated]
-    active: true
-    auditWarnings:
-      - package declares a prepare script; audit recorded it but did not execute it
-    rejections: []
-  - id: upstream-radar
-    priority: P1
-    capability: supply-chain-monitoring
-    repository: https://github.com/MicroMilo/upstream-radar
-    repositoryPath: null
-    commit: e02ca9568d256a5f19c1282b8c95a9844c84aa82
-    auditedAt: "2026-08-25"
-    manifestPath: package.json
-    expectedPackage: upstream-radar
-    nodeEngine: ">=22"
-    license: Apache-2.0
-    bundlePatch: ./cordis.patch.yml
-    testFiles: 58
-    ciWorkflows: 8
-    installScripts: {}
-    externalDependencies: []
-    networkAccess: [osv-api, npm-registry, github-api]
-    credentials: [optional-github-token]
-    targetProfiles: [web-curated, web-enterprise]
-    active: true
-    auditWarnings: []
-    rejections: []
-  - id: dsh-plugin-hub
-    priority: P1
-    capability: plugin-marketplace
-    repository: https://github.com/Noob-stupid/dsh-plugin-hub
-    repositoryPath: null
-    commit: 28c06d69843df0e1bd08184c5671f2b182a31657
-    auditedAt: "2026-08-25"
-    manifestPath: package.json
-    expectedPackage: "@noob-stupid/dsh-plugin-console"
-    nodeEngine: null
-    license: MIT
-    bundlePatch: ./cordis.patch.yml
-    testFiles: 0
-    ciWorkflows: 1
-    installScripts: {}
-    externalDependencies: []
-    networkAccess: [plugin-index, package-registry]
-    credentials: []
-    targetProfiles: [web-curated]
-    active: true
-    auditWarnings:
-      - package manifest does not declare engines.node; no incompatible engine was observed in read-only metadata
-      - read-only metadata found no test files; matrix notes external acceptance is required
-    rejections: []
-  - id: plugin-session-export
-    priority: P1
-    capability: session-export
-    repository: https://github.com/whyihaveyou/dsh-suite
-    repositoryPath: packages/plugins/plugin-session-export
-    commit: acf9d2d960d2b9ac6ae8569a68836a087c2154ee
-    auditedAt: "2026-08-25"
-    manifestPath: packages/plugins/plugin-session-export/package.json
-    expectedPackage: "@dsh-suite/plugin-session-export"
-    nodeEngine: null
-    license: MIT
-    bundlePatch: ./cordis.patch.yml
-    testFiles: 0
-    ciWorkflows: 0
-    installScripts: {}
-    externalDependencies: []
-    networkAccess: []
-    credentials: []
-    targetProfiles: [web-curated]
-    active: true
-    auditWarnings:
-      - package manifest does not declare engines.node; no incompatible engine was observed in read-only metadata
-      - shallow metadata was gathered from a monorepo subpath; CI and test counts are subpath-local
-    rejections: []
-  - id: dsh-better-sidebar
-    priority: P1
-    capability: dashboard-sidebar
-    repository: https://github.com/dsh-external/DSH-better-sidebar
-    repositoryPath: null
-    commit: f9153dfc1ce47cf43445c1b351ee3ae47b4ad9f1
-    auditedAt: "2026-08-25"
-    manifestPath: package.json
-    expectedPackage: dsh-better-sidebar
-    nodeEngine: ">=20"
-    license: MIT
-    bundlePatch: ./cordis.patch.yml
-    testFiles: 99
-    ciWorkflows: 2
-    installScripts:
-      prepare: tsdown
-    externalDependencies:
-      - "@codemirror/commands"
-      - "@codemirror/language"
-      - "@codemirror/view"
-      - dompurify
-      - mermaid
-      - node-pty
-      - react-icons
-      - rxjs
-      - schemastery
-      - ws
-    networkAccess: [embedded-terminal, browser-tab]
-    credentials: []
-    targetProfiles: [web-coding]
-    active: true
-    auditWarnings:
-      - GitHub API tree enumeration hit a rate limit; test and CI counts were taken from the planning matrix
-      - package declares a prepare script; audit recorded it but did not execute it
-    rejections: []
-  - id: dsh-agent-team-gui
-    priority: P2
-    capability: multi-agent-orchestration
-    repository: https://github.com/toolclub/dsh-agent-team-gui
-    repositoryPath: null
-    commit: e3997ce798e495ad8051b95c4e96920780c96aed
-    auditedAt: "2026-08-25"
-    manifestPath: package.json
-    expectedPackage: dsh-agent-team-gui
-    nodeEngine: "^22.19.0 || >=24.0.0"
-    license: MIT
-    bundlePatch: ./cordis.patch.yml
-    testFiles: 11
-    ciWorkflows: 2
-    installScripts:
-      prepare: pnpm run build
-    externalDependencies: [react, zod]
-    networkAccess: []
-    credentials: []
-    targetProfiles: [web-coding]
-    active: true
-    auditWarnings:
-      - package declares a prepare script; audit recorded it but did not execute it
-    rejections: []
-  - id: dsh-background-agents
-    priority: P2
-    capability: background-agents
-    repository: https://github.com/PerryLink/dsh-background-agents
-    repositoryPath: null
-    commit: 1cc6c8e614555901bbaae09d58530df321a7287b
-    auditedAt: "2026-08-25"
-    manifestPath: package.json
-    expectedPackage: dsh-background-agents
-    nodeEngine: "^22.19.0 || >=24.0.0"
-    license: Apache-2.0
-    bundlePatch: ./cordis.patch.yml
-    testFiles: 11
-    ciWorkflows: 2
-    installScripts: {}
-    externalDependencies: [zod]
-    networkAccess: []
-    credentials: []
-    targetProfiles: [web-coding]
-    active: true
-    auditWarnings: []
-    rejections: []
-  - id: dsh-computer-use
-    priority: P2
-    capability: browser-computer-use
-    repository: https://github.com/ZRui-C/dsh-computer-use
-    repositoryPath: null
-    commit: 0b0a0844018b56a6a8e95aefea6529004b8341c4
-    auditedAt: "2026-08-25"
-    manifestPath: package.json
-    expectedPackage: dsh-computer-use
-    nodeEngine: ">=22"
-    license: Apache-2.0
-    bundlePatch: ./cordis.patch.yml
-    testFiles: 22
-    ciWorkflows: 3
-    installScripts:
-      prepare: npm run build:ts
-    externalDependencies: [playwright-core]
-    networkAccess: [browser-automation, optional-native-helper-download]
-    credentials: []
-    targetProfiles: [web-research]
-    active: true
-    auditWarnings:
-      - GitHub API tree enumeration hit a rate limit; test and CI counts were taken from the planning matrix
-      - package declares a prepare script; audit recorded it but did not execute it
-    rejections: []
-  - id: dsh-vision-router
-    priority: P2
-    capability: vision-routing
-    repository: https://github.com/ysr666/dsh-vision-router
-    repositoryPath: null
-    commit: 7ec4c403a1b41236944258bdf2544f27a47baff6
-    auditedAt: "2026-08-25"
-    manifestPath: package.json
-    expectedPackage: dsh-vision-router
-    nodeEngine: "^22.19.0 || >=24.0.0"
-    license: MIT
-    bundlePatch: ./cordis.patch.yml
-    testFiles: 93
-    ciWorkflows: 5
-    installScripts: {}
-    externalDependencies: [potrace, puppeteer-core, undici]
-    networkAccess: [vision-provider-api, optional-anonymous-vision-fallback]
-    credentials: [optional-vision-provider-keys]
-    targetProfiles: [web-research]
-    active: true
-    auditWarnings:
-      - GitHub API tree enumeration hit a rate limit; test and CI counts were taken from the planning matrix
-      - enterprise profile must disable anonymous vision fallback before activation
-    rejections: []
-  - id: dsh-llm-fallbacks
-    priority: P2
-    capability: llm-fallbacks
-    repository: https://github.com/dsh-external/dsh-llm-fallbacks
-    repositoryPath: null
-    commit: 0de6c180d394ff5c891dc8ef9935a22a3a5909ff
-    auditedAt: "2026-08-25"
-    manifestPath: package.json
-    expectedPackage: dsh-llm-fallbacks
-    nodeEngine: ">=22"
-    license: null
-    bundlePatch: ./bundle/cordis.patch.yml
-    testFiles: 41
-    ciWorkflows: 3
-    installScripts:
-      prepare: pnpm run build
-    externalDependencies: [use-sync-external-store]
-    networkAccess: [configured-llm-providers]
-    credentials: [llm-provider-credentials]
-    targetProfiles: []
-    active: false
-    auditWarnings:
-      - GitHub API tree enumeration hit a rate limit; test and CI counts were taken from the planning matrix
-      - package declares a prepare script; audit recorded it but did not execute it
-    rejections:
-      - code: license-unclear
-        evidence: package.json at 0de6c180d394ff5c891dc8ef9935a22a3a5909ff has no license field and API license metadata was unavailable after rate limiting
-  - id: dsh-univer-office
-    priority: P2
-    capability: office-documents
-    repository: https://github.com/dream-num/dsh-univer-office
-    repositoryPath: null
-    commit: 362056c735ba0b234fe657cf4bb7a34508055574
-    auditedAt: "2026-08-25"
-    manifestPath: package.json
-    expectedPackage: dsh-univer-office
-    nodeEngine: ">=22.19.0"
-    license: Apache-2.0
-    bundlePatch: ./cordis.patch.yml
-    testFiles: 4
-    ciWorkflows: 2
-    installScripts:
-      prepare: simple-git-hooks
-    externalDependencies:
-      - "@puppeteer/browsers"
-      - "@univerjs-pro/cli-assets"
-      - "@univerjs-pro/engine-formula-rust-binding"
-      - "@univerjs-pro/exchange-node-binding"
-      - libsql
-      - puppeteer-core
-    networkAccess: [optional-browser-download, office-collaboration-gateway]
-    credentials: [optional-univer-license]
-    targetProfiles: [web-enterprise]
-    active: true
-    auditWarnings:
-      - GitHub API tree enumeration hit a rate limit; CI count was taken from the planning matrix
-      - package declares a prepare script; audit recorded it but did not execute it
-    rejections: []
-  - id: dsh-feishu
-    priority: P2
-    capability: feishu-channel
-    repository: https://github.com/PGZXB/dsh-feishu
-    repositoryPath: null
-    commit: ff1ebbf646c831639de158a66212f43aceb2b825
-    auditedAt: "2026-08-25"
-    manifestPath: package.json
-    expectedPackage: "@dsh-feishu/dsh-feishu"
-    nodeEngine: ">=22.13"
-    license: MIT
-    bundlePatch: ./cordis.patch.yml
-    testFiles: 44
-    ciWorkflows: 4
-    installScripts: {}
-    externalDependencies:
-      - "@larksuiteoapi/node-sdk"
-      - axios
-      - js-yaml
-      - markdown-it
-      - qrcode-terminal
-    networkAccess: [feishu-api, websocket-cards]
-    credentials: [feishu-app-id, feishu-app-secret, feishu-user-token]
-    targetProfiles: [web-enterprise]
-    active: true
-    auditWarnings:
-      - GitHub API tree enumeration hit a rate limit; test and CI counts were taken from the planning matrix
-      - full IM content egress requires a separate threat model before activation
-    rejections: []
+- id: dsh-toolkit
+  priority: P0
+  capability: deterministic-tools
+  score: 88
+  scoreDimensions: &id001
+    nativeCompatibility: 18
+    functionalCompleteness: 14
+    testAndCi: 14
+    securityAndPrivacy: 14
+    maintenanceHealth: 8
+    performanceCost: 8
+    operability: 8
+    communitySignal: 4
+  repository: https://github.com/omdsh-dev/dsh-toolkit
+  repositoryPath: null
+  commit: 2113d11a4e4510720251aa49a800bab917b14330
+  sourceStatus: verified
+  auditedAt: '2026-08-26'
+  manifestPath: package.json
+  expectedPackage: '@deepseek-ai/dsh-toolkit'
+  nodeEngine: ^22.19.0 || >=24.0.0
+  nodeEngineEvidence: package.json#engines.node
+  requiresCorePatch: false
+  license: MIT
+  bundlePatch: ./cordis.patch.yml
+  tarballSha256: 886d8b222e7569f1adb627bcdb6ec2a82a19ee2310b39528da8a0afbea11cc65
+  testFiles: 43
+  ciWorkflows: 0
+  installScripts: {}
+  externalDependencies: []
+  networkAccess: []
+  credentials: []
+  targetProfiles:
+  - web-curated
+  - web-coding
+  - web-research
+  - web-enterprise
+  active: true
+  auditWarnings: []
+  resources:
+    entryIds:
+    - dsh-toolkit
+    toolNames:
+    - toolkit_read
+    - toolkit_write
+    commandNames:
+    - toolkit:inspect
+  rejections: []
+- id: dsh-context
+  priority: P0
+  capability: context-compression
+  score: 86
+  scoreDimensions: &id003
+    nativeCompatibility: 18
+    functionalCompleteness: 14
+    testAndCi: 14
+    securityAndPrivacy: 14
+    maintenanceHealth: 8
+    performanceCost: 8
+    operability: 7
+    communitySignal: 3
+  repository: https://github.com/bowenliang123/dsh-context
+  repositoryPath: null
+  commit: 8531298303ff0014bd732802d69a98a1397ebea7
+  sourceStatus: verified
+  auditedAt: '2026-08-26'
+  manifestPath: package.json
+  expectedPackage: dsh-context
+  nodeEngine: null
+  nodeEngineEvidence: null
+  requiresCorePatch: false
+  license: Apache-2.0
+  bundlePatch: ./cordis.patch.yml
+  tarballSha256: 86d8fa1fa2e58d87d634b3feca8803377de6d23c7b56acc61988186ad3000ca5
+  testFiles: 19
+  ciWorkflows: 2
+  installScripts: {}
+  externalDependencies: []
+  networkAccess: []
+  credentials: []
+  targetProfiles: []
+  active: false
+  auditWarnings:
+  - package manifest and repository do not declare a supported Node version
+  resources:
+    entryIds:
+    - dsh-context
+    commandNames:
+    - context:report
+  rejections:
+  - code: node-compatibility-unverified
+    evidence: no engines.node, .nvmrc, .node-version, or equivalent pinned runtime evidence was found
+- id: dsh-web-search-pro
+  priority: P0
+  capability: web-search
+  score: 87
+  scoreDimensions: &id002
+    nativeCompatibility: 18
+    functionalCompleteness: 14
+    testAndCi: 14
+    securityAndPrivacy: 14
+    maintenanceHealth: 8
+    performanceCost: 8
+    operability: 8
+    communitySignal: 3
+  repository: https://github.com/anweat/dsh-web-search-pro
+  repositoryPath: null
+  commit: 4274ab148d926060a4e5e1399ac9e87894ed1a83
+  sourceStatus: verified
+  auditedAt: '2026-08-26'
+  manifestPath: package.json
+  expectedPackage: dsh-web-search-pro
+  nodeEngine: ^22.19 || >=24
+  nodeEngineEvidence: package.json#engines.node
+  requiresCorePatch: false
+  license: MIT
+  bundlePatch: ./cordis.patch.yml
+  tarballSha256: 68324bd86b5fb64b915e671fb0d3b69d9b0e25f2c227d269d4f1d5f3000676c4
+  testFiles: 5
+  ciWorkflows: 1
+  installScripts:
+    prepare: pnpm run build
+  externalDependencies:
+  - cross-spawn
+  - js-yaml
+  - jsdom
+  networkAccess:
+  - web-search-engines
+  - rendered-web-fetch
+  credentials:
+  - optional-search-provider-keys
+  targetProfiles:
+  - web-curated
+  - web-coding
+  - web-research
+  - web-enterprise
+  active: true
+  auditWarnings:
+  - package declares a prepare script; audit recorded it but did not execute it
+  resources:
+    entryIds:
+    - dsh-web-search-pro
+    toolNames:
+    - web_search
+    serviceKeys:
+    - web
+    cacheDirs:
+    - cache/web-search-pro
+    envVars:
+    - DEEPSEEK_SEARCH_API_KEY
+  rejections: []
+- id: dsh-memento
+  priority: P0
+  capability: memory
+  score: 88
+  scoreDimensions: *id001
+  repository: https://github.com/PerryLink/dsh-memento
+  repositoryPath: null
+  commit: ee198efd71dc60f5cd1cd2019e20c63028d2d182
+  sourceStatus: verified
+  auditedAt: '2026-08-26'
+  manifestPath: package.json
+  expectedPackage: dsh-memento
+  nodeEngine: ^22.19.0 || >=24.0.0
+  nodeEngineEvidence: package.json#engines.node
+  requiresCorePatch: false
+  license: Apache-2.0
+  bundlePatch: ./cordis.patch.yml
+  tarballSha256: 94459521c229cfe869c675f7fc9e31edfc690200a77e932fd37b8d42d60595e5
+  testFiles: 15
+  ciWorkflows: 3
+  installScripts: {}
+  externalDependencies: []
+  networkAccess: []
+  credentials: []
+  targetProfiles:
+  - web-curated
+  - web-coding
+  - web-research
+  - web-enterprise
+  active: true
+  auditWarnings: []
+  resources:
+    entryIds:
+    - memento
+    toolNames:
+    - memento_read
+    - memento_write
+    sqlitePaths:
+    - state/memento.sqlite
+    cacheDirs:
+    - cache/memento
+    automationBehaviors:
+    - auto-memory
+  rejections: []
+  config:
+    entryId: memento
+    values:
+      writePolicy: ask
+      writePolicies: {}
+      proposals:
+        enabled: false
+        maxChars: 2000
+        maxPending: 8
+- id: dsh-mcp-panel
+  priority: P0
+  capability: mcp-management
+  score: 87
+  scoreDimensions: *id002
+  repository: https://github.com/PerryLink/dsh-mcp-panel
+  repositoryPath: null
+  commit: da7ee900539a0bcb65e0c40b94376f9f4334008d
+  sourceStatus: verified
+  auditedAt: '2026-08-26'
+  manifestPath: package.json
+  expectedPackage: dsh-mcp-panel
+  nodeEngine: ^22.19.0 || >=24.0.0
+  nodeEngineEvidence: package.json#engines.node
+  requiresCorePatch: false
+  license: Apache-2.0
+  bundlePatch: ./cordis.patch.yml
+  tarballSha256: a60ec3ae0827a38e685115542cf478ced6d11aa4b4dbe0517ad2dcb13aa8c557
+  testFiles: 16
+  ciWorkflows: 3
+  installScripts:
+    prepare: node scripts/prepare.mjs
+  externalDependencies:
+  - tsdown
+  - typescript
+  - zod
+  networkAccess:
+  - configured-mcp-servers
+  credentials:
+  - mcp-server-credentials
+  targetProfiles:
+  - web-curated
+  - web-coding
+  - web-research
+  - web-enterprise
+  active: true
+  auditWarnings:
+  - package declares a prepare script; audit recorded it but did not execute it
+  resources:
+    entryIds:
+    - dsh-mcp-panel
+    commandNames:
+    - mcp:panel
+    uiSlots:
+    - settings:mcp-panel
+    settingsTabs:
+    - mcp-panel
+  rejections: []
+- id: dsh-checkpoint-rewind
+  priority: P0
+  capability: checkpoint-rollback
+  score: 87
+  scoreDimensions: *id002
+  repository: https://github.com/PerryLink/dsh-checkpoint-rewind
+  repositoryPath: null
+  commit: 377174b99200ea2f004f03f679f39515505c38f3
+  sourceStatus: verified
+  auditedAt: '2026-08-26'
+  manifestPath: package.json
+  expectedPackage: dsh-checkpoint-rewind
+  nodeEngine: ^22.19.0 || >=24.0.0
+  nodeEngineEvidence: package.json#engines.node
+  requiresCorePatch: false
+  license: Apache-2.0
+  bundlePatch: ./cordis.patch.yml
+  tarballSha256: 58e39662b37b03a599ba34caede18f96bf7c474abc290eaa0a9cede76e3dd315
+  testFiles: 17
+  ciWorkflows: 3
+  installScripts: {}
+  externalDependencies:
+  - zod
+  networkAccess: []
+  credentials: []
+  targetProfiles:
+  - web-curated
+  - web-coding
+  - web-research
+  - web-enterprise
+  active: true
+  auditWarnings: []
+  resources:
+    entryIds:
+    - dsh-checkpoint-rewind
+    toolNames:
+    - checkpoint_create
+    - checkpoint_restore
+    commandNames:
+    - checkpoint:rewind
+  rejections: []
+- id: dsh-lsp-actions
+  priority: P0
+  capability: lsp-actions
+  score: 86
+  scoreDimensions: *id003
+  repository: https://github.com/PerryLink/dsh-lsp-actions
+  repositoryPath: null
+  commit: f86d45c10ce248ae4d0d30118354e3ff07432b0e
+  sourceStatus: verified
+  auditedAt: '2026-08-26'
+  manifestPath: package.json
+  expectedPackage: dsh-lsp-actions
+  nodeEngine: ^22.19.0 || >=24.0.0
+  nodeEngineEvidence: package.json#engines.node
+  requiresCorePatch: false
+  license: Apache-2.0
+  bundlePatch: ./cordis.patch.yml
+  tarballSha256: 98b91db5d7b0c90bcf5043380512fd940dddb30132cc0c98476477abb10da724
+  testFiles: 18
+  ciWorkflows: 3
+  installScripts:
+    prepare: tsc --noEmitOnError && node scripts/fix-dts.mjs
+  externalDependencies: []
+  networkAccess: []
+  credentials: []
+  targetProfiles:
+  - web-curated
+  - web-coding
+  - web-research
+  - web-enterprise
+  active: true
+  auditWarnings:
+  - package declares a prepare script; audit recorded it but did not execute it
+  resources:
+    entryIds:
+    - dsh-lsp-actions
+    toolNames:
+    - lsp_diagnostics
+    - lsp_rename
+    serviceKeys:
+    - lspActions
+  rejections: []
+- id: dsh-permission-rules
+  priority: P0
+  capability: permission-policy
+  score: 88
+  scoreDimensions: *id001
+  repository: https://github.com/PerryLink/dsh-permission-rules
+  repositoryPath: null
+  commit: 36984920b1bfad1d542d1e937f7c99df8d1d848c
+  sourceStatus: verified
+  auditedAt: '2026-08-26'
+  manifestPath: package.json
+  expectedPackage: dsh-permission-rules
+  nodeEngine: ^22.19.0 || >=24.0.0
+  nodeEngineEvidence: package.json#engines.node
+  requiresCorePatch: false
+  license: Apache-2.0
+  bundlePatch: ./cordis.patch.yml
+  tarballSha256: e56ce2e687fc502a470162e84a1245c5cf44e420dccec89e81e02024ee80d35b
+  testFiles: 20
+  ciWorkflows: 3
+  installScripts:
+    prepare: node scripts/prepare.mjs
+  externalDependencies:
+  - chokidar
+  - tsdown
+  - typescript
+  - yaml
+  - zod
+  networkAccess: []
+  credentials: []
+  targetProfiles:
+  - web-curated
+  - web-coding
+  - web-research
+  - web-enterprise
+  active: true
+  auditWarnings:
+  - package declares a prepare script; audit recorded it but did not execute it
+  resources:
+    entryIds:
+    - permission-rules
+    commandNames:
+    - permission:rules
+    serviceKeys:
+    - permissionRules
+    waterfallListeners:
+    - tools/pre-execute:next
+  rejections: []
+  config:
+    entryId: permission-rules
+    values:
+      rulesFile: .dsh/rules.yaml
+      badFilePolicy: fail
+      maxRules: 256
+      patternMode: glob
+      watch: true
+      enforce: true
+- id: dsh-smooth-stream
+  priority: P1
+  capability: stream-rendering
+  score: 86
+  scoreDimensions: *id003
+  repository: https://github.com/Laplace-bit/dsh-smooth-stream
+  repositoryPath: null
+  commit: b8c5eefc1584a5a1d69116a0b038acd2abc4adb6
+  sourceStatus: verified
+  auditedAt: '2026-08-26'
+  manifestPath: package.json
+  expectedPackage: dsh-smooth-stream
+  nodeEngine: ^22.19.0 || >=24.0.0
+  nodeEngineEvidence: package.json#engines.node
+  requiresCorePatch: false
+  license: MIT
+  bundlePatch: ./cordis.patch.yml
+  tarballSha256: 38f376c16f868141611040a0bf950e56f44ed3705259deb92e72ca5c833584fa
+  testFiles: 4
+  ciWorkflows: 0
+  installScripts:
+    prepare: tsdown
+  externalDependencies: []
+  networkAccess: []
+  credentials: []
+  targetProfiles:
+  - web-curated
+  - web-coding
+  - web-research
+  - web-enterprise
+  active: true
+  auditWarnings:
+  - package declares a prepare script; audit recorded it but did not execute it
+  resources:
+    entryIds:
+    - dsh-smooth-stream
+    uiSlots:
+    - message:stream-renderer
+  rejections: []
+- id: upstream-radar
+  priority: P1
+  capability: supply-chain-monitoring
+  score: 87
+  scoreDimensions: *id002
+  repository: https://github.com/MicroMilo/upstream-radar
+  repositoryPath: null
+  commit: e02ca9568d256a5f19c1282b8c95a9844c84aa82
+  sourceStatus: verified
+  auditedAt: '2026-08-26'
+  manifestPath: package.json
+  expectedPackage: upstream-radar
+  nodeEngine: '>=22'
+  nodeEngineEvidence: package.json#engines.node
+  requiresCorePatch: false
+  license: Apache-2.0
+  bundlePatch: ./cordis.patch.yml
+  tarballSha256: 3a173e976cb23d4e95957169056ca3be327dcedb67641f9d20e7a336ee4df6c3
+  testFiles: 58
+  ciWorkflows: 8
+  installScripts: {}
+  externalDependencies: []
+  networkAccess:
+  - osv-api
+  - npm-registry
+  - github-api
+  credentials:
+  - optional-github-token
+  targetProfiles:
+  - web-curated
+  - web-coding
+  - web-research
+  - web-enterprise
+  active: true
+  auditWarnings: []
+  resources:
+    entryIds:
+    - upstream-radar
+    commandNames:
+    - upstream:radar
+    cacheDirs:
+    - cache/upstream-radar
+    envVars:
+    - GITHUB_TOKEN
+  rejections: []
+- id: dsh-plugin-hub
+  priority: P1
+  capability: plugin-marketplace
+  score: 85
+  scoreDimensions: &id004
+    nativeCompatibility: 18
+    functionalCompleteness: 14
+    testAndCi: 13
+    securityAndPrivacy: 14
+    maintenanceHealth: 8
+    performanceCost: 8
+    operability: 7
+    communitySignal: 3
+  repository: https://github.com/Noob-stupid/dsh-plugin-hub
+  repositoryPath: null
+  commit: 28c06d69843df0e1bd08184c5671f2b182a31657
+  sourceStatus: verified
+  auditedAt: '2026-08-26'
+  manifestPath: package.json
+  expectedPackage: '@noob-stupid/dsh-plugin-console'
+  nodeEngine: null
+  nodeEngineEvidence: null
+  requiresCorePatch: false
+  license: MIT
+  bundlePatch: ./cordis.patch.yml
+  tarballSha256: 1676d6ef437b30792fa268c0e55dac6db6337867a32de8fed3f3c91dc4153844
+  testFiles: 0
+  ciWorkflows: 1
+  installScripts: {}
+  externalDependencies: []
+  networkAccess:
+  - plugin-index
+  - package-registry
+  credentials: []
+  targetProfiles: []
+  active: false
+  auditWarnings:
+  - package manifest does not declare engines.node; no incompatible engine was observed in read-only metadata
+  - read-only metadata found no test files; matrix notes external acceptance is required
+  resources:
+    entryIds:
+    - dsh-plugin-hub
+    commandNames:
+    - plugin:hub
+    uiSlots:
+    - settings:plugin-hub
+    settingsTabs:
+    - plugin-hub
+    routes:
+    - /settings/plugins
+    cacheDirs:
+    - cache/plugin-hub
+  rejections:
+  - code: node-compatibility-unverified
+    evidence: package.json declares no engines.node and the repository workflow does not build or test the plugin package
+- id: dsh-plugin-guide
+  priority: P1
+  capability: plugin-development-guidance
+  score: 60
+  scoreDimensions:
+    nativeCompatibility: 13
+    functionalCompleteness: 10
+    testAndCi: 9
+    securityAndPrivacy: 10
+    maintenanceHealth: 6
+    performanceCost: 5
+    operability: 5
+    communitySignal: 2
+  repository: https://github.com/PerryLink/dsh-plugin-guide
+  repositoryPath: null
+  commit: 593247b49b19e724f38f0f11b904a871bdec06cd
+  sourceStatus: unreachable
+  auditedAt: '2026-08-26'
+  manifestPath: null
+  expectedPackage: dsh-plugin-guide
+  nodeEngine: null
+  nodeEngineEvidence: null
+  requiresCorePatch: null
+  license: null
+  bundlePatch: null
+  testFiles: 0
+  ciWorkflows: 0
+  installScripts: {}
+  externalDependencies: []
+  networkAccess: []
+  credentials: []
+  targetProfiles: []
+  active: false
+  auditWarnings:
+  - profile install reachability was rechecked on 2026-08-25 and the repository required GitHub authentication
+  rejections:
+  - code: repository-commit-unreachable
+    evidence: the public source repository is reachable but the audited commit and its package metadata are unavailable
+- id: dsh-plugin-check
+  priority: P1
+  capability: plugin-admission-checks
+  score: 86
+  scoreDimensions: *id003
+  repository: https://github.com/omdsh-dev/dsh-plugin-check
+  repositoryPath: null
+  commit: 5e51cb7e56f68e54cf50c36e1e0e9e959af696a7
+  sourceStatus: verified
+  auditedAt: '2026-08-26'
+  manifestPath: package.json
+  expectedPackage: '@omdsh-dev/dsh-plugin-check'
+  nodeEngine: ^22.19.0 || >=24.0.0
+  nodeEngineEvidence: package.json#engines.node
+  requiresCorePatch: false
+  license: MIT
+  bundlePatch: ./cordis.patch.yml
+  tarballSha256: ed1b043a5f97c45e422985afc10a00144349f386aa433b66e141d83a3daf1918
+  testFiles: 8
+  ciWorkflows: 0
+  installScripts: {}
+  externalDependencies: []
+  networkAccess: []
+  credentials: []
+  targetProfiles: []
+  active: false
+  auditWarnings:
+  - current public HEAD replaces the stale snapshot commit that codeload no longer serves
+  resources:
+    entryIds:
+    - dsh-plugin-check
+    commandNames:
+    - plugin:check
+    cacheDirs:
+    - cache/plugin-check
+  rejections:
+  - code: baseline-promotion-evidence-pending
+    evidence: the explicit 12-plugin baseline does not include this later-phase candidate
+- id: plugin-session-export
+  priority: P1
+  capability: session-export
+  score: 85
+  scoreDimensions: *id004
+  repository: https://github.com/whyihaveyou/dsh-suite
+  repositoryPath: packages/plugins/plugin-session-export
+  commit: acf9d2d960d2b9ac6ae8569a68836a087c2154ee
+  sourceStatus: verified
+  auditedAt: '2026-08-26'
+  manifestPath: packages/plugins/plugin-session-export/package.json
+  expectedPackage: '@dsh-suite/plugin-session-export'
+  nodeEngine: '>=22'
+  nodeEngineEvidence: package.json#engines.node at repository root
+  requiresCorePatch: false
+  license: MIT
+  bundlePatch: ./cordis.patch.yml
+  tarballSha256: 9f2be4352c0c880a820b1baa1c11f506d42769f708b9922e520bf9bf4eb63f28
+  testFiles: 0
+  ciWorkflows: 0
+  installScripts: {}
+  externalDependencies: []
+  networkAccess: []
+  credentials: []
+  targetProfiles:
+  - web-research
+  active: true
+  auditWarnings:
+  - package manifest does not declare engines.node; no incompatible engine was observed in read-only metadata
+  - shallow metadata was gathered from a monorepo subpath; CI and test counts are subpath-local
+  resources:
+    entryIds:
+    - plugin-session-export
+    commandNames:
+    - session:export
+    cacheDirs:
+    - exports/session
+  rejections: []
+- id: loongsuite-dsh-plugin
+  priority: P0
+  capability: otel-telemetry
+  score: 86
+  scoreDimensions: *id003
+  repository: https://github.com/loongsuite/dsh-plugin
+  repositoryPath: null
+  commit: 5e893af6172beb703a98b56ccc5e443495287732
+  sourceStatus: verified
+  auditedAt: '2026-08-26'
+  manifestPath: package.json
+  expectedPackage: '@loongsuite/dsh-plugin'
+  nodeEngine: '>=22.19.0'
+  nodeEngineEvidence: package.json#engines.node
+  requiresCorePatch: false
+  license: Apache-2.0
+  bundlePatch: ./cordis.patch.yml
+  tarballSha256: 31ed315e6d0d48254553fdd586a5d8ef084c90616579184eed2d1e6a349f9005
+  testFiles: 7
+  ciWorkflows: 1
+  installScripts: {}
+  externalDependencies:
+  - '@loongsuite/otel-util-genai'
+  - '@opentelemetry/api'
+  - '@opentelemetry/exporter-metrics-otlp-proto'
+  - '@opentelemetry/exporter-trace-otlp-proto'
+  - '@opentelemetry/resources'
+  - '@opentelemetry/sdk-metrics'
+  - '@opentelemetry/sdk-trace-base'
+  - '@opentelemetry/semantic-conventions'
+  networkAccess:
+  - otlp-export
+  credentials:
+  - otel-exporter-headers
+  targetProfiles:
+  - web-curated
+  - web-coding
+  - web-research
+  - web-enterprise
+  active: true
+  auditWarnings: []
+  resources:
+    entryIds:
+    - loongsuite-observability
+    serviceKeys:
+    - otelExporter
+    envVars:
+    - OTEL_EXPORTER_OTLP_ENDPOINT
+  rejections: []
+  config:
+    entryId: loongsuite-observability
+    values:
+      captureContent: false
+- id: dsh-config-manager
+  priority: P0
+  capability: config-backup-import
+  score: 87
+  scoreDimensions: *id002
+  repository: https://github.com/xiajiajun516/dsh-config-manager
+  repositoryPath: null
+  commit: 9461261258eec98f3861737128aae4f75c5c9161
+  sourceStatus: verified
+  auditedAt: '2026-08-26'
+  manifestPath: package.json
+  expectedPackage: dsh-config-manager
+  nodeEngine: ^22.19.0 || >=24.0.0
+  nodeEngineEvidence: package.json#engines.node
+  requiresCorePatch: false
+  license: MIT
+  bundlePatch: ./cordis.patch.yml
+  tarballSha256: b52a8526e6ec76d9f46c4c4f68817bcda09a20f30647a229c44274ab683f3262
+  testFiles: 18
+  ciWorkflows: 1
+  installScripts: {}
+  externalDependencies:
+  - js-yaml
+  networkAccess: []
+  credentials: []
+  targetProfiles: []
+  active: false
+  auditWarnings: []
+  resources:
+    entryIds:
+    - dsh-config-manager
+    commandNames:
+    - config:backup
+    - config:import
+    cacheDirs:
+    - cache/config-manager
+  rejections:
+  - code: profile-safety-control-unavailable
+    evidence: the pinned plugin config has no dry-run or execution-confirmation field; import execution is guarded only by the operation-level confirm input
+- id: dsh-better-sidebar
+  priority: P1
+  capability: dashboard-sidebar
+  score: 78
+  scoreDimensions: &id005
+    nativeCompatibility: 16
+    functionalCompleteness: 13
+    testAndCi: 13
+    securityAndPrivacy: 13
+    maintenanceHealth: 8
+    performanceCost: 7
+    operability: 6
+    communitySignal: 2
+  repository: https://github.com/omdsh-dev/DSH-better-sidebar
+  repositoryPath: null
+  commit: f9153dfc1ce47cf43445c1b351ee3ae47b4ad9f1
+  sourceStatus: verified
+  auditedAt: '2026-08-26'
+  manifestPath: package.json
+  expectedPackage: dsh-better-sidebar
+  nodeEngine: '>=20'
+  nodeEngineEvidence: package.json#engines.node
+  requiresCorePatch: false
+  license: MIT
+  bundlePatch: ./cordis.patch.yml
+  tarballSha256: 06502b0c3f5a7bc4ea243fd8d90d2a30c820d8317d75d9ba00ade6b4d49136cc
+  testFiles: 99
+  ciWorkflows: 2
+  installScripts:
+    prepare: tsdown
+  externalDependencies:
+  - '@codemirror/commands'
+  - '@codemirror/language'
+  - '@codemirror/view'
+  - dompurify
+  - mermaid
+  - node-pty
+  - react-icons
+  - rxjs
+  - schemastery
+  - ws
+  networkAccess:
+  - embedded-terminal
+  - browser-tab
+  credentials: []
+  targetProfiles:
+  - web-coding
+  active: false
+  auditWarnings:
+  - GitHub API tree enumeration hit a rate limit; test and CI counts were taken from the planning matrix
+  - package declares a prepare script; audit recorded it but did not execute it
+  resources:
+    entryIds:
+    - dsh-better-sidebar
+    uiSlots:
+    - sidebar:workspace
+    routes:
+    - /workspace
+    ports:
+    - 127.0.0.1:9333
+  rejections:
+  - code: p1-score-below-default-threshold
+    evidence: the 78-point score is below the P1 default threshold of 85
+- id: dsh-agent-team-gui
+  priority: P2
+  capability: multi-agent-orchestration
+  score: 80
+  scoreDimensions: &id009
+    nativeCompatibility: 17
+    functionalCompleteness: 13
+    testAndCi: 13
+    securityAndPrivacy: 13
+    maintenanceHealth: 8
+    performanceCost: 7
+    operability: 6
+    communitySignal: 3
+  repository: https://github.com/toolclub/dsh-agent-team-gui
+  repositoryPath: null
+  commit: e3997ce798e495ad8051b95c4e96920780c96aed
+  sourceStatus: verified
+  auditedAt: '2026-08-26'
+  manifestPath: package.json
+  expectedPackage: dsh-agent-team-gui
+  nodeEngine: ^22.19.0 || >=24.0.0
+  nodeEngineEvidence: package.json#engines.node
+  requiresCorePatch: false
+  license: MIT
+  bundlePatch: ./cordis.patch.yml
+  tarballSha256: a8976814ecb70566634f36362b197cc3397ebf9d1d2cf8216e060a20af7fe094
+  testFiles: 11
+  ciWorkflows: 2
+  installScripts:
+    prepare: pnpm run build
+  externalDependencies:
+  - react
+  - zod
+  networkAccess: []
+  credentials: []
+  targetProfiles:
+  - web-coding
+  active: false
+  auditWarnings:
+  - package declares a prepare script; audit recorded it but did not execute it
+  resources:
+    entryIds:
+    - dsh-agent-team-gui
+    serviceKeys:
+    - agentTeams
+    uiSlots:
+    - sidebar:agent-team
+    routes:
+    - /agents/team
+  rejections:
+  - code: long-cycle-evidence-pending
+    evidence: multi-agent budget and canary task campaigns remain pending
+- id: dsh-background-agents
+  priority: P2
+  capability: multi-agent-orchestration
+  score: 78
+  scoreDimensions: *id005
+  repository: https://github.com/PerryLink/dsh-background-agents
+  repositoryPath: null
+  commit: 1cc6c8e614555901bbaae09d58530df321a7287b
+  sourceStatus: verified
+  auditedAt: '2026-08-26'
+  manifestPath: package.json
+  expectedPackage: dsh-background-agents
+  nodeEngine: ^22.19.0 || >=24.0.0
+  nodeEngineEvidence: package.json#engines.node
+  requiresCorePatch: false
+  license: Apache-2.0
+  bundlePatch: ./cordis.patch.yml
+  tarballSha256: 857f706372bd94281ef3eefa5c1f15811e4d7284ea319afbed830488c30fdf9b
+  testFiles: 11
+  ciWorkflows: 2
+  installScripts: {}
+  externalDependencies:
+  - zod
+  networkAccess: []
+  credentials: []
+  targetProfiles:
+  - web-coding
+  active: false
+  auditWarnings:
+  - retained as an inactive web-coding fallback so only one multi-agent orchestrator is active per profile
+  resources:
+    entryIds:
+    - dsh-background-agents
+    serviceKeys:
+    - backgroundAgents
+  rejections: []
+- id: dsh-computer-use
+  priority: P2
+  capability: browser-computer-use
+  score: 79
+  scoreDimensions:
+    nativeCompatibility: 17
+    functionalCompleteness: 13
+    testAndCi: 13
+    securityAndPrivacy: 13
+    maintenanceHealth: 8
+    performanceCost: 7
+    operability: 6
+    communitySignal: 2
+  repository: https://github.com/ZRui-C/dsh-computer-use
+  repositoryPath: null
+  commit: 0b0a0844018b56a6a8e95aefea6529004b8341c4
+  sourceStatus: verified
+  auditedAt: '2026-08-26'
+  manifestPath: package.json
+  expectedPackage: dsh-computer-use
+  nodeEngine: '>=22'
+  nodeEngineEvidence: package.json#engines.node
+  requiresCorePatch: false
+  license: Apache-2.0
+  bundlePatch: ./cordis.patch.yml
+  tarballSha256: 50cdabec9829538f6eb39d8ee9a286a3753a53ef7b33e13b88cfa361b82b7dab
+  testFiles: 22
+  ciWorkflows: 3
+  installScripts:
+    prepare: npm run build:ts
+  externalDependencies:
+  - playwright-core
+  networkAccess:
+  - browser-automation
+  - optional-native-helper-download
+  credentials: []
+  targetProfiles:
+  - web-coding
+  active: false
+  auditWarnings:
+  - GitHub API tree enumeration hit a rate limit; test and CI counts were taken from the planning matrix
+  - package declares a prepare script; audit recorded it but did not execute it
+  resources:
+    entryIds:
+    - dsh-computer-use
+    toolNames:
+    - computer_use
+    cacheDirs:
+    - cache/computer-use
+  rejections:
+  - code: long-cycle-evidence-pending
+    evidence: browser task, recovery, and canary campaigns remain pending
+- id: dsh-vision-router
+  priority: P2
+  capability: vision-routing
+  score: 86
+  scoreDimensions: *id003
+  repository: https://github.com/ysr666/dsh-vision-router
+  repositoryPath: null
+  commit: 7ec4c403a1b41236944258bdf2544f27a47baff6
+  sourceStatus: verified
+  auditedAt: '2026-08-26'
+  manifestPath: package.json
+  expectedPackage: dsh-vision-router
+  nodeEngine: ^22.19.0 || >=24.0.0
+  nodeEngineEvidence: package.json#engines.node
+  requiresCorePatch: false
+  license: MIT
+  bundlePatch: ./cordis.patch.yml
+  tarballSha256: c28a98f689cd400fa3970882d136a85875fba4a3a84a2619b35446e90c494daf
+  testFiles: 93
+  ciWorkflows: 5
+  installScripts: {}
+  externalDependencies:
+  - potrace
+  - puppeteer-core
+  - undici
+  networkAccess:
+  - vision-provider-api
+  - optional-anonymous-vision-fallback
+  credentials:
+  - optional-vision-provider-keys
+  targetProfiles:
+  - web-research
+  active: false
+  auditWarnings:
+  - GitHub API tree enumeration hit a rate limit; test and CI counts were taken from the planning matrix
+  - enterprise profile must disable anonymous vision fallback before activation
+  resources:
+    entryIds:
+    - dsh-vision-router
+    toolNames:
+    - vision_analyze
+    serviceKeys:
+    - visionRouter
+    cacheDirs:
+    - cache/vision-router
+    envVars:
+    - VISION_PROVIDER_API_KEY
+  rejections:
+  - code: long-cycle-evidence-pending
+    evidence: vision routing and enterprise fallback-denial campaigns remain pending
+- id: dsh-llm-fallbacks
+  priority: P2
+  capability: llm-fallbacks
+  score: 74
+  scoreDimensions:
+    nativeCompatibility: 15
+    functionalCompleteness: 12
+    testAndCi: 12
+    securityAndPrivacy: 13
+    maintenanceHealth: 7
+    performanceCost: 7
+    operability: 6
+    communitySignal: 2
+  repository: https://github.com/dsh-external/dsh-llm-fallbacks
+  repositoryPath: null
+  commit: 0de6c180d394ff5c891dc8ef9935a22a3a5909ff
+  sourceStatus: verified
+  auditedAt: '2026-08-26'
+  manifestPath: package.json
+  expectedPackage: dsh-llm-fallbacks
+  nodeEngine: '>=22'
+  nodeEngineEvidence: package.json#engines.node
+  requiresCorePatch: false
+  license: MIT
+  bundlePatch: ./bundle/cordis.patch.yml
+  tarballSha256: 4b7fb9289b1a328b099d32ab7cc7ef3389c40e112cd16555558fcd290d194e41
+  testFiles: 41
+  ciWorkflows: 3
+  installScripts:
+    prepare: pnpm run build
+  externalDependencies:
+  - use-sync-external-store
+  networkAccess:
+  - configured-llm-providers
+  credentials:
+  - llm-provider-credentials
+  targetProfiles: []
+  active: false
+  auditWarnings:
+  - GitHub API tree enumeration hit a rate limit; test and CI counts were taken from the planning matrix
+  - package declares a prepare script; audit recorded it but did not execute it
+  - MIT license file was verified at the pinned commit
+  resources:
+    entryIds:
+    - dsh-llm-fallbacks
+    serviceKeys:
+    - llmFallbacks
+    envVars:
+    - LLM_FALLBACK_API_KEY
+  rejections:
+  - code: score-below-scenario-threshold
+    evidence: the 74-point score remains experimental despite the verified MIT license
+- id: dsh-univer-office
+  priority: P2
+  capability: office-documents
+  score: 76
+  scoreDimensions: &id008
+    nativeCompatibility: 16
+    functionalCompleteness: 13
+    testAndCi: 12
+    securityAndPrivacy: 13
+    maintenanceHealth: 7
+    performanceCost: 7
+    operability: 6
+    communitySignal: 2
+  repository: https://github.com/dream-num/dsh-univer-office
+  repositoryPath: null
+  commit: 362056c735ba0b234fe657cf4bb7a34508055574
+  sourceStatus: verified
+  auditedAt: '2026-08-26'
+  manifestPath: package.json
+  expectedPackage: dsh-univer-office
+  nodeEngine: '>=22.19.0'
+  nodeEngineEvidence: package.json#engines.node
+  requiresCorePatch: false
+  license: Apache-2.0
+  bundlePatch: ./cordis.patch.yml
+  tarballSha256: 8ad05b7a2128eb72443861bc1142865879144f3d844fd5e32f71a6bf7b9caa64
+  testFiles: 4
+  ciWorkflows: 2
+  installScripts:
+    prepare: simple-git-hooks
+  externalDependencies:
+  - '@puppeteer/browsers'
+  - '@univerjs-pro/cli-assets'
+  - '@univerjs-pro/engine-formula-rust-binding'
+  - '@univerjs-pro/exchange-node-binding'
+  - libsql
+  - puppeteer-core
+  networkAccess:
+  - optional-browser-download
+  - office-collaboration-gateway
+  credentials:
+  - optional-univer-license
+  targetProfiles:
+  - web-research
+  active: false
+  auditWarnings:
+  - GitHub API tree enumeration hit a rate limit; CI count was taken from the planning matrix
+  - package declares a prepare script; audit recorded it but did not execute it
+  resources:
+    entryIds:
+    - dsh-univer-office
+    toolNames:
+    - office_read
+    - office_write
+    cacheDirs:
+    - cache/univer-office
+    envVars:
+    - UNIVER_LICENSE_KEY
+  rejections:
+  - code: long-cycle-evidence-pending
+    evidence: Office build, memory, and fidelity campaigns remain pending
+- id: dsh-feishu
+  priority: P2
+  capability: feishu-channel
+  score: 70
+  scoreDimensions: &id006
+    nativeCompatibility: 15
+    functionalCompleteness: 12
+    testAndCi: 11
+    securityAndPrivacy: 12
+    maintenanceHealth: 7
+    performanceCost: 6
+    operability: 5
+    communitySignal: 2
+  repository: https://github.com/PGZXB/dsh-feishu
+  repositoryPath: null
+  commit: ff1ebbf646c831639de158a66212f43aceb2b825
+  sourceStatus: verified
+  auditedAt: '2026-08-26'
+  manifestPath: package.json
+  expectedPackage: '@dsh-feishu/dsh-feishu'
+  nodeEngine: '>=22.13'
+  nodeEngineEvidence: package.json#engines.node
+  requiresCorePatch: false
+  license: MIT
+  bundlePatch: ./cordis.patch.yml
+  tarballSha256: 2d89b5905c7d6cdfa1f2f96e24cca5b83bd63b71eab522e2ef7c4345bb80b12d
+  testFiles: 44
+  ciWorkflows: 4
+  installScripts: {}
+  externalDependencies:
+  - '@larksuiteoapi/node-sdk'
+  - axios
+  - js-yaml
+  - markdown-it
+  - qrcode-terminal
+  networkAccess:
+  - feishu-api
+  - websocket-cards
+  credentials:
+  - feishu-app-id
+  - feishu-app-secret
+  - feishu-user-token
+  targetProfiles: []
+  active: false
+  auditWarnings:
+  - GitHub API tree enumeration hit a rate limit; test and CI counts were taken from the planning matrix
+  - full IM content egress requires a separate threat model before activation
+  resources:
+    entryIds:
+    - dsh-feishu
+    commandNames:
+    - feishu:connect
+    serviceKeys:
+    - feishu
+    envVars:
+    - FEISHU_APP_ID
+    - FEISHU_APP_SECRET
+    - FEISHU_USER_TOKEN
+  rejections:
+  - code: threat-model-required
+    evidence: full IM content egress and Feishu credential handling require a separate threat model before activation
+- id: dsh-free-web-search
+  priority: P1
+  capability: web-search
+  score: 70
+  scoreDimensions: *id006
+  repository: https://github.com/delef/dsh-free-web-search
+  repositoryPath: null
+  commit: 35b18dc4b06491223d2fa72a400b8ad5e4def390
+  sourceStatus: unreachable
+  auditedAt: '2026-08-26'
+  manifestPath: null
+  expectedPackage: dsh-free-web-search
+  nodeEngine: null
+  nodeEngineEvidence: null
+  requiresCorePatch: null
+  license: null
+  bundlePatch: null
+  testFiles: 0
+  ciWorkflows: 0
+  installScripts: {}
+  externalDependencies: []
+  networkAccess: []
+  credentials: []
+  targetProfiles: []
+  active: false
+  auditWarnings:
+  - retained as an inactive keyless fallback; dynamic A/B evidence must pass before activation
+  rejections:
+  - code: repository-commit-unreachable
+    evidence: the repository manifest returned 404 at the pinned commit
+- id: dsh-mneme
+  priority: P2
+  capability: memory
+  score: 70
+  scoreDimensions: *id006
+  repository: https://github.com/modusensus/dsh-mneme
+  repositoryPath: null
+  commit: 64f4963c07670a534c6ea3c06aee63a68958869e
+  sourceStatus: unreachable
+  auditedAt: '2026-08-26'
+  manifestPath: null
+  expectedPackage: dsh-mneme
+  nodeEngine: null
+  nodeEngineEvidence: null
+  requiresCorePatch: null
+  license: null
+  bundlePatch: null
+  testFiles: 0
+  ciWorkflows: 0
+  installScripts: {}
+  externalDependencies: []
+  networkAccess: []
+  credentials: []
+  targetProfiles: []
+  active: false
+  auditWarnings:
+  - retained for memory A/B; autoDream and automatic consolidation stay out of active profiles
+  rejections:
+  - code: repository-commit-unreachable
+    evidence: the repository manifest returned 404 at the pinned commit
+- id: dsh-mcp-manager
+  priority: P1
+  capability: mcp-management
+  score: 64
+  scoreDimensions: &id007
+    nativeCompatibility: 14
+    functionalCompleteness: 11
+    testAndCi: 10
+    securityAndPrivacy: 11
+    maintenanceHealth: 6
+    performanceCost: 5
+    operability: 5
+    communitySignal: 2
+  repository: https://github.com/hyqhyq3/dsh-mcp-manager
+  repositoryPath: null
+  commit: c43ef393525b34befec46a2d9a63a6d811b4eb5d
+  sourceStatus: unreachable
+  auditedAt: '2026-08-26'
+  manifestPath: null
+  expectedPackage: dsh-mcp-manager
+  nodeEngine: null
+  nodeEngineEvidence: null
+  requiresCorePatch: null
+  license: null
+  bundlePatch: null
+  testFiles: 0
+  ciWorkflows: 0
+  installScripts: {}
+  externalDependencies: []
+  networkAccess: []
+  credentials: []
+  targetProfiles: []
+  active: false
+  auditWarnings:
+  - retained only as a fallback named by capability-conflicts.yaml
+  rejections:
+  - code: repository-commit-unreachable
+    evidence: the repository manifest returned 404 at the pinned commit
+- id: dsh-tabbit
+  priority: P2
+  capability: browser-computer-use
+  score: 64
+  scoreDimensions: *id007
+  repository: https://github.com/Tabbit-Browser/dsh-tabbit
+  repositoryPath: null
+  commit: 031ff1194e3522657412c23109c51f9341e24168
+  sourceStatus: unreachable
+  auditedAt: '2026-08-26'
+  manifestPath: null
+  expectedPackage: dsh-tabbit
+  nodeEngine: null
+  nodeEngineEvidence: null
+  requiresCorePatch: null
+  license: null
+  bundlePatch: null
+  testFiles: 0
+  ciWorkflows: 0
+  installScripts: {}
+  externalDependencies: []
+  networkAccess: []
+  credentials: []
+  targetProfiles: []
+  active: false
+  auditWarnings:
+  - retained for browser A/B; dedicated browser installation chain needs separate approval
+  rejections:
+  - code: repository-commit-unreachable
+    evidence: the repository manifest returned 404 at the pinned commit
+- id: dsh-context-doctor
+  priority: P1
+  capability: context-compression
+  score: 76
+  scoreDimensions: *id008
+  repository: https://github.com/Zhenyu98/dsh-context-doctor
+  repositoryPath: null
+  commit: 1ce26c1a54e01b27d7f3d6e399686ddec2c8b863
+  sourceStatus: unreachable
+  auditedAt: '2026-08-26'
+  manifestPath: null
+  expectedPackage: dsh-context-doctor
+  nodeEngine: null
+  nodeEngineEvidence: null
+  requiresCorePatch: null
+  license: null
+  bundlePatch: null
+  testFiles: 0
+  ciWorkflows: 0
+  installScripts: {}
+  externalDependencies: []
+  networkAccess: []
+  credentials: []
+  targetProfiles: []
+  active: false
+  auditWarnings:
+  - retained as a read-only context diagnostic fallback; not mounted with the default observer
+  rejections:
+  - code: repository-commit-unreachable
+    evidence: the repository manifest returned 404 at the pinned commit
+- id: dsh-cost-meter
+  priority: P1
+  capability: cost-metering
+  score: 70
+  scoreDimensions: *id006
+  repository: https://github.com/Han-1413141/dsh-cost-meter
+  repositoryPath: null
+  commit: 00da13abef2c229482f8f2d753ffb97dd03299db
+  sourceStatus: unreachable
+  auditedAt: '2026-08-26'
+  manifestPath: null
+  expectedPackage: dsh-cost-meter
+  nodeEngine: null
+  nodeEngineEvidence: null
+  requiresCorePatch: null
+  license: null
+  bundlePatch: null
+  testFiles: 0
+  ciWorkflows: 0
+  installScripts: {}
+  externalDependencies: []
+  networkAccess: []
+  credentials: []
+  targetProfiles: []
+  active: false
+  auditWarnings:
+  - retained for cost-metering A/B; price sync and cache-token accounting remain unproven
+  rejections:
+  - code: repository-commit-unreachable
+    evidence: the repository manifest returned 404 at the pinned commit
+- id: tokenledger
+  priority: P1
+  capability: cost-metering
+  score: 70
+  scoreDimensions: *id006
+  repository: https://github.com/zh667/TokenLedger
+  repositoryPath: null
+  commit: 4b810e341a7c5a0f00772009a3cb57a50e7a17f3
+  sourceStatus: unreachable
+  auditedAt: '2026-08-26'
+  manifestPath: null
+  expectedPackage: TokenLedger
+  nodeEngine: null
+  nodeEngineEvidence: null
+  requiresCorePatch: null
+  license: null
+  bundlePatch: null
+  testFiles: 0
+  ciWorkflows: 0
+  installScripts: {}
+  externalDependencies: []
+  networkAccess: []
+  credentials: []
+  targetProfiles: []
+  active: false
+  auditWarnings:
+  - retained for cost-metering A/B; subscription quota and timezone accounting remain unproven
+  rejections:
+  - code: repository-commit-unreachable
+    evidence: the repository manifest returned 404 at the pinned commit
+- id: dsh-chat-import
+  priority: P1
+  capability: session-import
+  score: 78
+  scoreDimensions: *id005
+  repository: https://github.com/Nwflower/dsh-chat-import
+  repositoryPath: null
+  commit: f4003bbaa84b70857e5fca3406a2cfc6bb498ce6
+  sourceStatus: unreachable
+  auditedAt: '2026-08-26'
+  manifestPath: null
+  expectedPackage: dsh-chat-import
+  nodeEngine: null
+  nodeEngineEvidence: null
+  requiresCorePatch: null
+  license: null
+  bundlePatch: null
+  testFiles: 0
+  ciWorkflows: 0
+  installScripts: {}
+  externalDependencies: []
+  networkAccess: []
+  credentials: []
+  targetProfiles: []
+  active: false
+  auditWarnings:
+  - retained for temporary migration profiles, not for always-on curated profiles
+  rejections:
+  - code: repository-commit-unreachable
+    evidence: the repository manifest returned 404 at the pinned commit
+- id: dsh-message-edit
+  priority: P1
+  capability: message-editing
+  score: 64
+  scoreDimensions: *id007
+  repository: https://github.com/dsh-external/dsh-message-edit
+  repositoryPath: null
+  commit: edeebe8a61cb262cd5d616ef0c6d129abb500e26
+  sourceStatus: unreachable
+  auditedAt: '2026-08-26'
+  manifestPath: null
+  expectedPackage: dsh-message-edit
+  nodeEngine: null
+  nodeEngineEvidence: null
+  requiresCorePatch: null
+  license: null
+  bundlePatch: null
+  testFiles: 0
+  ciWorkflows: 0
+  installScripts: {}
+  externalDependencies: []
+  networkAccess: []
+  credentials: []
+  targetProfiles: []
+  active: false
+  auditWarnings:
+  - retained as an experimental branch-editing candidate
+  rejections:
+  - code: repository-commit-unreachable
+    evidence: the repository manifest returned 404 at the pinned commit
+- id: dsh-auto-review
+  priority: P1
+  capability: approval-review
+  score: 80
+  scoreDimensions: *id009
+  repository: https://github.com/PerryLink/dsh-auto-review
+  repositoryPath: null
+  commit: a9c39b8753888f830d2b5b211b435f6428cbe233
+  sourceStatus: unreachable
+  auditedAt: '2026-08-26'
+  manifestPath: null
+  expectedPackage: dsh-auto-review
+  nodeEngine: null
+  nodeEngineEvidence: null
+  requiresCorePatch: null
+  license: null
+  bundlePatch: null
+  testFiles: 0
+  ciWorkflows: 0
+  installScripts: {}
+  externalDependencies: []
+  networkAccess: []
+  credentials: []
+  targetProfiles: []
+  active: false
+  auditWarnings:
+  - retained for high-risk approval review only; deterministic permission rules remain first
+  rejections:
+  - code: repository-commit-unreachable
+    evidence: the repository manifest returned 404 at the pinned commit
+- id: plugin-notify
+  priority: P1
+  capability: notification
+  score: 76
+  scoreDimensions: *id008
+  repository: https://github.com/whyihaveyou/dsh-suite
+  repositoryPath: packages/plugins/plugin-notify
+  commit: 50830a06680d3d64fcb66777400cf4946c384096
+  sourceStatus: unreachable
+  auditedAt: '2026-08-26'
+  manifestPath: null
+  expectedPackage: plugin-notify
+  nodeEngine: null
+  nodeEngineEvidence: null
+  requiresCorePatch: null
+  license: null
+  bundlePatch: null
+  testFiles: 0
+  ciWorkflows: 0
+  installScripts: {}
+  externalDependencies: []
+  networkAccess: []
+  credentials: []
+  targetProfiles: []
+  active: false
+  auditWarnings:
+  - retained for personal notification profiles; full body egress must remain disabled by default
+  rejections:
+  - code: repository-commit-unreachable
+    evidence: the repository manifest returned 404 at the pinned commit
+- id: deepseek-harness-desktop
+  priority: P2
+  capability: desktop-client
+  score: 76
+  scoreDimensions: *id008
+  repository: https://github.com/dsh-external/deepseek-harness-desktop
+  repositoryPath: null
+  commit: 26769141acf92422a69f732ca672071388f4cde0
+  sourceStatus: unreachable
+  auditedAt: '2026-08-26'
+  manifestPath: null
+  expectedPackage: null
+  nodeEngine: null
+  nodeEngineEvidence: null
+  requiresCorePatch: null
+  license: null
+  bundlePatch: null
+  testFiles: 0
+  ciWorkflows: 0
+  installScripts: {}
+  externalDependencies: []
+  networkAccess: []
+  credentials: []
+  targetProfiles: []
+  active: false
+  auditWarnings:
+  - desktop client is a deployment surface, not an always-on profile bundle
+  rejections:
+  - code: repository-commit-unreachable
+    evidence: the repository manifest returned 404 at the pinned commit
+- id: martty
+  priority: P2
+  capability: desktop-client
+  score: 76
+  scoreDimensions: *id008
+  repository: https://github.com/openma-ai/Martty
+  repositoryPath: null
+  commit: 622fdd91740e95ac504958ce59f9ffd012154569
+  sourceStatus: unreachable
+  auditedAt: '2026-08-26'
+  manifestPath: null
+  expectedPackage: null
+  nodeEngine: null
+  nodeEngineEvidence: null
+  requiresCorePatch: null
+  license: null
+  bundlePatch: null
+  testFiles: 0
+  ciWorkflows: 0
+  installScripts: {}
+  externalDependencies: []
+  networkAccess: []
+  credentials: []
+  targetProfiles: []
+  active: false
+  auditWarnings:
+  - TUI client is a deployment surface choice and is mutually exclusive with desktop shells
+  rejections:
+  - code: repository-commit-unreachable
+    evidence: the repository manifest returned 404 at the pinned commit

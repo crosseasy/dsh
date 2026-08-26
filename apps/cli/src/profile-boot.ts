@@ -37,6 +37,7 @@ const SHIPPED_PRESET_ROOT = fileURLToPath(new URL('../config/agent-presets/', im
 import { DSH_LAUNCH_ENVIRONMENT_KEY, type LaunchEnvironmentSnapshot } from '@deepseek-ai/dsh-launch-environment'
 import { provideCmdline } from '@deepseek-ai/dsh-cmdline'
 import { createProcessShutdown, type ProcessShutdown } from './process-shutdown.ts'
+import { ensureCuratedProfile } from './curated-profile.ts'
 
 const NAME = 'dsh'
 
@@ -83,8 +84,9 @@ export function resolveTelemetryPatch(disabledEnv: string | undefined, hasRow: b
 }
 
 /**
- * Load a resolved profile for `name`: heal the shared module fallback, then
- * (re)write the empty root config. The root is always rewritten: the whole
+ * Load a resolved profile for `name`: heal the shared module fallback,
+ * materialize built-in curated profiles when requested, then (re)write the
+ * empty root config. The root is always rewritten: the whole
  * composition is patch layers, and the vendored Loader's tree write-back (a
  * plugin self-disposing persists the current tree) can bake composed rows
  * into this file — which would duplicate every bundle insert on the next
@@ -97,6 +99,7 @@ export function resolveTelemetryPatch(disabledEnv: string | undefined, hasRow: b
  */
 export function prepareProfile(name: string, userLayer = true): Profile {
   healProfilesModuleFallback(INSTALL_ANCHOR)
+  ensureCuratedProfile(name)
   const profile = loadProfile(NAME, name, INSTALL_ANCHOR, undefined, { userLayer })
   writeFileSync(join(profile.dir, PROFILE_ROOT_FILENAME), PROFILE_ROOT_CONFIG)
   return profile

@@ -857,6 +857,11 @@ describe('compaction region transaction', () => {
 
     expect(result.shadowedSeqs).toEqual(before.slice(0, 4))
     expect(result.shadowedTokenCount).toBeGreaterThan(0)
+    expect(result).not.toHaveProperty('compactionId')
+    expect(result).not.toHaveProperty('sourceCommandId')
+    expect(result).not.toHaveProperty('startSeq')
+    expect(result).not.toHaveProperty('endSeq')
+    expect(result).not.toHaveProperty('summary')
     expect(compact.calls[0]).toMatchObject({ signal: SIGNAL })
     expect(summarizedText(compact.calls[0]!.input)).toContain('fixture user 1')
     const summary = session.events.findLast(event => event.type === 'compaction/summary')
@@ -1676,11 +1681,7 @@ describe('automatic listener and loader composition', () => {
     const compact = new TestCompactionEngine(ctx)
     const session = conversation(2)
     const fakeResult: CompactionResult = {
-      compactionId: CompactionId('fake-compaction'),
-      startSeq: 1,
       summarySeq: 2,
-      endSeq: 3,
-      summary: [{ type: 'text', text: 'fake' }],
       shadowedRange: { start: 1, end: 2 },
       shadowedSeqs: [1, 2],
       shadowedTokenCount: 10,

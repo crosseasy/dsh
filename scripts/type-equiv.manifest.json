@@ -112,6 +112,36 @@
       "source": "packages/llm/llm/src/call-config.ts"
     },
     {
+      "doc": "docs/subsystems/curated.md",
+      "symbol": "CapabilityConflictRule",
+      "source": "packages/curated/curated-policy/src/index.ts"
+    },
+    {
+      "doc": "docs/subsystems/curated.md",
+      "symbol": "PermissionRule",
+      "source": "packages/curated/curated-policy/src/index.ts"
+    },
+    {
+      "doc": "docs/subsystems/curated.md",
+      "symbol": "CuratedCandidate",
+      "source": "packages/curated/curated-policy/src/index.ts"
+    },
+    {
+      "doc": "docs/subsystems/curated.md",
+      "symbol": "CuratedBenchAssetDirs",
+      "source": "packages/curated/curated-bench/src/index.ts"
+    },
+    {
+      "doc": "docs/subsystems/curated.md",
+      "symbol": "CuratedBenchAssetKind",
+      "source": "packages/curated/curated-bench/src/index.ts"
+    },
+    {
+      "doc": "docs/subsystems/curated.md",
+      "symbol": "CuratedBenchJson",
+      "source": "packages/curated/curated-bench/src/index.ts"
+    },
+    {
       "doc": "docs/subsystems/core.md",
       "symbol": "InboxTarget",
       "source": "packages/core/agent/src/types.ts"
@@ -1864,6 +1894,11 @@
       "doc": "docs/subsystems/core.md",
       "symbol": "AgentHandle",
       "source": "packages/core/agent/src/index.ts"
+    },
+    {
+      "doc": "docs/subsystems/core.md",
+      "symbol": "StandingPresetLease",
+      "source": "packages/preset/agent-presets/src/index.ts"
     },
     {
       "doc": "docs/subsystems/core.md",

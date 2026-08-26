@@ -46,6 +46,20 @@ interface AgentHandle {
 }
 ```
 
+Source: [`packages/preset/agent-presets/src/index.ts`](../../packages/preset/agent-presets/src/index.ts)
+
+```ts type-equiv
+/** A temporary hold on one standing preset generation. */
+interface StandingPresetLease {
+  /** Preset id this lease resolved. */
+  readonly presetId: string
+  /** Scope key readers pass as a registry view scope. */
+  readonly key: ScopeKey
+  /** Release this hold; repeated calls await the same release. */
+  release(): Promise<void>
+}
+```
+
 `CreateAgentOptions` carries the shared identity and everything a fresh agent needs before publication: session metadata (`meta` — validated `cwd`, fork lineage, seed boundary, origin classification, delegation depth), an optional `seed` replay prefix for forks, per-agent `AgentOptions`, a creation-only cancellation `signal`, and `setup`. `ResumeAgentOptions` is the persisted-identity counterpart: `resumeSessionId`, `agentOptions`, `signal`, and `setup`. The `setup` callback (`AgentSetup`) composes the agent's scoped world while both ids are still unpublished — everything registered through `agentCtx` exists before `agent/created` and the first prompt assembly — and may return a synchronous commit invoked immediately before publication; a setup rejection, commit throw, or owner disposal rolls the transaction back without publishing either id.
 
 `AgentFactory` is the creation interface behind the registry: the loop registers its factory via `ctx.agents.setFactory()`, so consumers use `ctx.agents` without depending on the concrete loop package. The exact `create`/`resume` signatures and rollback contracts are in the [generated section](#ctxagents--agentregistry) below.
@@ -407,9 +421,9 @@ async list(): Promise<AgentPreset[]>
 async resolve(id?: string): Promise<AgentPreset>
 
 /**
- * Compose one agent from a preset: ensure the preset's standing mount, then
- * parent the agent's scope key to it so the mount's registrations and
- * listeners cover this agent.
+ * Compose one agent from a preset: acquire the preset's standing generation,
+ * then parent the agent's scope key to it so the generation's registrations
+ * and listeners cover this agent until the agent scope unloads.
  *
  * Call from the agent factory's `setup(agentCtx)`; a rejection there rolls
  * the agent creation back, so a broken preset never yields a half-composed
@@ -517,14 +531,15 @@ serviceFor<K extends string & keyof Context>(agent: { ctx: Context }, name: K): 
  * make. The CALLER owns that check — this method does not read session
  * history.
  *
- * The swap is a parent re-link, not an unmount: standing mounts are shared
- * and permanent, so the old composition stays for its other agents and the
- * new one is ensured BEFORE the link moves. An unknown or unusable preset
- * therefore throws with the agent exactly as it was — there is no torn-down
- * state to restore. The re-link runs through the binding this roster kept
- * from the agent's mount — dsh-scope's only re-link authority. An agent
- * that never composed one has nothing to re-link: the switch is then the
- * agent's first bind, exactly a mount.
+ * The swap is a parent re-link, not an unmount: standing generations are
+ * shared, so the old composition stays for its other agents and the new one
+ * is ensured BEFORE the link moves. An unknown or unusable preset therefore
+ * throws with the agent exactly as it was. The previous holder is released
+ * only after the new binding succeeds; if the old generation was already
+ * retired, that release is the point that may dispose it. The re-link runs
+ * through the binding this roster kept from the agent's mount — dsh-scope's
+ * only re-link authority. An agent that never composed one has nothing to
+ * re-link: the switch is then the agent's first bind, exactly a mount.
  * @param agentCtx - the agent's scope context.
  * @param id - the preset to compose the agent from instead.
  * @returns the preset now installed.
@@ -533,20 +548,18 @@ serviceFor<K extends string & keyof Context>(agent: { ctx: Context }, name: K): 
 async recompose(agentCtx: Context, id: string): Promise<AgentPreset>
 
 /**
- * The standing scope key of one preset, for a host reader with no agent.
+ * Acquire one preset generation for a host reader with no agent.
  *
  * A cold transcript read resolves tool presenters against the composition
  * the session recorded, and the standing mount makes that possible without
- * resuming anything: ensuring the mount composes plugins but starts no
- * agent, no session, and no turn.
+ * resuming anything. The returned lease keeps a retired generation mounted
+ * until the reader leaves its `finally` block.
  * @param id - the preset id, or `undefined` for {@link defaultId}.
- * @returns the standing scope key readers pass as a registry view scope.
+ * @returns a lease whose `key` is the registry view scope.
  * @throws when the preset is unknown or its composition is unusable.
  */
-async standingKeyFor(id?: string): Promise<ScopeKey>
+async acquireStanding(id?: string): Promise<StandingPresetLease>
 ```
-
-Types: [ScopeKey](scope.md)
 
 Source: [`packages/preset/agent-presets/src/index.ts`](../../packages/preset/agent-presets/src/index.ts)
 

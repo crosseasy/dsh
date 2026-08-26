@@ -136,7 +136,7 @@ export class SessionReferenceResolver extends TypertRemoteService {
         return { type: 'text', text: parsed.text }
       })
       if (references.length === 0) return [message]
-      const resolved = await this.prepare(agent, content, references, signal)
+      const resolved = await this.prepareReferencedMessage(agent, content, references, signal)
       const direct = freezeMessage({ ...message, content: resolved.content })
       /* v8 ignore if -- a parsed canonical mention always leaves one normalized reference */
       if (resolved.additionalContext === undefined) {
@@ -155,7 +155,7 @@ export class SessionReferenceResolver extends TypertRemoteService {
    * @param signal - optional cancellation boundary for host autocomplete teardown.
    * @returns candidates labeled by latest title or, when absent, session id.
    */
-  async listCandidates(
+  private async rankCandidates(
     agent: Agent,
     query: string = '',
     limit: number = this.config.candidateLimit,
@@ -206,9 +206,8 @@ export class SessionReferenceResolver extends TypertRemoteService {
   }
 
   /**
-   * Remote face of {@link listCandidates}: the configured candidate limit
-   * applies, and every candidate carries the canonical mention a host inserts
-   * into the prompt draft.
+   * Remote candidate discovery applies the configured candidate limit and
+   * attaches the canonical mention a host inserts into the prompt draft.
    * @param agent - target agent; self is excluded and its cwd drives ranking.
    * @param query - optional case-insensitive session-id/cwd/title substring.
    * @param signal - caller cancellation.
@@ -220,7 +219,7 @@ export class SessionReferenceResolver extends TypertRemoteService {
     query: string,
     signal: AbortSignal,
   ): Promise<SessionReferenceMentionCandidate[]> {
-    const candidates = await this.listCandidates(agent, query, this.config.candidateLimit, signal)
+    const candidates = await this.rankCandidates(agent, query, this.config.candidateLimit, signal)
     return candidates.map(candidate => ({
       ...candidate,
       mention: formatSessionReferenceMention({ sessionId: candidate.sessionId, label: candidate.label }),
@@ -235,7 +234,7 @@ export class SessionReferenceResolver extends TypertRemoteService {
    * @param signal - optional cancellation boundary for the active turn.
    * @returns detached content and optional referenced-session context.
    */
-  async prepare(
+  private async prepareReferencedMessage(
     agent: Agent,
     content: ContentBlock[],
     references: SessionReferenceInput[],

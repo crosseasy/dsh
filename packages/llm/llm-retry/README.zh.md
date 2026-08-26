@@ -28,6 +28,8 @@
 
 执行器没有策略配置。`dsh-llm-pi-ai` 等多提供方适配器会把 `retryPolicy` 放在每个提供方 profile 内，避免维护第二份提供方名称列表。
 
+需要确定性重试延迟的仓库测试使用 `@deepseek-ai/dsh-llm-retry/testing`。生产组合导入包根入口，其 `apply(ctx, config)` 签名不包含测试 hook。
+
 ## 模型体验
 
 ### 模型请求恢复

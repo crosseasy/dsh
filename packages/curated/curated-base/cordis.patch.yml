@@ -1,0 +1,9 @@
+# Curated base bundle patch. It loads the curated policy and benchmark asset
+# services; plugin selections and third-party rows belong to later curated
+# bundle layers.
+
+- insert:
+    - id: curated-policy
+      name: '@deepseek-ai/dsh-curated-policy'
+    - id: curated-bench
+      name: '@deepseek-ai/dsh-curated-bench'

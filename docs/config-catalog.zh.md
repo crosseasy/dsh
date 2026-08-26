@@ -376,7 +376,7 @@ export interface Config {
 }
 ```
 
-来源：[`packages/shell/bash-local/src/index.ts:41`](../packages/shell/bash-local/src/index.ts)
+来源：[`packages/shell/bash-local/src/index.ts:29`](../packages/shell/bash-local/src/index.ts)
 
 <a id="deepseek-aidsh-bash-sandbox"></a>
 
@@ -578,6 +578,47 @@ export interface Config {
 ```
 
 来源：[`packages/credentials/credentials-local/src/index.ts:64`](../packages/credentials/credentials-local/src/index.ts)
+
+<a id="deepseek-aidsh-curated-bench"></a>
+
+## `@deepseek-ai/dsh-curated-bench`
+
+```ts config-catalog
+/** Configuration accepted by the curated benchmark plugin. */
+export interface Config {
+  /** Optional asset directory overrides for tests or downstream bundle layouts. */
+  readonly dirs?: Partial<CuratedBenchAssetDirs>
+}
+
+/** Benchmark asset directories served by `ctx.curatedBench`. */
+export interface CuratedBenchAssetDirs {
+  /** Candidate manifest summaries directory. */
+  readonly manifests: string
+  /** Benchmark task-set definitions directory. */
+  readonly tasks: string
+  /** Baseline and comparison fixture directory. */
+  readonly baselines: string
+}
+```
+
+来源：[`packages/curated/curated-bench/src/index.ts:49`](../packages/curated/curated-bench/src/index.ts)
+
+<a id="deepseek-aidsh-curated-policy"></a>
+
+## `@deepseek-ai/dsh-curated-policy`
+
+```ts config-catalog
+interface Config {
+  /** Override path for `policy/plugin-allowlist.yaml`; tests use this to load fixture catalogs. */
+  readonly catalogPath?: string
+  /** Override path for `policy/capability-conflicts.yaml`; tests use this to load fixture conflict tables. */
+  readonly conflictPath?: string
+  /** Override path for `policy/permission-rules.yaml`; tests use this to load fixture permission rules. */
+  readonly permissionRulesPath?: string
+}
+```
+
+来源：[`packages/curated/curated-policy/src/index.ts:206`](../packages/curated/curated-policy/src/index.ts)
 
 <a id="deepseek-aidsh-e2b"></a>
 
@@ -1329,7 +1370,7 @@ export interface ReplayModelConfig {
 export type Config = Readonly<Record<string, never>>
 ```
 
-来源：[`packages/llm/llm-retry/src/index.ts:24`](../packages/llm/llm-retry/src/index.ts)
+来源：[`packages/llm/llm-retry/src/index.ts:19`](../packages/llm/llm-retry/src/index.ts)
 
 <a id="deepseek-aidsh-lsp-stdio"></a>
 
@@ -1562,17 +1603,12 @@ export interface Config {
   maxSpillBytes?: number
   /** Grace period for kill escalation and inherited pipes; at most `MAX_TIMER_DELAY_MS`. */
   graceMs?: number
-  /**
-   * Explicit pwsh executable. When omitted, well-known Windows install
-   * locations and PATH entries are probed in order (PowerShell 7 install,
-   * PATH entries such as the Microsoft Store install, then Windows
-   * PowerShell 5.1), falling back to a bare `pwsh` resolved through PATH.
-   */
+  /** Explicit pwsh executable; absent probes well-known Windows locations and PATH. */
   pwshPath?: string
 }
 ```
 
-来源：[`packages/shell/pwsh-local/src/index.ts:58`](../packages/shell/pwsh-local/src/index.ts)
+来源：[`packages/shell/pwsh-local/src/index.ts:35`](../packages/shell/pwsh-local/src/index.ts)
 
 <a id="deepseek-aidsh-pwsh-sandbox"></a>
 
@@ -2548,7 +2584,7 @@ export interface Config {
 }
 ```
 
-来源：[`packages/shell/tool-bash-persistent/src/index.ts:432`](../packages/shell/tool-bash-persistent/src/index.ts)
+来源：[`packages/shell/tool-bash-persistent/src/index.ts:118`](../packages/shell/tool-bash-persistent/src/index.ts)
 
 <a id="deepseek-aidsh-tool-fs"></a>
 
@@ -2713,7 +2749,7 @@ export interface Config {
 }
 ```
 
-来源：[`packages/shell/tool-pwsh-persistent/src/index.ts:472`](../packages/shell/tool-pwsh-persistent/src/index.ts)
+来源：[`packages/shell/tool-pwsh-persistent/src/index.ts:139`](../packages/shell/tool-pwsh-persistent/src/index.ts)
 
 <a id="deepseek-aidsh-tool-ralph"></a>
 
@@ -2996,7 +3032,7 @@ export interface Config {
 export type ToolPresentationMode = 'native' | 'code' | 'both'
 ```
 
-来源：[`packages/core/tools/src/index.ts:654`](../packages/core/tools/src/index.ts)
+来源：[`packages/core/tools/src/index.ts:653`](../packages/core/tools/src/index.ts)
 
 <a id="deepseek-aidsh-typert-loader"></a>
 
@@ -3337,6 +3373,9 @@ export interface Config {
 - `@deepseek-ai/dsh-client-web`（[`packages/client/web/src/index.ts`](../packages/client/web/src/index.ts)）
 - `@deepseek-ai/dsh-cmdline`（[`packages/boot/cmdline/src/index.ts`](../packages/boot/cmdline/src/index.ts)）
 - `@deepseek-ai/dsh-code-runtime-python`（[`packages/code-runtime/code-runtime-python/src/index.ts`](../packages/code-runtime/code-runtime-python/src/index.ts)）
+- `@deepseek-ai/dsh-curated-base`（[`packages/curated/curated-base/src/index.ts`](../packages/curated/curated-base/src/index.ts)）
+- `@deepseek-ai/dsh-curated-profiles`（[`packages/curated/curated-profiles/src/index.ts`](../packages/curated/curated-profiles/src/index.ts)）
+- `@deepseek-ai/dsh-curated-scripts`（[`packages/curated/curated-scripts/src/index.ts`](../packages/curated/curated-scripts/src/index.ts)）
 - `@deepseek-ai/dsh-home-paths`（[`packages/util/home-paths/src/index.ts`](../packages/util/home-paths/src/index.ts)）
 - `@deepseek-ai/dsh-hook-protocol`（[`packages/hooks/hook-protocol/src/index.ts`](../packages/hooks/hook-protocol/src/index.ts)）
 - `@deepseek-ai/dsh-launch-environment`（[`packages/util/launch-environment/src/index.ts`](../packages/util/launch-environment/src/index.ts)）
@@ -3344,6 +3383,7 @@ export interface Config {
 - `@deepseek-ai/dsh-loader-smoke`（[`packages/test-support/loader-smoke/src/index.ts`](../packages/test-support/loader-smoke/src/index.ts)）
 - `@deepseek-ai/dsh-native-command`（[`packages/util/native-command/src/index.ts`](../packages/util/native-command/src/index.ts)）
 - `@deepseek-ai/dsh-output-retention`（[`packages/util/output-retention/src/index.ts`](../packages/util/output-retention/src/index.ts)）
+- `@deepseek-ai/dsh-persistent-tool-runtime`（[`packages/shell/persistent-tool-runtime/src/index.ts`](../packages/shell/persistent-tool-runtime/src/index.ts)）
 - `@deepseek-ai/dsh-sandbox-windows-acl`（[`packages/sandbox/sandbox-windows-acl/src/index.ts`](../packages/sandbox/sandbox-windows-acl/src/index.ts)）
 - `@deepseek-ai/dsh-scope`（[`packages/core/scope/src/index.ts`](../packages/core/scope/src/index.ts)）
 - `@deepseek-ai/dsh-sdk-client`（[`packages/sdk/client/src/index.ts`](../packages/sdk/client/src/index.ts)）
@@ -3351,6 +3391,7 @@ export interface Config {
 - `@deepseek-ai/dsh-sdk-protocol`（[`packages/sdk/protocol/src/index.ts`](../packages/sdk/protocol/src/index.ts)）
 - `@deepseek-ai/dsh-session-telemetry`（[`packages/session/session-telemetry/src/index.ts`](../packages/session/session-telemetry/src/index.ts)）
 - `@deepseek-ai/dsh-session-title-llm`（[`packages/session/session-title-llm/src/index.ts`](../packages/session/session-title-llm/src/index.ts)）
+- `@deepseek-ai/dsh-shell-runtime`（[`packages/shell/shell-runtime/src/index.ts`](../packages/shell/shell-runtime/src/index.ts)）
 - `@deepseek-ai/dsh-subagent-in-process-driver`（[`packages/subagent/subagent-in-process-driver/src/index.ts`](../packages/subagent/subagent-in-process-driver/src/index.ts)）
 - `@deepseek-ai/dsh-timeout`（[`packages/util/timeout/src/index.ts`](../packages/util/timeout/src/index.ts)）
 - `@deepseek-ai/dsh-typert-generator`（[`packages/typert/generator/src/index.ts`](../packages/typert/generator/src/index.ts)）

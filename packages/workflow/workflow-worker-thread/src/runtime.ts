@@ -161,8 +161,7 @@ export class WorkflowExecution {
    */
   async drive(): Promise<WorkflowResult> {
     try {
-      // Cancelled before the body ever ran (an already-aborted start signal,
-      // relayed by the host before its `go`): the script must not execute at
+      // Cancelled before the body ever ran: the script must not execute at
       // all, let alone report `completed`.
       if (this.isCancelled()) throw this.cancelledError()
       const scriptPromise = this.compiled.runInContext(this.context, { timeout: this.limits.syncTimeoutMs }) as Promise<unknown>

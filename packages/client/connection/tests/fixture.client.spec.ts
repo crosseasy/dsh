@@ -8,6 +8,9 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import type { SessionId, WorkspaceId } from '../src/client/api.ts'
 import { RpcId } from '../src/client/api.ts'
 import type { HostFrame, MuxFrame, RpcMessage, RpcRequest } from '../src/client/api.ts'
+import { foldPlanProjection } from '@deepseek-ai/dsh-plan-mode/client'
+import { foldSessionStatsProjection } from '@deepseek-ai/dsh-session-stats/client'
+import { foldContextBreakdownProjection, foldContextPressureProjection, foldTokenUsageProjection } from '@deepseek-ai/dsh-token-meter/client'
 import { FixtureApiClient, createFixtureApi } from '../src/client/fixture.ts'
 
 const sid = (id: string): SessionId => id as SessionId
@@ -178,6 +181,22 @@ describe('createFixtureApi', () => {
         },
       } },
     })
+  })
+
+  it('serves product projection folds for fixture history', async () => {
+    const api = createFixtureApi()
+    const history = await api.sessions.history(req({ sessionId: sid('fx-alpha'), maxMessages: 1000 }))
+    if (!history.result.ok) throw new Error('history failed')
+    const log = history.result.value.events.map(entry => entry.event)
+    const projections = history.result.value.projections
+    if (projections === undefined) throw new Error('projections missing')
+    const values = projections.values
+
+    expect(values.plan).toEqual(foldPlanProjection(log))
+    expect(values.tokenUsage).toEqual(foldTokenUsageProjection(log))
+    expect(values.contextPressure).toEqual(foldContextPressureProjection(log))
+    expect(values.contextBreakdown).toEqual(foldContextBreakdownProjection(log))
+    expect(values.sessionStats).toEqual(foldSessionStatsProjection(log))
   })
 
   it('serves grouped models and keeps a selection for later history and fixture requests', async () => {

@@ -24,7 +24,7 @@ Status: proposed
 | `LlmError.status` 与回放 status | 适配器/回放填充它，但生产分支基于稳定的错误码/消息判断，从不读取原始 status。 | 移除未读字段和回放管道，保留错误分类。 |
 | `BlockAssembler.push()` 返回值 | 两个生产调用者都忽略返回的已完成块。 | 返回 `void`；保留有意公开的 `blocks()`/`message()` 约定。 |
 | `compactRegion` 的独立 `session` 参数 | 固定调用方传入的对象就是 `agent.session` 中已有的对象；模型可见的 mount API 也可以调用该方法，但同时接受两个独立对象，会让挂载的插件传入不一致的组合。 | 保留手动 region API，同时有意将其收窄为以 `agent.session` 为唯一真源。 |
-| `CompactionResult.startSeq`、`summarySeq`、`endSeq` 与 `summary` | 生产消费方只读取 shadowed range/seq/token 统计；持久日志拥有 summary 和事件标识。 | 移除四个结果回显，保留两个共享的 transcript（文本记录）渲染器。 |
+| `CompactionResult.compactionId`、`sourceCommandId`、`startSeq`、`endSeq` 与 `summary` | 固定消费方读取 `summarySeq` 以及 shadowed range/seq/token 统计；持久 `compaction/*` 事件拥有事务身份、命令关联、start/end seq 和原始摘要内容。 | 移除这五个结果回显，保留 `summarySeq`、shadowed 计数字段和两个共享 transcript（文本记录）渲染器。 |
 | `BasicCompactionEngine` 的估算/摘要方法可见性 | 没有包外生产调用者调用这五个方法；已实现的 Agent Note 只将 `estimateContentTokens()` 和 `summarize()` 命名为子类钩子。 | 将这两个方法改为 `protected`，其余三个编排专用的估算器改为 private。 |
 | `CodeLogEntry.source`/`level` 与 `RunCodeMeta.dispatches` | 每个生产消费方都将日志映射为文本；没有 presenter/模型路径读取其他字段或持久化的 dispatch 计数。 | 将 code-runtime 日志改为字符串（或纯文本条目），移除 result-meta 的 dispatch 管道；保留用于生成确定性 dispatch id 的本地计数器。 |
 | `CodeRuntime.language` 与 `CodeRuntime.isolation` | worker 后端提供唯一的生产值，而 Code Mode 及其他所有生产调用方只调用 `run()`。 | 移除未读描述符，同时保留 worker 的语言、隔离、预算、取消与资源释放行为。 |

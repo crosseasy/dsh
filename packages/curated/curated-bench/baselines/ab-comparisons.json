@@ -1,0 +1,101 @@
+{
+  "schemaVersion": 1,
+  "evidenceKind": "planned",
+  "source": "docs/plugin/superpowers/04-评测体系.md#5-代表性同类-ab",
+  "comparisons": [
+    {
+      "id": "web-search-pro-vs-free-web-search",
+      "status": "pending",
+      "capability": "web-search",
+      "primary": "dsh-web-search-pro",
+      "alternative": "dsh-free-web-search",
+      "scale": {
+        "queries": 100,
+        "repetitionsPerTask": 5,
+        "subsets": ["timely-facts", "technical-docs", "chinese-community", "deep-pages"]
+      },
+      "statistics": {
+        "mean": true,
+        "p50": true,
+        "p95": true,
+        "failureDistribution": true
+      },
+      "nonCompensableThresholds": ["security-correctness-below-95", "data-loss-detected", "rollback-impossible", "startup-failure-rate-above-1", "critical-success-rate-drop"]
+    },
+    {
+      "id": "memento-vs-mneme",
+      "status": "pending",
+      "capability": "memory",
+      "primary": "dsh-memento",
+      "alternative": "dsh-mneme",
+      "scale": {
+        "days": 7,
+        "facts": 200,
+        "conflictUpdates": 20,
+        "deleteRequests": 20,
+        "repetitionsPerTask": 5
+      },
+      "statistics": {
+        "mean": true,
+        "p50": true,
+        "p95": true,
+        "failureDistribution": true
+      },
+      "nonCompensableThresholds": ["security-correctness-below-95", "data-loss-detected", "rollback-impossible"]
+    },
+    {
+      "id": "computer-use-vs-tabbit",
+      "status": "pending",
+      "capability": "browser-computer-use",
+      "primary": "dsh-computer-use",
+      "alternative": "dsh-tabbit",
+      "scale": {
+        "webTasks": 50,
+        "repetitionsPerTask": 5
+      },
+      "statistics": {
+        "mean": true,
+        "p50": true,
+        "p95": true,
+        "failureDistribution": true
+      },
+      "nonCompensableThresholds": ["security-correctness-below-95", "data-loss-detected", "rollback-impossible"]
+    },
+    {
+      "id": "mcp-panel-vs-mcp-manager",
+      "status": "pending",
+      "capability": "mcp-management",
+      "primary": "dsh-mcp-panel",
+      "alternative": "dsh-mcp-manager",
+      "scale": {
+        "scenarios": ["oauth", "static-token", "service-error", "profile-write", "rollback"],
+        "repetitionsPerTask": 5
+      },
+      "statistics": {
+        "mean": true,
+        "p50": true,
+        "p95": true,
+        "failureDistribution": true
+      },
+      "nonCompensableThresholds": ["security-correctness-below-95", "data-loss-detected", "rollback-impossible"]
+    },
+    {
+      "id": "cost-meter-vs-tokenledger",
+      "capability": "cost-metering",
+      "primary": "dsh-cost-meter",
+      "alternative": "TokenLedger",
+      "scale": {
+        "input": "fixed-request-log",
+        "repetitionsPerTask": 5,
+        "subsets": ["pricing", "cache-tokens", "timezone", "quota"]
+      },
+      "statistics": {
+        "mean": true,
+        "p50": true,
+        "p95": true,
+        "failureDistribution": true
+      },
+      "nonCompensableThresholds": ["security-correctness-below-95", "data-loss-detected", "rollback-impossible"]
+    }
+  ]
+}

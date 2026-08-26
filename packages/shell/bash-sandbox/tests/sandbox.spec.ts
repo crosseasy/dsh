@@ -17,7 +17,7 @@ import { SandboxPolicyService } from '@deepseek-ai/dsh-sandbox-policy'
 import { SandboxBashExecutor } from '@deepseek-ai/dsh-bash-sandbox'
 import LocalSubprocessRuntime from '@deepseek-ai/dsh-subprocess-local'
 import type { SubprocessHandle, SubprocessOutputReader } from '@deepseek-ai/dsh-subprocess'
-import { classifyDenial, classifyRunnerFailure, isRunnerSpawnFailure } from '../src/helpers.ts'
+import { classifyDenial, classifyRunnerFailure, isRunnerSpawnFailure } from '@deepseek-ai/dsh-shell-runtime'
 import type { Config } from '@deepseek-ai/dsh-bash-sandbox'
 
 const spillDir = mkdtempSync(join(tmpdir(), 'dsh-bash-sandbox-spec-'))
@@ -551,8 +551,6 @@ describe('background sandbox facts', () => {
         denied: false,
         enforcement: 'full',
       })
-      const accounting = (bash as unknown as { processFacts: Map<unknown, unknown> }).processFacts
-      expect(accounting.size).toBe(0)
     } finally {
       rmSync(parent, { recursive: true, force: true })
     }

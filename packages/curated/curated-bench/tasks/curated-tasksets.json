@@ -1,0 +1,205 @@
+{
+  "schemaVersion": 1,
+  "evidenceKind": "planned",
+  "source": "docs/plugin/superpowers/04-评测体系.md#4-各能力域测试方法",
+  "taskSets": [
+    {
+      "capability": "web-search",
+      "subsets": [
+        "timely-facts",
+        "technical-docs",
+        "chinese-community",
+        "deep-pages",
+        "restricted-pages"
+      ],
+      "metrics": [
+        "recallAt10",
+        "factualAccuracy",
+        "extractionSuccessRate",
+        "p95LatencyMs",
+        "requestCount"
+      ],
+      "negativeTests": [
+        "engine-timeout",
+        "duplicate-results",
+        "malicious-page-injection",
+        "keyless-degradation"
+      ]
+    },
+    {
+      "capability": "memory",
+      "subsets": [
+        "preferences",
+        "project-facts",
+        "decisions",
+        "conflicting-facts",
+        "forget-requests",
+        "workspace-isolation"
+      ],
+      "metrics": [
+        "recallAt5",
+        "precisionAt5",
+        "falseInjectionRate",
+        "expiredFactRate",
+        "tokenCost"
+      ],
+      "negativeTests": [
+        "memory-prompt-injection",
+        "cross-space-leak",
+        "deleted-fact-recall",
+        "concurrent-write-conflict"
+      ]
+    },
+    {
+      "capability": "browser-computer-use",
+      "subsets": [
+        "public-pages",
+        "forms",
+        "downloads",
+        "spa",
+        "multi-tab",
+        "handoff"
+      ],
+      "metrics": [
+        "actionSuccessRate",
+        "elementLocationAccuracy",
+        "recoveryRate",
+        "stepLatencyMs"
+      ],
+      "negativeTests": [
+        "popup",
+        "redirect",
+        "file-upload",
+        "wrong-window",
+        "page-injection"
+      ]
+    },
+    {
+      "capability": "mcp-management",
+      "subsets": [
+        "oauth",
+        "static-token",
+        "service-error",
+        "profile-write",
+        "rollback"
+      ],
+      "metrics": [
+        "activationSuccessRate",
+        "rollbackCompleteness",
+        "permissionDenialRate"
+      ],
+      "negativeTests": [
+        "oauth-failure",
+        "bad-token",
+        "write-failure",
+        "rollback-failure"
+      ]
+    },
+    {
+      "capability": "cost-metering",
+      "subsets": [
+        "pricing",
+        "cache-tokens",
+        "timezone",
+        "quota"
+      ],
+      "metrics": [
+        "priceAccuracy",
+        "cacheTokenAccuracy",
+        "timezoneAccuracy",
+        "quotaEnforcement"
+      ],
+      "negativeTests": [
+        "stale-price",
+        "timezone-rollover",
+        "quota-exceeded"
+      ]
+    },
+    {
+      "capability": "multi-agent-orchestration",
+      "subsets": [
+        "parallel-engineering",
+        "dependency-dag",
+        "long-task",
+        "cancel",
+        "resume"
+      ],
+      "metrics": [
+        "completionRate",
+        "wallClockMs",
+        "tokenAmplification",
+        "duplicateWorkRate",
+        "mergeConflictRate"
+      ],
+      "negativeTests": [
+        "child-agent-crash",
+        "delegation-loop",
+        "budget-exceeded",
+        "parent-session-interrupt"
+      ]
+    },
+    {
+      "capability": "office-documents",
+      "subsets": [
+        "docx",
+        "xlsx",
+        "pptx",
+        "canvas"
+      ],
+      "metrics": [
+        "buildTimeMs",
+        "rssMiB",
+        "roundtripFidelity",
+        "toolSuccessRate"
+      ],
+      "negativeTests": [
+        "large-document",
+        "formula-loss",
+        "layout-drift",
+        "optional-download-denied"
+      ]
+    },
+    {
+      "capability": "vision-routing",
+      "subsets": [
+        "image-analysis",
+        "pixel-tools",
+        "provider-selection",
+        "enterprise-disabled-fallback"
+      ],
+      "metrics": [
+        "routingAccuracy",
+        "analysisSuccessRate",
+        "fallbackDeniedRate",
+        "credentialLeakRate"
+      ],
+      "negativeTests": [
+        "anonymous-fallback-request",
+        "missing-provider-key",
+        "malformed-image",
+        "provider-timeout"
+      ]
+    },
+    {
+      "capability": "feishu-channel",
+      "subsets": [
+        "credential-loading",
+        "message-redaction",
+        "approval-flow",
+        "websocket-cards"
+      ],
+      "metrics": [
+        "threatModelCompleteness",
+        "bodyEgressDeniedRate",
+        "credentialLeakRate",
+        "approvalSuccessRate"
+      ],
+      "negativeTests": [
+        "full-body-egress",
+        "missing-threat-model",
+        "invalid-credential",
+        "external-channel-disabled"
+      ]
+    }
+  ]
+}

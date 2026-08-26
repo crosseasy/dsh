@@ -22,8 +22,8 @@ import type {} from '@deepseek-ai/dsh-shell-env'
 import type { SandboxExecutionPolicy, SandboxMode } from '@deepseek-ai/dsh-sandbox'
 import { ESCALATION_TARGETS, approveEscalation, canonicalPath, validateEscalationArgs } from '@deepseek-ai/dsh-sandbox'
 import type { SandboxPolicyService } from '@deepseek-ai/dsh-sandbox-policy'
-import { DSH_ENV_PREFIX } from '@deepseek-ai/dsh-shell'
-import type { ShellRunResult } from '@deepseek-ai/dsh-shell'
+import { DSH_ENV_PREFIX, SHELL_BACKGROUND_OUTPUT_PROPERTIES, projectShellForegroundResult } from '@deepseek-ai/dsh-shell'
+import type { ShellForegroundResult } from '@deepseek-ai/dsh-shell'
 import { processOutcome } from './background.ts'
 import { parseExitStatus, renderProcessRead, renderResult } from './render.ts'
 
@@ -155,38 +155,6 @@ function resolveWorkdir(
   return modelWorkdir
 }
 
-/** Detach the executor DTO from readonly Service Definition types into plain JSON data. */
-function canonicalBashResult(result: ShellRunResult) {
-  const output = (stream: ShellRunResult['stdout']) => ({
-    text: stream.text,
-    truncated: stream.truncated,
-    ...stream.spillPath !== undefined ? { spillPath: stream.spillPath } : {},
-  })
-  return {
-    exitCode: result.exitCode,
-    signal: result.signal,
-    timedOut: result.timedOut,
-    aborted: result.aborted,
-    timeoutMs: result.timeoutMs,
-    stdout: output(result.stdout),
-    stderr: output(result.stderr),
-    ...result.sandbox !== undefined ? {
-      sandbox: {
-        mode: result.sandbox.mode,
-        denied: result.sandbox.denied,
-        ...result.sandbox.enforcement !== undefined ? { enforcement: result.sandbox.enforcement } : {},
-        ...result.sandbox.runnerFailed !== undefined ? { runnerFailed: result.sandbox.runnerFailed } : {},
-      },
-    } : {},
-  }
-}
-
-/** Canonical background-handle properties shared by the bash output union. */
-const BACKGROUND_OUTPUT_PROPERTIES = {
-  kind: { type: 'string', required: true, const: 'background' },
-  jobId: { type: 'string', required: true },
-} as const
-
 export function apply(ctx: Context, config: Config = {}): void {
   const backgroundEnabled = config.enableRunInBackground ?? true
   const defaultMode = ctx.shell.sandboxMode
@@ -274,7 +242,7 @@ export function apply(ctx: Context, config: Config = {}): void {
           {
             type: 'object',
             additionalProperties: false,
-            properties: BACKGROUND_OUTPUT_PROPERTIES,
+            properties: SHELL_BACKGROUND_OUTPUT_PROPERTIES,
           },
           {
             type: 'object',
@@ -324,7 +292,7 @@ export function apply(ctx: Context, config: Config = {}): void {
         type: 'text',
         text: value.kind === 'background'
           ? `started background job ${value.jobId}`
-          : renderResult(value as { kind: 'foreground' } & ShellRunResult, escalationModes),
+          : renderResult(value as ShellForegroundResult, escalationModes),
       }],
     },
     async execute(args: BashToolArgs, exec) {
@@ -386,7 +354,7 @@ export function apply(ctx: Context, config: Config = {}): void {
         error.name = 'AbortError'
         throw error
       }
-      return { kind: 'foreground' as const, ...canonicalBashResult(result) }
+      return projectShellForegroundResult(result)
     },
     presentCall: presentBashCall,
     presentResult: presentBashResult,

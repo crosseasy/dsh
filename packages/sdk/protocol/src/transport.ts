@@ -87,6 +87,10 @@ abstract class JsonRpcLineEndpoint {
     this.output.write(`${JSON.stringify(message)}\n`)
   }
 
+  protected writeError(id: JsonRpcId, code: number, message: string): void {
+    this.write({ jsonrpc: '2.0', id, error: { code, message } })
+  }
+
   protected abstract handleFrame(frame: JsonRpcFrame): Promise<void> | void
 
   protected handleInputFailure(_error: Error): void {}
@@ -138,14 +142,6 @@ export class JsonRpcLineServerTransport extends JsonRpcLineEndpoint implements J
   private requestHandler: RequestHandler | undefined
 
   /**
-   * @param input - caller-owned client-to-server byte stream.
-   * @param output - caller-owned server-to-client byte stream.
-   */
-  constructor(input: Readable, output: Writable) {
-    super(input, output)
-  }
-
-  /**
    * Install the request handler, replacing any prior handler.
    * @param handler - resolves to the response `result`; a rejection becomes a
    * `-32603` error response carrying the message.
@@ -180,26 +176,17 @@ export class JsonRpcLineServerTransport extends JsonRpcLineEndpoint implements J
     }
   }
 
-  private writeError(id: JsonRpcId, code: number, message: string): void {
-    this.write({ jsonrpc: '2.0', id, error: { code, message } })
-  }
 }
 
 /**
  * Client endpoint for outbound requests or notifications and inbound responses
- * or notifications. Request frames received from the server are ignored.
+ * or notifications. Request frames received from the server are ignored until
+ * a handler is installed.
  */
 export class JsonRpcLineClientTransport extends JsonRpcLineEndpoint {
+  private requestHandler: RequestHandler | undefined
   private notificationHandler: NotificationHandler | undefined
   private readonly pending = new Map<JsonRpcId, PendingRequest>()
-
-  /**
-   * @param input - caller-owned server-to-client byte stream.
-   * @param output - caller-owned client-to-server byte stream.
-   */
-  constructor(input: Readable, output: Writable) {
-    super(input, output)
-  }
 
   /** Detach listeners and reject pending requests without destroying the streams. */
   override close(): void {
@@ -213,6 +200,15 @@ export class JsonRpcLineClientTransport extends JsonRpcLineEndpoint {
    */
   onNotification(handler: NotificationHandler): void {
     this.notificationHandler = handler
+  }
+
+  /**
+   * Install a server-to-client request handler, replacing any prior handler.
+   * @param handler - resolves to the response `result`; a rejection becomes a
+   * `-32603` error response carrying the message.
+   */
+  onRequest(handler: RequestHandler): void {
+    this.requestHandler = handler
   }
 
   /**
@@ -275,13 +271,32 @@ export class JsonRpcLineClientTransport extends JsonRpcLineEndpoint {
   protected handleFrame(frame: JsonRpcFrame): void {
     const id = frame.id
     const method = frame.method
-    if (isJsonRpcId(id) && typeof method === 'string') return
+    if (isJsonRpcId(id) && typeof method === 'string') {
+      const handler = this.requestHandler
+      if (handler === undefined) return
+      void this.handleRequest(handler, id, method, objectParams(frame.params))
+      return
+    }
     if (isJsonRpcId(id)) {
       this.handleResponse(id, frame)
       return
     }
     if (typeof method === 'string') {
       this.notificationHandler?.(method, objectParams(frame.params))
+    }
+  }
+
+  private async handleRequest(
+    handler: RequestHandler,
+    id: JsonRpcId,
+    method: string,
+    params: Record<string, unknown>,
+  ): Promise<void> {
+    try {
+      const result = await handler(method, params)
+      this.write({ jsonrpc: '2.0', id, result })
+    } catch (error) {
+      this.writeError(id, -32603, error instanceof Error ? error.message : String(error))
     }
   }
 

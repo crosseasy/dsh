@@ -25,7 +25,7 @@ Status: implemented
 
 ### 约定依赖 `dsh-session` 和 `dsh-llm`——有意为之的偏离
 
-能力 seam Agent Note 规定 Service Definition 包「仅依赖 cordis」（对 `dsh-shell` 成立，因为其词汇是自包含的）。压缩**无法**遵守这一点：它的动词作用于 agent 拥有的 `Session`（`compactRegion(start, end, agent)`），其输出使用内容词汇（`CompactionResult.summary: ContentBlock[]`）。不引用 `Session`/`SessionEvent`（来自 `dsh-session`）和 `ContentBlock`（来自 `dsh-llm`），约定就无法表达。
+能力 seam Agent Note 规定 Service Definition 包「仅依赖 cordis」（对 `dsh-shell` 成立，因为其词汇是自包含的）。压缩**无法**遵守这一点：它的动词作用于 agent 拥有的 `Session`（`compactRegion(start, end, agent)`），其持久摘要事件使用 `ContentBlock` 词汇。不引用 `Session`/`SessionEvent`（来自 `dsh-session`）和 `ContentBlock`（来自 `dsh-llm`），约定就无法表达。
 
 这不是耦合异味，而是约定的领域所在。「仅 cordis」的指导原则一直是「接口仅依赖约定真正需要命名的东西，绝不依赖实现」的简写。`dsh-session` 和 `dsh-llm` 本身是接口/词汇包，不是实现；`dsh-compaction` 仍然不导入任何后端。seam 的真正不变式——*消费方和实现在抽象服务背后独立演进*——完好无损。
 
@@ -33,7 +33,7 @@ Status: implemented
 
 将完整算法（保留遍历、token 求和、文本提取）作为接口上的具体方法，会将约定重新耦合到一种策略：想要不同保留策略或事件排序的后端必须与继承来的具体代码对抗。将三个操作都设为抽象，把所有*怎么做*的决策放在后端，并让接口保持为*做什么*的声明。token 测量根本不是压缩钩子；单例服务使多个消费方能够共享逐会话的回放折叠。
 
-`compactIfNeeded(agent, trigger, signal)` 接受显式的 `'pressure' | 'context-overflow'` 触发原因与取消信号。它只读取最新的持久化已路由请求；没有 header 就不执行工作，任何已路由的提供方/模型目标都使用单例估算器。`compactNow(agent, signal)` 要求 agent 处于 idle，即使未达到压力也进行一次有效的平衡缩减；不存在这种范围时返回 `null`，且不写入任何内容。`compactRegion(start, end, agent, signal?)` 将 `agent.session` 作为唯一会话身份，并为显式调用方保留可选 signal。默认摘要器依次从显式配置、最新记录的已路由目标和 agent 选项解析目标，并在任何 `llm/stream` 路由后记录提供方/模型对。它回放已路由请求的前缀，并将压缩指令追加为尾部 user 消息，从而复用提供方的热 KV Cache；见[摘要前缀缓存 Agent Note](../bug-fix/2026-07-21-compaction-summary-prefix-cache-reuse.zh.md)。该结果携带 `llmStreamCall: true`，因为生成它时恰好通过此上下文的 LLM 服务发起了一次调用；只有满足相同条件时，子类才设置该标记，因为单有保留的 `rawOutput` 并不能判定调用路径。该调用将提供方无关的 `GenerateOptions.purpose` 设为 `compaction`；适配器可以将此用途映射为对模型隐藏的传输元数据，DeepSeek 适配器会发送 `x-deepseek-harness-compact: 1`。
+`compactIfNeeded(agent, trigger, signal)` 接受显式的 `'pressure' | 'context-overflow'` 触发原因与取消信号。它只读取最新的持久化已路由请求；没有 header 就不执行工作，任何已路由的提供方/模型目标都使用单例估算器。`compactNow(agent, signal)` 要求 agent 处于 idle，即使未达到压力也进行一次有效的平衡缩减；不存在这种范围时返回 `null`，且不写入任何内容。`compactRegion(start, end, agent, signal?)` 将 `agent.session` 作为唯一会话身份，并为显式调用方保留可选 signal。默认摘要器依次从显式配置、最新记录的已路由目标和 agent 选项解析目标，并在任何 `llm/stream` 路由后记录提供方/模型对。它回放已路由请求的前缀，并将压缩指令追加为尾部 user 消息，从而复用提供方的热 KV Cache；见[摘要前缀缓存 Agent Note](../bug-fix/2026-07-21-compaction-summary-prefix-cache-reuse.zh.md)。summary 事件携带 `llmStreamCall: true`，因为生成它时恰好通过此上下文的 LLM 服务发起了一次调用；只有满足相同条件时，子类才设置该标记，因为单有保留的 `rawOutput` 并不能判定调用路径。该调用将提供方无关的 `GenerateOptions.purpose` 设为 `compaction`；适配器可以将此用途映射为对模型隐藏的传输元数据，DeepSeek 适配器会发送 `x-deepseek-harness-compact: 1`。
 
 ### 成功的持久步骤工作完成后运行自动压力检查
 

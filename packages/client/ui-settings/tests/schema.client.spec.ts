@@ -29,12 +29,15 @@ describe('SettingsSchemaService validation', () => {
         mode: Schema.union(['fast', 'careful']),
       })),
     })
-    const describeForWire = (settingsModule as typeof settingsModule & {
+    const describeForWire = (
+      schema: Schema,
+      layers: { value: unknown },
+    ): { schema: unknown; value: unknown } => (settingsModule as typeof settingsModule & {
       describeForWire(
         schema: Schema,
         layers: { value: unknown },
       ): { schema: unknown; value: unknown }
-    }).describeForWire
+    }).describeForWire(schema, layers)
 
     const described = describeForWire(schema, {
       value: { providers: { acme: { tokens: ['client-secret-value'], mode: 'fast' } } },

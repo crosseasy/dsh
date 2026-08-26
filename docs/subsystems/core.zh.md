@@ -48,6 +48,20 @@ interface AgentHandle {
 }
 ```
 
+源码：[`packages/preset/agent-presets/src/index.ts`](../../packages/preset/agent-presets/src/index.ts)
+
+```ts type-equiv
+/** A temporary hold on one standing preset generation. */
+interface StandingPresetLease {
+  /** Preset id this lease resolved. */
+  readonly presetId: string
+  /** Scope key readers pass as a registry view scope. */
+  readonly key: ScopeKey
+  /** Release this hold; repeated calls await the same release. */
+  release(): Promise<void>
+}
+```
+
 `CreateAgentOptions` 携带共享标识以及新 agent 发布前所需的一切：会话元数据（`meta`——已校验的 `cwd`、fork 谱系、seed 边界、来源分类、委派深度）、fork 用的可选 `seed` 回放前缀、按 agent 的 `AgentOptions`、仅创建期有效的取消 `signal`，以及 `setup`。`ResumeAgentOptions` 是持久标识的对应项：`resumeSessionId`、`agentOptions`、`signal` 与 `setup`。`setup` 回调（`AgentSetup`）在两个 id 都尚未发布时组装 agent 的作用域世界——凡经 `agentCtx` 注册的内容都先于 `agent/created` 与第一次提示词组装存在——并可返回一个在发布前一刻调用的同步 commit；setup 拒绝、commit 抛出或所有者 dispose（资源释放）都会回滚事务，两个 id 均不发布。
 
 `AgentFactory` 是注册表背后的创建接口：循环经 `ctx.agents.setFactory()` 注册其工厂，因此消费方使用 `ctx.agents` 时无需依赖具体循环包。确切的 `create`/`resume` 签名及回滚约定见下方[生成区块](#ctxagents--agentregistry)。
@@ -417,9 +431,9 @@ async list(): Promise<AgentPreset[]>
 async resolve(id?: string): Promise<AgentPreset>
 
 /**
- * Compose one agent from a preset: ensure the preset's standing mount, then
- * parent the agent's scope key to it so the mount's registrations and
- * listeners cover this agent.
+ * Compose one agent from a preset: acquire the preset's standing generation,
+ * then parent the agent's scope key to it so the generation's registrations
+ * and listeners cover this agent until the agent scope unloads.
  *
  * Call from the agent factory's `setup(agentCtx)`; a rejection there rolls
  * the agent creation back, so a broken preset never yields a half-composed
@@ -527,14 +541,15 @@ serviceFor<K extends string & keyof Context>(agent: { ctx: Context }, name: K): 
  * make. The CALLER owns that check — this method does not read session
  * history.
  *
- * The swap is a parent re-link, not an unmount: standing mounts are shared
- * and permanent, so the old composition stays for its other agents and the
- * new one is ensured BEFORE the link moves. An unknown or unusable preset
- * therefore throws with the agent exactly as it was — there is no torn-down
- * state to restore. The re-link runs through the binding this roster kept
- * from the agent's mount — dsh-scope's only re-link authority. An agent
- * that never composed one has nothing to re-link: the switch is then the
- * agent's first bind, exactly a mount.
+ * The swap is a parent re-link, not an unmount: standing generations are
+ * shared, so the old composition stays for its other agents and the new one
+ * is ensured BEFORE the link moves. An unknown or unusable preset therefore
+ * throws with the agent exactly as it was. The previous holder is released
+ * only after the new binding succeeds; if the old generation was already
+ * retired, that release is the point that may dispose it. The re-link runs
+ * through the binding this roster kept from the agent's mount — dsh-scope's
+ * only re-link authority. An agent that never composed one has nothing to
+ * re-link: the switch is then the agent's first bind, exactly a mount.
  * @param agentCtx - the agent's scope context.
  * @param id - the preset to compose the agent from instead.
  * @returns the preset now installed.
@@ -543,20 +558,18 @@ serviceFor<K extends string & keyof Context>(agent: { ctx: Context }, name: K): 
 async recompose(agentCtx: Context, id: string): Promise<AgentPreset>
 
 /**
- * The standing scope key of one preset, for a host reader with no agent.
+ * Acquire one preset generation for a host reader with no agent.
  *
  * A cold transcript read resolves tool presenters against the composition
  * the session recorded, and the standing mount makes that possible without
- * resuming anything: ensuring the mount composes plugins but starts no
- * agent, no session, and no turn.
+ * resuming anything. The returned lease keeps a retired generation mounted
+ * until the reader leaves its `finally` block.
  * @param id - the preset id, or `undefined` for {@link defaultId}.
- * @returns the standing scope key readers pass as a registry view scope.
+ * @returns a lease whose `key` is the registry view scope.
  * @throws when the preset is unknown or its composition is unusable.
  */
-async standingKeyFor(id?: string): Promise<ScopeKey>
+async acquireStanding(id?: string): Promise<StandingPresetLease>
 ```
-
-Types: [ScopeKey](scope.zh.md)
 
 Source: [`packages/preset/agent-presets/src/index.ts`](../../packages/preset/agent-presets/src/index.ts)
 

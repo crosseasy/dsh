@@ -2,7 +2,7 @@ import { describe, expect, it, vi } from 'vitest'
 import { Context } from '@deepseek-ai/cordis'
 import { agentEvents, type Agent } from '@deepseek-ai/dsh-agent'
 import { CompactionId, compactCheckpointSource } from '@deepseek-ai/dsh-compaction'
-import { createUserMessage, CallId , createMessage, createToolResultMessage } from '@deepseek-ai/dsh-llm'
+import { createUserMessage, CallId, createMessage, createToolResultMessage, type UserMessage } from '@deepseek-ai/dsh-llm'
 import SessionStore, { Session, SessionId } from '@deepseek-ai/dsh-session'
 import SessionQueryEngine from '@deepseek-ai/dsh-session-query'
 import SessionReferenceResolver, {
@@ -43,6 +43,10 @@ async function harness(config: Config = {}): Promise<Context> {
 function fakeAgent(session: Session): Agent {
   return { id: session.id, session } as Agent
 }
+
+type PublicResolverMethods = keyof SessionReferenceResolver
+const resolverDoesNotExposePrivatePreparation: Extract<PublicResolverMethods, 'listCandidates' | 'prepare'> extends never ? true : never = true
+void resolverDoesNotExposePrivatePreparation
 
 function expectCode(code: SessionReferenceErrorCode): Error {
   return expect.objectContaining({ code }) as Error
@@ -196,6 +200,39 @@ function promptData(text: string): unknown {
   return JSON.parse(match[1])
 }
 
+async function runPreStep(
+  ctx: Context,
+  agent: Agent,
+  messages: readonly UserMessage[],
+  signal: AbortSignal = new AbortController().signal,
+): Promise<readonly UserMessage[]> {
+  const decision = await agentEvents(ctx, agent).waterfall(
+    'agent/pre-step',
+    { messages: [...messages], turn: 1, step: 1, signal },
+    () => Promise.resolve({ kind: 'enter' as const, messages: [...messages] }),
+  )
+  expect(decision.kind).toBe('enter')
+  if (decision.kind !== 'enter') throw new Error('expected entered pre-step')
+  return decision.messages
+}
+
+async function prepareDirectText(
+  ctx: Context,
+  agent: Agent,
+  text: string,
+  signal?: AbortSignal,
+): Promise<{ direct: UserMessage; context?: UserMessage }> {
+  const message = createUserMessage({
+    content: [{ type: 'text', text }],
+    source: { kind: 'user' },
+  })
+  const messages = await runPreStep(ctx, agent, [message], signal)
+  const direct = messages[0]
+  if (direct === undefined) throw new Error('expected direct message')
+  const context = messages[1]
+  return context === undefined ? { direct } : { direct, context }
+}
+
 describe('session reference URI and inline mentions', () => {
   it('round-trips arbitrary session ids and replaces mentions with readable labels', () => {
     const sessionId = SessionId('unicode/引号"/slash\\/line\n')
@@ -252,20 +289,56 @@ describe('session reference discovery and preparation', () => {
       source: { kind: 'fallback' },
     })
 
-    await expect(ctx.sessionReferenceResolver.listCandidates(fakeAgent(target))).resolves.toEqual([
-      { sessionId: SessionId('same-later'), label: 'Latest title', cwd: '/same', createdAt: 25 },
-      { sessionId: SessionId('same'), label: 'same', cwd: '/same', createdAt: 20 },
-      { sessionId: SessionId('none'), label: 'none', createdAt: 30 },
-      { sessionId: SessionId('other'), label: 'other', cwd: '/else', createdAt: 40 },
+    await expect(ctx.sessionReferenceResolver.remoteExportCandidates(fakeAgent(target), '', new AbortController().signal)).resolves.toEqual([
+      {
+        sessionId: SessionId('same-later'),
+        label: 'Latest title',
+        cwd: '/same',
+        createdAt: 25,
+        mention: formatSessionReferenceMention({ sessionId: SessionId('same-later'), label: 'Latest title' }),
+      },
+      {
+        sessionId: SessionId('same'),
+        label: 'same',
+        cwd: '/same',
+        createdAt: 20,
+        mention: formatSessionReferenceMention({ sessionId: SessionId('same'), label: 'same' }),
+      },
+      {
+        sessionId: SessionId('none'),
+        label: 'none',
+        createdAt: 30,
+        mention: formatSessionReferenceMention({ sessionId: SessionId('none'), label: 'none' }),
+      },
+      {
+        sessionId: SessionId('other'),
+        label: 'other',
+        cwd: '/else',
+        createdAt: 40,
+        mention: formatSessionReferenceMention({ sessionId: SessionId('other'), label: 'other' }),
+      },
     ])
-    await expect(ctx.sessionReferenceResolver.listCandidates(fakeAgent(target), 'els', 1)).resolves.toEqual([
-      { sessionId: SessionId('other'), label: 'other', cwd: '/else', createdAt: 40 },
+    const limitedCtx = await harness({ candidateLimit: 1 })
+    const limitedTarget = limitedCtx.sessions.create(SessionId('target'), { meta: { cwd: '/same', createdAt: 10 } })
+    limitedCtx.sessions.create(SessionId('other'), { meta: { cwd: '/else', createdAt: 40 } })
+    await expect(ctx.sessionReferenceResolver.remoteExportCandidates(fakeAgent(target), 'LATEST', new AbortController().signal)).resolves.toEqual([
+      {
+        sessionId: SessionId('same-later'),
+        label: 'Latest title',
+        cwd: '/same',
+        createdAt: 25,
+        mention: formatSessionReferenceMention({ sessionId: SessionId('same-later'), label: 'Latest title' }),
+      },
     ])
-    await expect(ctx.sessionReferenceResolver.listCandidates(fakeAgent(target), 'LATEST', 1)).resolves.toEqual([
-      { sessionId: SessionId('same-later'), label: 'Latest title', cwd: '/same', createdAt: 25 },
+    await expect(limitedCtx.sessionReferenceResolver.remoteExportCandidates(fakeAgent(limitedTarget), 'els', new AbortController().signal)).resolves.toEqual([
+      {
+        sessionId: SessionId('other'),
+        label: 'other',
+        cwd: '/else',
+        createdAt: 40,
+        mention: formatSessionReferenceMention({ sessionId: SessionId('other'), label: 'other' }),
+      },
     ])
-    await expect(ctx.sessionReferenceResolver.listCandidates(fakeAgent(target), '', 0))
-      .rejects.toThrow(expectCode('SESSION_REFERENCE_INVALID_REFERENCE'))
 
     let releaseList: (() => void) | undefined
     const listSessions = vi.spyOn(ctx.sessionQuery, 'listSessions').mockImplementationOnce(async () => {
@@ -273,7 +346,7 @@ describe('session reference discovery and preparation', () => {
       return []
     })
     const controller = new AbortController()
-    const pending = ctx.sessionReferenceResolver.listCandidates(fakeAgent(target), '', undefined, controller.signal)
+    const pending = ctx.sessionReferenceResolver.remoteExportCandidates(fakeAgent(target), '', controller.signal)
     await vi.waitFor(() => { expect(releaseList).toBeTypeOf('function') })
     const cancelledList = expect(pending).rejects.toThrow(expectCode('SESSION_REFERENCE_CANCELLED'))
     controller.abort('autocomplete superseded')
@@ -388,8 +461,13 @@ describe('session reference discovery and preparation', () => {
       reason: new Error('broken title log'),
     }])
 
-    await expect(ctx.sessionReferenceResolver.listCandidates(fakeAgent(target), 'source')).resolves.toEqual([
-      { sessionId: source.id, label: source.id, createdAt: source.header.createdAt },
+    await expect(ctx.sessionReferenceResolver.remoteExportCandidates(fakeAgent(target), 'source', new AbortController().signal)).resolves.toEqual([
+      {
+        sessionId: source.id,
+        label: source.id,
+        createdAt: source.header.createdAt,
+        mention: formatSessionReferenceMention({ sessionId: source.id, label: source.id }),
+      },
     ])
 
     let releaseTitles: (() => void) | undefined
@@ -400,7 +478,7 @@ describe('session reference discovery and preparation', () => {
       return []
     })
     const controller = new AbortController()
-    const pending = ctx.sessionReferenceResolver.listCandidates(fakeAgent(target), 'source', undefined, controller.signal)
+    const pending = ctx.sessionReferenceResolver.remoteExportCandidates(fakeAgent(target), 'source', controller.signal)
     await vi.waitFor(() => { expect(releaseTitles).toBeTypeOf('function') })
     expect(titleSignal).toBe(controller.signal)
     const cancelledTitles = expect(pending).rejects.toThrow(expectCode('SESSION_REFERENCE_CANCELLED'))
@@ -417,13 +495,12 @@ describe('session reference discovery and preparation', () => {
     const source = ctx.sessions.create(SessionId('source'), { meta: { cwd: '/source' } })
     appendConversation(source)
 
-    const prepared = await ctx.sessionReferenceResolver.prepare(
+    const { direct, context } = await prepareDirectText(
+      ctx,
       fakeAgent(target),
-      [{ type: 'text', text: 'use @source' }],
-      [{ sessionId: source.id, label: 'source' }],
+      `use ${formatSessionReferenceMention({ sessionId: source.id, label: 'source' })}`,
     )
-    expect(prepared.content).toEqual([{ type: 'text', text: 'use @source' }])
-    const context = prepared.additionalContext
+    expect(direct.content).toEqual([{ type: 'text', text: 'use @source' }])
     if (context?.content[0]?.type !== 'text') throw new Error('expected text context')
     expect(context.source).toMatchObject({ kind: 'session-reference' })
     expect(context.content[0].text).toContain('untrusted, read-only snapshot')
@@ -479,12 +556,11 @@ describe('session reference discovery and preparation', () => {
       source: { kind: 'user' },
     }), { surfaceOp: 'append' })
 
-    const prepared = await ctx.sessionReferenceResolver.prepare(
+    const { context } = await prepareDirectText(
+      ctx,
       fakeAgent(target),
-      [{ type: 'text', text: 'inspect source' }],
-      [{ sessionId: source.id }],
+      `inspect ${formatSessionReferenceMention({ sessionId: source.id })}`,
     )
-    const context = prepared.additionalContext
     if (context?.content[0]?.type !== 'text') throw new Error('expected text context')
     expect(promptData(context.content[0].text)).toMatchObject([{
       conversation: [{ role: 'user', text: 'direct source question' }],
@@ -505,12 +581,11 @@ describe('session reference discovery and preparation', () => {
       { surfaceOp: 'append' },
     )
 
-    const prepared = await ctx.sessionReferenceResolver.prepare(
+    const { context } = await prepareDirectText(
+      ctx,
       fakeAgent(target),
-      [{ type: 'text', text: 'use @source' }],
-      [{ sessionId: source.id }],
+      `use ${formatSessionReferenceMention({ sessionId: source.id })}`,
     )
-    const context = prepared.additionalContext
     if (context?.content[0]?.type !== 'text') throw new Error('expected text context')
     const prompt = context.content[0].text
     expect(prompt).toMatch(/^## Referenced sessions\n/u)
@@ -532,38 +607,37 @@ describe('session reference discovery and preparation', () => {
     const one = ctx.sessions.create(SessionId('one'))
     const two = ctx.sessions.create(SessionId('two'))
     const agent = fakeAgent(target)
-    const content = [{ type: 'text' as const, text: 'go' }]
+    const withoutReference = createUserMessage({
+      content: [{ type: 'text', text: 'go' }],
+      source: { kind: 'user' },
+    })
 
-    const withoutReferences = await ctx.sessionReferenceResolver.prepare(agent, content, [])
-    expect(withoutReferences).toEqual({ content })
-    expect(withoutReferences.content).not.toBe(content)
+    await expect(runPreStep(ctx, agent, [withoutReference]))
+      .resolves.toEqual([withoutReference])
 
-    await expect(ctx.sessionReferenceResolver.prepare(agent, content, [
-      { sessionId: one.id, label: 'first' },
-      { sessionId: one.id, label: 'ignored duplicate' },
-      { sessionId: two.id },
-    ])).resolves.toMatchObject({ additionalContext: { source: { references: [{ label: 'first' }, { label: 'two' }] } } })
-    await expect(ctx.sessionReferenceResolver.prepare(agent, content, [{ sessionId: target.id }]))
+    await expect(prepareDirectText(ctx, agent, [
+      formatSessionReferenceMention({ sessionId: one.id, label: 'first' }),
+      formatSessionReferenceMention({ sessionId: one.id, label: 'ignored duplicate' }),
+      formatSessionReferenceMention({ sessionId: two.id }),
+    ].join(' '))).resolves.toMatchObject({ context: { source: { references: [{ label: 'first' }, { label: 'two' }] } } })
+    await expect(prepareDirectText(ctx, agent, formatSessionReferenceMention({ sessionId: target.id })))
       .rejects.toThrow(expectCode('SESSION_REFERENCE_SELF_REFERENCE'))
-    await expect(ctx.sessionReferenceResolver.prepare(agent, content, [null as never]))
-      .rejects.toThrow(expectCode('SESSION_REFERENCE_INVALID_REFERENCE'))
-    await expect(ctx.sessionReferenceResolver.prepare(agent, content, [1 as never]))
-      .rejects.toThrow(expectCode('SESSION_REFERENCE_INVALID_REFERENCE'))
-    await expect(ctx.sessionReferenceResolver.prepare(agent, content, [{ sessionId: 1 } as never]))
-      .rejects.toThrow(expectCode('SESSION_REFERENCE_INVALID_REFERENCE'))
-    await expect(ctx.sessionReferenceResolver.prepare(agent, content, [
-      { sessionId: one.id }, { sessionId: two.id }, { sessionId: SessionId('three') },
-    ])).rejects.toThrow(expectCode('SESSION_REFERENCE_TOO_MANY'))
-    await expect(ctx.sessionReferenceResolver.prepare(agent, content, [
-      { sessionId: one.id }, { sessionId: SessionId('missing') },
-    ])).rejects.toThrow(expectCode('SESSION_REFERENCE_READ_FAILED'))
+    await expect(prepareDirectText(ctx, agent, [
+      formatSessionReferenceMention({ sessionId: one.id }),
+      formatSessionReferenceMention({ sessionId: two.id }),
+      formatSessionReferenceMention({ sessionId: SessionId('three') }),
+    ].join(' '))).rejects.toThrow(expectCode('SESSION_REFERENCE_TOO_MANY'))
+    await expect(prepareDirectText(ctx, agent, [
+      formatSessionReferenceMention({ sessionId: one.id }),
+      formatSessionReferenceMention({ sessionId: SessionId('missing') }),
+    ].join(' '))).rejects.toThrow(expectCode('SESSION_REFERENCE_READ_FAILED'))
 
     const readSurface = vi.spyOn(ctx.sessionQuery, 'readSurface')
     readSurface.mockRejectedValueOnce('non-error read failure')
-    await expect(ctx.sessionReferenceResolver.prepare(agent, content, [{ sessionId: one.id }]))
+    await expect(prepareDirectText(ctx, agent, formatSessionReferenceMention({ sessionId: one.id })))
       .rejects.toThrow(/non-error read failure/)
     readSurface.mockRejectedValueOnce('non-error signalled read failure')
-    await expect(ctx.sessionReferenceResolver.prepare(agent, content, [{ sessionId: one.id }], new AbortController().signal))
+    await expect(prepareDirectText(ctx, agent, formatSessionReferenceMention({ sessionId: one.id }), new AbortController().signal))
       .rejects.toThrow(/non-error signalled read failure/)
 
     const duringRead = new AbortController()
@@ -571,7 +645,7 @@ describe('session reference discovery and preparation', () => {
       duringRead.abort('cancelled during read')
       throw new Error('read interrupted')
     })
-    await expect(ctx.sessionReferenceResolver.prepare(agent, content, [{ sessionId: one.id }], duringRead.signal))
+    await expect(prepareDirectText(ctx, agent, formatSessionReferenceMention({ sessionId: one.id }), duringRead.signal))
       .rejects.toThrow(expectCode('SESSION_REFERENCE_CANCELLED'))
 
     const snapshot = await ctx.sessionQuery.readSurface(one.id)
@@ -581,7 +655,7 @@ describe('session reference discovery and preparation', () => {
       return snapshot
     })
     const hangingRead = new AbortController()
-    const pending = ctx.sessionReferenceResolver.prepare(agent, content, [{ sessionId: one.id }], hangingRead.signal)
+    const pending = prepareDirectText(ctx, agent, formatSessionReferenceMention({ sessionId: one.id }), hangingRead.signal)
     await vi.waitFor(() => { expect(releaseRead).toBeTypeOf('function') })
     const cancelledRead = expect(pending).rejects.toThrow(expectCode('SESSION_REFERENCE_CANCELLED'))
     hangingRead.abort('cancelled while storage remained pending')
@@ -592,7 +666,7 @@ describe('session reference discovery and preparation', () => {
 
     const abort = new AbortController()
     abort.abort('host cancelled')
-    await expect(ctx.sessionReferenceResolver.prepare(agent, content, [{ sessionId: one.id }], abort.signal))
+    await expect(prepareDirectText(ctx, agent, formatSessionReferenceMention({ sessionId: one.id }), abort.signal))
       .rejects.toThrow(expectCode('SESSION_REFERENCE_CANCELLED'))
   })
 
@@ -618,8 +692,7 @@ describe('session reference discovery and preparation', () => {
       { surfaceOp: 'append' },
     )
 
-    const prepared = await ctx.sessionReferenceResolver.prepare(fakeAgent(target), [{ type: 'text', text: 'go' }], [{ sessionId: source.id }])
-    const context = prepared.additionalContext
+    const { context } = await prepareDirectText(ctx, fakeAgent(target), formatSessionReferenceMention({ sessionId: source.id }))
     if (context?.content[0]?.type !== 'text') throw new Error('expected text context')
     const data = promptData(context.content[0].text) as unknown[]
     expect(Buffer.byteLength(stringifyTagSafeJson(data[0]), 'utf8')).toBeLessThanOrEqual(360)
@@ -653,12 +726,11 @@ describe('session reference discovery and preparation', () => {
       return source
     })
 
-    const prepared = await ctx.sessionReferenceResolver.prepare(
+    const { context } = await prepareDirectText(
+      ctx,
       fakeAgent(target),
-      [{ type: 'text', text: 'go' }],
-      sources.map(source => ({ sessionId: source.id })),
+      sources.map(source => formatSessionReferenceMention({ sessionId: source.id })).join(' '),
     )
-    const context = prepared.additionalContext
     if (context?.content[0]?.type !== 'text') throw new Error('expected text context')
     const data = promptData(context.content[0].text) as unknown[]
     const sizes = data.map(source => Buffer.byteLength(stringifyTagSafeJson(source), 'utf8'))
@@ -671,7 +743,7 @@ describe('session reference discovery and preparation', () => {
     const ctx = await harness({ maxReferenceBytes: 16 })
     const target = ctx.sessions.create(SessionId('target'))
     const source = ctx.sessions.create(SessionId('source'))
-    await expect(ctx.sessionReferenceResolver.prepare(fakeAgent(target), [{ type: 'text', text: 'go' }], [{ sessionId: source.id }]))
+    await expect(prepareDirectText(ctx, fakeAgent(target), formatSessionReferenceMention({ sessionId: source.id })))
       .rejects.toThrow(expectCode('SESSION_REFERENCE_BUDGET_EXCEEDED'))
   })
 
@@ -688,15 +760,14 @@ describe('session reference discovery and preparation', () => {
       }),
       { surfaceOp: 'append' },
     )
-    const prepared = await ctx.sessionReferenceResolver.prepare(
+    const { direct, context } = await prepareDirectText(
+      ctx,
       fakeAgent(target),
-      [{ type: 'text', text: 'use @source' }],
-      [{ sessionId: source.id }],
+      `use ${formatSessionReferenceMention({ sessionId: source.id })}`,
     )
-    const context = prepared.additionalContext
     if (context === undefined) throw new Error('expected prepared context')
     target.append('user/message', createUserMessage({
-      content: prepared.content,
+      content: direct.content,
       source: { kind: 'user' },
     }), { surfaceOp: 'append' })
     target.append('user/message', context, { surfaceOp: 'append' })

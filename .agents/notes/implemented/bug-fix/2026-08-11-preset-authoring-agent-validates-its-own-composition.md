@@ -22,7 +22,7 @@ Underneath all four sat a capability claim: the agent "cannot start one \[a sess
 
 The skill teaches the agent to mount-validate its own composition through `ctx.agentPresets`, and every remaining example is taken from a shipped composition in the same repository.
 
-`standingKeyFor(id)` is the check. It runs `ensureStanding()` — the same real mount a session start performs, minus the agent — so it rejects a row whose package does not resolve, a row whose config is invalid, a service published into the root realm, and a row that never activated. A failed mount deletes the standing entry and disposes its scope, leaving nothing behind; a successful one installs the standing generation the first real session would have installed anyway. The skill therefore places it as the final check on a finished edit rather than a per-line loop.
+`acquireStanding(id)` is the check. It runs `ensureStanding()` — the same real mount a session start performs, minus the agent — so it rejects a row whose package does not resolve, a row whose config is invalid, a service published into the root realm, and a row that never activated. A failed mount leaves any previous generation current and disposes the failed scope; a successful one installs the standing generation the first real session would have installed anyway. The skill therefore places it as the final check on a finished edit rather than a per-line loop, then releases the returned lease.
 
 The skill states plainly that `list()`'s `broken` field is **not** validation. Discovery's health check proves the file parses in the loader's dialect and holds named rows, and every one of the four failures above passes it.
 
@@ -42,7 +42,7 @@ The prohibition on touching the shipped install is promoted from a paragraph ins
 
 Each row was produced by booting the shipped Web composition and calling the tools through `ctx.tools.execute` on an agent composed from `cordis` — no model in the loop.
 
-| Composition under test | `list()` `broken` | `standingKeyFor()` |
+| Composition under test | `list()` `broken` | `acquireStanding()` |
 |---|---|---|
 | row names an absent package | empty | `Cannot find package '@deepseek-ai/dsh-does-not-exist'` |
 | service row with no realm, name the host supplies | empty | `service "tasks" has been registered at <LocalJobRegistry>` |
@@ -63,7 +63,7 @@ The skill's own `cordis_mount` snippet was executed verbatim through the tool re
 
 ## Consequences
 
-- A successful validation leaves a standing generation that is never reclaimed, which is the [standing-mount](../architecture/2026-08-08-per-preset-standing-mounts.md) cost the roster already carries per generation — the agent pays it once at the end of an edit instead of the user paying it at the first session.
+- A successful validation leaves the current standing generation mounted for reuse; a later replacement retires it, and the [generation reclamation decision](2026-08-25-preset-generation-reclamation.md) releases it after the final holder exits.
 - The skill now depends on `cordis_inspect`'s generated API catalog staying current for `agentPresets`; `verify-cordis-api` in `doc-sync` is what holds that.
 - Two examples are now quotations of `standard`'s composition. They drift if that file's `delegation` group changes, which the `web-agent-presets` e2e does not catch.
 - The four corrected statements were the skill's only concrete illustrations of the realm rule. Replacing rather than deleting them keeps the rule teachable; the replacements are verifiable by reading one shipped file.

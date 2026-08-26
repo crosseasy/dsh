@@ -212,9 +212,9 @@ export async function compactSurfaceRegion(
     stage = 'commit'
     const pending = commitCompactionBody(session, startEvent, summarized)
     closing = true
-    const endEvent = session.append('compaction/end', lifecycle)
+    session.append('compaction/end', lifecycle)
     closed = true
-    result = completeCompaction(pending, endEvent)
+    result = pending
   } catch (error: unknown) {
     failure = { error, stage: closing ? 'commit' : stage }
     if (!closing) {
@@ -361,7 +361,7 @@ async function summarizeCompaction(
   dependencies: RegionDependencies,
   prepared: PreparedCompaction,
   agent: Agent,
-  compactionId: CompactionResult['compactionId'],
+  compactionId: CompactionId,
   sourceCommandId: CommandId | undefined,
   signal?: AbortSignal,
 ): Promise<SummarizedCompaction> {
@@ -428,7 +428,7 @@ function commitCompactionBody(
   session: Session,
   startEvent: SessionEvent<'compaction/start'>,
   summarized: SummarizedCompaction,
-): Omit<CompactionResult, 'endSeq'> {
+): CompactionResult {
   const {
     start,
     end,
@@ -464,25 +464,11 @@ function commitCompactionBody(
     sourceEventSeqs: [startEvent.seq, summaryEvent.seq, ...shadowedSeqs],
   })
   return {
-    compactionId: startEvent.data.compactionId,
-    ...startEvent.data.sourceCommandId === undefined
-      ? {}
-      : { sourceCommandId: startEvent.data.sourceCommandId },
-    startSeq: startEvent.seq,
     summarySeq: summaryEvent.seq,
-    summary,
     shadowedRange: { start, end },
     shadowedSeqs: [...shadowedSeqs],
     shadowedTokenCount,
   }
-}
-
-/** Attach the successfully appended close event to a pending result. */
-function completeCompaction(
-  pending: Omit<CompactionResult, 'endSeq'>,
-  endEvent: SessionEvent<'compaction/end'>,
-): CompactionResult {
-  return { ...pending, endSeq: endEvent.seq }
 }
 
 /**

@@ -14,7 +14,7 @@ import SubagentRuntime, { type SubagentStartRequest } from '@deepseek-ai/dsh-sub
 import { MockAdapter, maxTokensResponse, textResponse, toolCallResponse } from '../../../core/agent-loop/tests/mock-adapter.ts'
 import * as spawn from '../src/index.ts'
 import { STRUCTURED_OUTPUT_TOOL } from '@deepseek-ai/dsh-subagent-in-process-driver'
-import { defineContentToolFixture } from '@deepseek-ai/dsh-tools'
+import { defineContentToolFixture } from '@deepseek-ai/dsh-tools/testing'
 
 type Script = ConstructorParameters<typeof MockAdapter>[0]
 

@@ -91,18 +91,8 @@ declare module '@deepseek-ai/dsh-session/types' {
 
 /** Result of a successful compaction operation. */
 export interface CompactionResult {
-  /** Stable identity shared by this compaction's complete durable lifecycle. */
-  compactionId: CompactionId
-  /** Human command that initiated this compaction, when it was manual. */
-  sourceCommandId?: CommandId
-  /** The seq of the appended `compaction/start` event. */
-  startSeq: number
   /** The seq of the appended `compaction/summary` event. */
   summarySeq: number
-  /** The seq of the appended `compaction/end` event. */
-  endSeq: number
-  /** The summary content blocks produced by the backend. */
-  summary: ContentBlock[]
   /**
    * The surface-boundary pair that was shadowed: the seqs of the first
    * (`start`) and last (`end`) surface nodes of the replaced range. A

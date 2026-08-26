@@ -372,13 +372,14 @@ class HarnessClient:
         """Return available subprocess state for transport failures and timeouts."""
         proc = self._proc
         if (
-            proc is not None
-            and proc.poll() is not None
-            and self._stderr_thread is not None
+            self._stderr_thread is not None
             and self._stderr_thread.is_alive()
             and threading.current_thread() is not self._stderr_thread
         ):
-            self._stderr_thread.join(timeout=0.1)
+            for _ in range(5):
+                self._stderr_thread.join(timeout=0.1)
+                if self._stderr_lines or not self._stderr_thread.is_alive():
+                    break
 
         parts: list[str] = []
         if proc is not None:

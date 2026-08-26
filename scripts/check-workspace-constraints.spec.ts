@@ -1,9 +1,13 @@
 /** Experimental-package publication and dependency constraints. */
 
-import { describe, expect, it } from 'vitest'
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { dirname, join } from 'node:path'
+import { afterEach, describe, expect, it } from 'vitest'
 import {
   checkExperimentalDependencyIsolation,
   checkExperimentalManifest,
+  checkHierarchyShape,
   type WorkspaceManifest,
 } from './check-workspace-constraints.ts'
 
@@ -11,6 +15,22 @@ const experimental: WorkspaceManifest = {
   dir: 'packages/experimental/prototype',
   manifest: { name: '@deepseek-ai/dsh-experimental-prototype', private: true },
 }
+const roots: string[] = []
+
+function fixture(): string {
+  const root = mkdtempSync(join(tmpdir(), 'dsh-constraints-'))
+  roots.push(root)
+  return root
+}
+
+function write(path: string, content = ''): void {
+  mkdirSync(dirname(path), { recursive: true })
+  writeFileSync(path, content)
+}
+
+afterEach(() => {
+  for (const root of roots.splice(0)) rmSync(root, { recursive: true, force: true })
+})
 
 describe('experimental workspace constraints', () => {
   it('requires the experimental package-name prefix', () => {
@@ -71,6 +91,27 @@ describe('experimental workspace constraints', () => {
 
     expect(checkExperimentalDependencyIsolation(manifests)).toEqual([
       '@deepseek-ai/dsh-python-runtime: dependencies.@deepseek-ai/dsh-experimental-prototype must not reference an experimental package',
+    ])
+  })
+})
+
+describe('workspace hierarchy shape', () => {
+  it('ignores deleted package directories containing only generated residue', () => {
+    const root = fixture()
+    mkdirSync(join(root, 'client', 'removed', 'node_modules'), { recursive: true })
+    write(join(root, 'client', 'removed', 'lib', 'index.js'))
+    write(join(root, 'client', 'removed', '.typecheck', 'state.json'))
+    write(join(root, 'client', 'removed', 'tsconfig.tsbuildinfo'))
+
+    expect(checkHierarchyShape(root)).toEqual([])
+  })
+
+  it('rejects deleted package directories containing unknown files', () => {
+    const root = fixture()
+    write(join(root, 'client', 'removed', 'notes.txt'))
+
+    expect(checkHierarchyShape(root)).toEqual([
+      'packages/client/removed: expected a package here (no package.json found) — unknown entries remain: notes.txt',
     ])
   })
 })

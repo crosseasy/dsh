@@ -1,0 +1,11 @@
+{
+  "schemaVersion": 1,
+  "kind": "curated-profile-snapshot",
+  "source": "docs/plugin/superpowers/03-实施路线图.md#task-p0-1固定版本与导出官方基线配置",
+  "createdAt": "2026-08-25",
+  "profile": "web",
+  "bundles": [
+    "@deepseek-ai/dsh-base",
+    "@deepseek-ai/dsh-web-app"
+  ]
+}

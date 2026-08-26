@@ -51,7 +51,7 @@ interface SettingsRegisterOptions<T> {
 
 `validate` 在 schema 接纳该值之后运行，因此它看到的默认值和组合 base 与 owner 实际看到的完全一致。`dsh-llm-pi-ai` 用它在写入处拒绝自己无法服务的提供方 profile，而不是先存下来、再让该 namespace 下每条路由失效。
 
-`applies` 是 UI 提示而非机制：`restart` 的 owner 只是从不 watch，其值在构造期读取一次，配置界面可为待生效变更加标。
+`applies` 是 UI 提示而非机制：`restart` 的 owner 只是从不 watch，其值在构造期读取一次，配置界面可为待生效变更加标。registrant fiber dispose 时会把 owner scope 标为 inactive；如果该 namespace 仍由它持有，就移除 namespace，跳过已排队的 watcher 调用，并等待已经启动的 watcher 调用结算。
 
 ```ts type-equiv
 /** When a namespace's changes take effect for its owner. */
@@ -60,7 +60,7 @@ type SettingsApplies = 'live' | 'restart'
 
 ## Owner scope
 
-scope 是面向 owner 的句柄。`update` 把稀疏 patch 只合并进用户分节（绝不进 `base`）；`replace` 整体替换分节，是删除/重置路径——替换中缺席的键重新继承 `base` 与 schema 默认值。同一 namespace 的写入按调用顺序串行，解析值是深冻结快照。
+scope 是面向 owner 的句柄。`update` 把稀疏 patch 只合并进用户分节（绝不进 `base`）；`replace` 整体替换分节，是删除/重置路径——替换中缺席的键重新继承 `base` 与 schema 默认值。同一 namespace 的写入按调用顺序串行，解析值是深冻结快照；registration 已 dispose 的 scope 会拒绝后续写入或 watcher。
 
 ```ts type-equiv
 /** Owner-facing handle for one registered namespace. */
@@ -72,7 +72,8 @@ interface SettingsScope<T> {
    * of one callback run asynchronously, one at a time, in commit order; a
    * rejection is contained and logged like a sync throw. After the disposer
    * returns, no further invocation starts — one already queued is skipped;
-   * one already started still settles, and service disposal waits for it.
+   * one already started still settles, and service or registration disposal
+   * waits for it. A disposed registration rejects new watchers.
    * @param callback - invoked after each commit with the next and previous values.
    * @returns the disposer removing this observer.
    */
@@ -151,7 +152,7 @@ type SettingsPathOp =
 
 ## 变更提交
 
-每次提交的变更——进程内写入或提供方观察到的外部编辑——在新值成为权威值之后发出 `settings/updated (ns, next, prev, source)`，解析值深相等时绝不发出。source 标记区分两条入口路径。
+每次提交的变更——进程内写入或提供方观察到的外部编辑——在新值成为权威值之后发出 `settings/updated (ns, next, prev, source)`，解析值深相等时绝不发出。source 标记区分两条入口路径。如果已 dispose 的 owner 发起的写入在同 namespace replacement owner 注册后才到达存储，replacement owner 会从已提交的原始分节重新解析、推进 revision，并按自己的 lifecycle 规则通知 watcher；若 replacement 拒绝该分节，则沿用 provider publish 的 last-good 告警行为。
 
 ```ts type-equiv
 /** Origin of one committed settings change. */
@@ -184,8 +185,11 @@ prepareDocument(): Promise<string | undefined>
 /**
  * Register a namespace schema and receive its owner scope. The registration
  * is an effect on the calling plugin's fiber: disposing that fiber removes
- * the namespace and its observers. An invalid stored section fails the
- * registration itself — the earliest point where the schema can judge it.
+ * the namespace and its observers, skips watcher calls that have not
+ * started, and waits for started watcher calls before resolving. A scope
+ * whose registration was disposed rejects later writes or watchers. An
+ * invalid stored section fails the registration itself — the earliest point
+ * where the schema can judge it.
  * @param ns - unique namespace; duplicate registration fails loud.
  * @param schema - schemastery schema resolving this namespace's value.
  * @param options - composition `base` layer and effect timing.
@@ -194,13 +198,30 @@ prepareDocument(): Promise<string | undefined>
 register<T>(ns: SettingsNamespace, schema: z<T>, options?: SettingsRegisterOptions<T>): SettingsScope<T>
 
 /**
- * Describe every registered namespace for configuration surfaces, including
- * the composition `base` and raw user layers so a form can mark which fields
- * the user overrode (presence in `user`) and what a reset returns to.
- * @param options - redaction switch; wire surfaces must redact.
+ * Describe every registered namespace for same-process configuration
+ * consumers, including verbatim values and serialized schema metadata.
  * @returns one descriptor per registered namespace, in registration order.
  */
-describe(options?: SettingsDescribeOptions): SettingsDescriptor[]
+describe(): SettingsDescriptor[]
+
+/**
+ * Describe every registered namespace for wire consumers through the only
+ * supported serialization path. The complete schema graph is checked before
+ * serialization; secrets are removed from values and schema defaults.
+ * @returns all descriptors in registration order.
+ * @throws a value-free error when a schema cannot be represented safely.
+ */
+describeForWire(): WireSettingsDescriptor[]
+
+/**
+ * Describe one registered namespace for wire consumers through the only
+ * supported serialization path. The complete schema graph is checked before
+ * serialization; secrets are removed from values and schema defaults.
+ * @param ns - namespace selecting one descriptor.
+ * @returns the selected descriptor, or `undefined` while unregistered.
+ * @throws a value-free error when the schema cannot be represented safely.
+ */
+describeForWire(ns: SettingsNamespace): WireSettingsDescriptor | undefined
 
 /**
  * Read one registered namespace's resolved value.

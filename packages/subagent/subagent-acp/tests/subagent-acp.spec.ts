@@ -409,6 +409,7 @@ describe('dsh-subagent-acp', () => {
     const promptCall = vi.spyOn(ClientSideConnection.prototype, 'prompt').mockReturnValue(prompt.promise)
     const cancel = vi.spyOn(ClientSideConnection.prototype, 'cancel').mockResolvedValue()
     const controller = new AbortController()
+    const removeAbortListener = vi.spyOn(controller.signal, 'removeEventListener')
 
     try {
       const run = await startAcpRun(request('p', controller.signal), {
@@ -443,7 +444,61 @@ describe('dsh-subagent-acp', () => {
         output: [{ type: 'text', text: 'completed output' }],
         stopReason: 'completed',
       })
+      expect(removeAbortListener).toHaveBeenCalledOnce()
+      expect(removeAbortListener).toHaveBeenCalledWith('abort', expect.any(Function))
       await run.dispose()
+    } finally {
+      initialize.mockRestore()
+      newSession.mockRestore()
+      promptCall.mockRestore()
+      cancel.mockRestore()
+      stdin.destroy()
+      stdout.destroy()
+    }
+  })
+
+  it('memoizes repeated dispose while cancellation settles the result without child cooperation', async () => {
+    const prompt = Promise.withResolvers<{ stopReason: 'end_turn' }>()
+    const eofWait = Promise.withResolvers<boolean>()
+    const stdin = new PassThrough()
+    const stdout = new PassThrough()
+    const child = {
+      pid: 1,
+      stdin,
+      stdout,
+      stderr: undefined,
+      collected: {},
+      done: Promise.resolve({ exitCode: 0, signal: null }),
+      terminate: vi.fn(),
+      waitForExit: vi.fn((signal?: AbortSignal) => signal === undefined ? Promise.resolve(true) : eofWait.promise),
+    } satisfies SubprocessHandle
+    const initialize = vi.spyOn(ClientSideConnection.prototype, 'initialize').mockResolvedValue({} as never)
+    const newSession = vi.spyOn(ClientSideConnection.prototype, 'newSession').mockResolvedValue({ sessionId: 'remote' })
+    const promptCall = vi.spyOn(ClientSideConnection.prototype, 'prompt').mockReturnValue(prompt.promise)
+    const cancel = vi.spyOn(ClientSideConnection.prototype, 'cancel').mockResolvedValue()
+
+    try {
+      const run = await startAcpRun(request(), {
+        command: 'controlled-acp',
+        args: [],
+        cwd: process.cwd(),
+        permission: 'reject',
+        env: {},
+        disposeEofGraceMs: DEFAULT_DISPOSE_EOF_GRACE_MS,
+        disposeGraceMs: DEFAULT_DISPOSE_GRACE_MS,
+        spawn: () => child,
+      })
+
+      const disposal = run.dispose()
+      expect(run.dispose()).toBe(disposal)
+      expect(cancel).toHaveBeenCalledOnce()
+      expect(cancel).toHaveBeenCalledWith({ sessionId: 'remote' })
+      await expect(run.result).resolves.toEqual({ output: [], stopReason: 'aborted' })
+      expect(child.waitForExit).toHaveBeenCalledTimes(1)
+      eofWait.resolve(false)
+      await disposal
+      expect(child.terminate).toHaveBeenCalledOnce()
+      expect(child.waitForExit).toHaveBeenCalledTimes(2)
     } finally {
       initialize.mockRestore()
       newSession.mockRestore()

@@ -31,8 +31,6 @@ interface WorkflowStartRequest {
   maxTotalAgents?: number
   /** The agent on whose behalf the run executes (parent of every child). */
   parent: Agent
-  /** Cancels the run when aborted. */
-  signal?: AbortSignal
 }
 ```
 
@@ -144,8 +142,7 @@ Workflow Service Definition contract. Invalid requests throw before publication;
 ```ts cordis-catalog
 /**
  * Parse and execute a workflow script.
- * @param request - the script, its `args`, the parent agent, and an
- *   optional cancel signal.
+ * @param request - the script, its `args`, and the parent agent.
  * @returns the live run; its `result` resolves when the script settles.
  */
 abstract start(request: WorkflowStartRequest): WorkflowRun

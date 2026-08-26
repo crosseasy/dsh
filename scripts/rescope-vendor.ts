@@ -210,7 +210,7 @@ const EXACT_EDITS: readonly ExactEdit[] = [
         "@deepseek-ai/.+"
       ]
     },
-    "packages/util/home": {`,
+    "packages/host/directory-picker-auto": {`,
     expect: 1,
   },
   {
@@ -348,7 +348,7 @@ const VENDORED_LIBRARY = /^@deepseek-ai\\/(cosmokit|schemastery)(\\/|$)/
     id: 'vendoring-cookbook-name-invariant-zh',
     file: 'docs/cookbook/adding-a-vendored-package.zh.md',
     find: '保留上游的 `name`/`version`/`exports`/`type`',
-    replace: '改写 `name` 的 scope（[映射](../rescope.md)），保留上游的 `version`/`exports`/`type`',
+    replace: '改写 `name` 的 scope（[映射](../rescope.zh.md)），保留上游的 `version`/`exports`/`type`',
     expect: 1,
   },
   {
@@ -621,6 +621,14 @@ export function exactEditState(text: string, find: string, replace: string, expe
   return hits === expect && landed === 0 ? 'pending' : 'invalid'
 }
 
+/**
+ * Keep tracked paths that still exist in the current working tree.
+ * Deleted tracked files have no contents for residue checks.
+ */
+export function existingTrackedFiles(files: readonly string[], exists: (file: string) => boolean): string[] {
+  return files.filter(file => exists(file))
+}
+
 function main(): void {
   const args = process.argv.slice(2)
   const mode = args.includes('--apply') ? 'apply' : args.includes('--check') ? 'check' : 'dry'
@@ -629,6 +637,7 @@ function main(): void {
   const files = execFileSync('git', ['ls-files', '-z'], { cwd: root, encoding: 'utf8' })
     .split('\0')
     .filter(file => file !== '' && !excluded(file))
+  const existingFiles = existingTrackedFiles(files, file => existsSync(resolve(root, file)))
 
   const counts = new Map<string, { files: number; lines: number }>()
   const failures: string[] = []
@@ -668,7 +677,7 @@ function main(): void {
     }
   }
 
-  for (const file of files) {
+  for (const file of existingFiles) {
     const path = resolve(root, file)
     const before = readFileSync(path, 'utf8')
     const { text: after, lines } = rewrite(before, file, all)

@@ -1,0 +1,23 @@
+{
+  "schemaVersion": 1,
+  "source": "packages/curated/curated-policy/policy/plugin-allowlist.yaml",
+  "generatedAt": "2026-08-25",
+  "summary": {
+    "candidateCount": 37,
+    "activeCount": 13,
+    "rejectedCount": 23,
+    "priorities": {
+      "P0": 10,
+      "P1": 16,
+      "P2": 11
+    },
+    "admissionTiers": {
+      "default": 13,
+      "scenario": 1,
+      "experimental": 0,
+      "rejected": 23
+    },
+    "defaultProfile": "web-curated",
+    "snapshotCommitSource": "docs/plugin/superpowers/00-背景与目标.md"
+  }
+}

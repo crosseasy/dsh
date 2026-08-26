@@ -22,6 +22,7 @@ import {
 import { resolveExampleLaunch } from '@deepseek-ai/dsh-loader-smoke'
 
 const EXIT_MARKER_GRACE_MS = 250
+const DISABLE_EXPERIMENTAL_WARNING_OPTION = '--disable-warning=ExperimentalWarning'
 
 /** The source/built agent entry, leaf config, and workspace tsconfig an ACP test boots. */
 export interface AgentUnderTest {
@@ -88,12 +89,14 @@ export function launchAcpTestAgent(options: AcpTestLaunchOptions): LaunchedAcpTe
       DSH_AGENTS_HOME: join(cwd, '.agents'),
     },
   })
+  const childEnv = { ...process.env, ...launch.env }
+  childEnv.NODE_OPTIONS = nodeOptionsWithDisabledExperimentalWarning(childEnv.NODE_OPTIONS)
   const child = spawn(
     launch.command,
     launch.args,
     {
       cwd,
-      env: { ...process.env, ...launch.env },
+      env: childEnv,
       stdio: ['pipe', 'pipe', 'pipe'],
     },
   )
@@ -276,6 +279,12 @@ export function launchAcpTestAgent(options: AcpTestLaunchOptions): LaunchedAcpTe
       return propagateFailureAfterDrain()
     },
   }
+}
+
+function nodeOptionsWithDisabledExperimentalWarning(options: string | undefined): string {
+  if (options === undefined || options.length === 0) return DISABLE_EXPERIMENTAL_WARNING_OPTION
+  if (options.split(/\s+/u).includes(DISABLE_EXPERIMENTAL_WARNING_OPTION)) return options
+  return `${options} ${DISABLE_EXPERIMENTAL_WARNING_OPTION}`
 }
 
 /** Resolve once a running child exits. */

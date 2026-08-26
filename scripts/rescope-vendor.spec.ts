@@ -5,7 +5,7 @@
  */
 
 import { describe, expect, it } from 'vitest'
-import { exactEditState } from './rescope-vendor.ts'
+import { exactEditState, existingTrackedFiles } from './rescope-vendor.ts'
 
 const ANCHOR = '\n## Sync procedure'
 const INSERTED = `\n15. **rescope**: one log entry.\n${ANCHOR}`
@@ -37,5 +37,12 @@ describe('exactEditState', () => {
     // A moved or partially applied site: neither state is complete.
     expect(exactEditState('a = 1\nb = 2\n', 'a = 1', 'b = 2', 1)).toBe('invalid')
     expect(exactEditState('x\n', 'a = 1', 'b = 2', 1)).toBe('invalid')
+  })
+
+  it('ignores tracked files that are absent from the working tree', () => {
+    const present = new Set(['kept.ts', 'nested/also-kept.ts'])
+
+    expect(existingTrackedFiles(['kept.ts', 'deleted.ts', 'nested/also-kept.ts'], file => present.has(file)))
+      .toEqual(['kept.ts', 'nested/also-kept.ts'])
   })
 })

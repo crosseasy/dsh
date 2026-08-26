@@ -27,6 +27,7 @@ class StubEngine extends WorkflowEngine {
   settle!: (result: WorkflowResult) => void
   readonly settlements = new Map<WorkflowRunIdType, (result: WorkflowResult) => void>()
   startError: Error | undefined
+  onStart: (() => void) | undefined
 
   start(request: WorkflowStartRequest): WorkflowRun {
     if (this.startError) throw this.startError
@@ -34,9 +35,7 @@ class StubEngine extends WorkflowEngine {
     const id = WorkflowRunId(`run-${this.requests.length}`)
     const result = new Promise<WorkflowResult>((resolve) => { this.settle = resolve })
     this.settlements.set(id, this.settle)
-    request.signal?.addEventListener('abort', () => {
-      this.settle({ value: null, stopReason: 'cancelled', error: 'signal', agentsStarted: 0 })
-    }, { once: true })
+    this.onStart?.()
     return {
       id,
       meta: request.meta,
@@ -106,13 +105,13 @@ function execute(ctx: Context, args: unknown, extra?: {
 }
 
 describe('dsh-tool-workflow', () => {
-  it('starts a run with the script/args/parent/signal and renders the completed value', async () => {
+  it('starts a run with the script/args/parent, not the caller signal, and renders the completed value', async () => {
     const { ctx, engine, parent } = await setup()
     const controller = new AbortController()
     const pending = execute(ctx, { script: SCRIPT, meta: META, args: { files: ['a.ts'] } }, { agent: parent, signal: controller.signal })
     await vi.waitFor(() => { expect(engine.requests.length).toBe(1) })
     expect(engine.requests[0]).toMatchObject({ script: SCRIPT, meta: META, args: { files: ['a.ts'] }, parent })
-    expect(engine.requests[0]!.signal).toBe(controller.signal)
+    expect('signal' in engine.requests[0]!).toBe(false)
     engine.settle({ value: { findings: [1, 2] }, stopReason: 'completed', agentsStarted: 7 })
     const result = await pending
     expect(result.isError).toBe(false)
@@ -307,6 +306,7 @@ describe('dsh-tool-workflow', () => {
     const controller = new AbortController()
     const pending = execute(ctx, { script: SCRIPT, meta: META }, { agent: parent, signal: controller.signal })
     await vi.waitFor(() => { expect(engine.requests.length).toBe(1) })
+    expect('signal' in engine.requests[0]!).toBe(false)
     controller.abort()
     const result = await pending
     expect(result.isError).toBe(true)
@@ -350,6 +350,32 @@ describe('dsh-tool-workflow', () => {
     expect(engine.requests).toHaveLength(0)
     expect(engine.cancels).toHaveLength(0)
     expect(engine.disposed).toBe(0)
+  })
+
+  it('cancels the run when exec.signal aborts during synchronous start', async () => {
+    const { ctx, engine, parent } = await setup()
+    const controller = new AbortController()
+    engine.onStart = () => { controller.abort() }
+
+    const pending = execute(ctx, { script: SCRIPT, meta: META }, { agent: parent, signal: controller.signal })
+    await vi.waitFor(() => { expect(engine.requests).toHaveLength(1) })
+    expect('signal' in engine.requests[0]!).toBe(false)
+    expect(engine.cancels).toEqual(['parent step aborted'])
+    const result = await pending
+    expect(result.isError).toBe(true)
+    expect(engine.disposed).toBe(1)
+  })
+
+  it('does not cancel the run when exec.signal aborts after settlement', async () => {
+    const { ctx, engine, parent } = await setup()
+    const controller = new AbortController()
+    const pending = execute(ctx, { script: SCRIPT, meta: META }, { agent: parent, signal: controller.signal })
+    await vi.waitFor(() => { expect(engine.requests).toHaveLength(1) })
+    engine.settle({ value: 1, stopReason: 'completed', agentsStarted: 0 })
+    expect((await pending).isError).toBe(false)
+    expect(engine.cancels).toEqual([])
+    controller.abort()
+    expect(engine.cancels).toEqual([])
   })
 
   it('truncates an oversized rendered value with a notice (maxResultChars)', async () => {

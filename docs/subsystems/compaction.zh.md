@@ -24,23 +24,13 @@
 
 ## `CompactionResult`
 
-成功压缩向调用方返回：记账事件 seq、安全摘要投影、被遮蔽的范围与 seq，以及估算 token 数。
+成功压缩返回给调用方的是 summary 事件 seq、被遮蔽范围与 seq，以及估算 token 数。持久 `compaction/*` 事件拥有事务身份、命令关联、start/end seq 和原始摘要内容。
 
 ```ts type-equiv
 /** Result of a successful compaction operation. */
 interface CompactionResult {
-  /** Stable identity shared by this compaction's complete durable lifecycle. */
-  compactionId: CompactionId
-  /** Human command that initiated this compaction, when it was manual. */
-  sourceCommandId?: CommandId
-  /** The seq of the appended `compaction/start` event. */
-  startSeq: number
   /** The seq of the appended `compaction/summary` event. */
   summarySeq: number
-  /** The seq of the appended `compaction/end` event. */
-  endSeq: number
-  /** The summary content blocks produced by the backend. */
-  summary: ContentBlock[]
   /**
    * The surface-boundary pair that was shadowed: the seqs of the first
    * (`start`) and last (`end`) surface nodes of the replaced range. A
@@ -185,7 +175,7 @@ abstract compactNow( agent: ManualCompactAgentContext, signal: AbortSignal, sour
  * @param agent - context whose session is mutated and whose routing options guide summarization.
  * @param signal - optional cancellation; model-backed implementations must forward it.
  * @throws when compaction is active or the range is missing, reversed, or unbalanced.
- * @returns the appended event seqs, summary, replaced range, and token accounting.
+ * @returns the summary event seq, replaced range, and token accounting.
  */
 abstract compactRegion( start: number, end: number, agent: CompactionAgentContext, signal?: AbortSignal, ): Promise<CompactionResult>
 ```

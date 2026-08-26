@@ -71,13 +71,13 @@ describe('apply', () => {
     // Copy rides the standard locale seat, not the business face.
     expect(entries[0]!.locale).toBe('slash.menu')
 
-    const inputTriggers = ctx.get('inputTriggers') as InputTriggerService
+    const inputTriggers = ctx.get('inputTriggers') as unknown as InputTriggerService
     // StoredEntry.inject is declaration-typed ((...args: never[]) shape);
     // the erased registration widens it past a direct cast, so hop unknown.
     const injectEntry = entries[0]!.inject as unknown as (sessionId: SessionId) => MenuViewInjected
     const injected = injectEntry(sid('a'))
     const controller = inputTriggers.sessionOf(
-      (ctx.get('sessions') as { scope(id: SessionId): Context }).scope(sid('a')),
+      (ctx.get('sessions') as unknown as { scope(id: SessionId): Context }).scope(sid('a')),
     )
     expect(injected.menu).toBe(controller.menu)
     // The pick face routes into the controller pipeline (closed menu → no-op).

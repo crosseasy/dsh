@@ -23,6 +23,7 @@ import {
   writeProfileManifest,
   type ProfileManifest,
 } from '@deepseek-ai/dsh-app-boot'
+import { ensureCuratedProfile } from './curated-profile.ts'
 import { INSTALL_ANCHOR } from './profile-boot.ts'
 
 const NAME = 'dsh'
@@ -112,13 +113,15 @@ function anchorPathSpec(argument: string, cwd: string): string {
 }
 
 /**
- * Run one `dsh plugin` invocation: init if needed, forward to pnpm, reconcile.
+ * Run one `dsh plugin` invocation: materialize a built-in curated profile or
+ * initialize a custom one when missing, forward to pnpm, then reconcile.
  * @param profile - the profile name.
  * @param args - pnpm arguments with relative path specs anchored to the invoking directory.
  * @returns the pnpm exit code.
  */
 export function runPlugin(profile: string, args: readonly string[]): number {
   const dir = resolveProfileDir(profile)
+  ensureCuratedProfile(profile)
   if (!existsSync(join(dir, 'package.json'))) {
     initProfile(dir, PROFILE_TEMPLATES[profile] ?? DEFAULT_PROFILE_BUNDLES)
     process.stderr.write(`${NAME}: initialized profile ${profile} at ${dir}\n`)

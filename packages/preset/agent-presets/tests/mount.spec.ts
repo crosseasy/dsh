@@ -65,6 +65,20 @@ async function agentOn(ctx: Context, id: string, presetId?: string): Promise<Age
 const toolNames = (ctx: Context, agent?: Agent): string[] =>
   ctx.tools.schemas(agent).map(schema => schema.name).sort()
 
+interface GenerationCounter {
+  applied: number
+  disposed: number
+}
+
+/** Disposal counters published by the fixture plugin. */
+function generationCounters(): Map<string, GenerationCounter> {
+  const global = globalThis as typeof globalThis & {
+    __PRESET_GENERATION_COUNTERS__?: Map<string, GenerationCounter>
+  }
+  global.__PRESET_GENERATION_COUNTERS__ ??= new Map()
+  return global.__PRESET_GENERATION_COUNTERS__
+}
+
 /** Every service registration in the runtime, regardless of which realm holds it. */
 function providedServiceNames(ctx: Context): string[] {
   const store = ctx.reflect.store
@@ -361,10 +375,10 @@ describe('composing from a broken preset', () => {
     expect(livePresetMounts().filter(mount => mount.presetId === 'damaged')).toHaveLength(0)
   })
 
-  it('refuses the standing key a cold reader would mount by', async () => {
+  it('refuses the standing lease a cold reader would mount by', async () => {
     const scoped = await rosterWith('rows: not-a-list\n')
 
-    await expect(scoped.agentPresets.standingKeyFor('damaged'))
+    await expect(scoped.agentPresets.acquireStanding('damaged'))
       .rejects.toThrow(/top-level list of plugin rows/)
   })
 
@@ -614,6 +628,10 @@ describe('editing a composition file', () => {
   const rowFor = (tool: string): string =>
     `- id: only\n  name: ${join(FIXTURES, 'plugins', 'contribute.js')}\n  config:\n    tool: ${tool}\n`
 
+  /** One-row composition that records when its generation is disposed. */
+  const countedRowFor = (label: string, tool = label): string =>
+    `- id: counted\n  name: ${join(FIXTURES, 'plugins', 'dispose-counter.js')}\n  config:\n    label: ${label}\n    tool: ${tool}\n`
+
   /**
    * A context over a temp root holding one editable preset. The id is
    * per-test because `livePresetMounts()` is a process-global registry.
@@ -687,17 +705,20 @@ describe('editing a composition file', () => {
     expect(service.standing.get(preset.id)).toBe(newerPromise)
   })
 
-  it('hands a host reader the standing key without starting an agent', async () => {
+  it('hands a host reader a standing lease without starting an agent', async () => {
     const { scoped } = await editable('cold-read')
 
-    const key = await scoped.agentPresets.standingKeyFor('cold-read')
+    const lease = await scoped.agentPresets.acquireStanding('cold-read')
 
     // The mount exists for the reader; no agent, session, or turn started.
-    expect(key).toEqual({ agentPreset: 'cold-read' })
+    expect(lease.key).toEqual({ agentPreset: 'cold-read' })
     expect(livePresetMounts().filter(mount => mount.presetId === 'cold-read')).toHaveLength(1)
     expect(scoped.agents.get(SessionId('cold-read'))).toBeUndefined()
     // A second reader resolves the same generation, not a new mount.
-    expect(await scoped.agentPresets.standingKeyFor('cold-read')).toBe(key)
+    const second = await scoped.agentPresets.acquireStanding('cold-read')
+    expect(second.key).toBe(lease.key)
+    await second.release()
+    await lease.release()
   })
 
   it('refuses to mount a generation it cannot stamp', async () => {
@@ -732,5 +753,180 @@ describe('editing a composition file', () => {
     await racer.ensureStanding({ id: 'stale', trust: 'user', path })
 
     expect(livePresetMounts().filter(mount => mount.presetId === 'stale')).toHaveLength(1)
+  })
+
+  it('keeps a superseded generation alive until its final holder releases it', async () => {
+    const counters = generationCounters()
+    const id = 'held-superseded'
+    counters.delete(`${id}-old`)
+    counters.delete(`${id}-new`)
+    const { scoped, path } = await editable(id)
+    await writeFile(path, countedRowFor(`${id}-old`, 'old-tool'))
+    const oldHandle = await scoped.agents.create({
+      sessionId: SessionId('sess-held-old'),
+      setup: async (agentCtx: Context) => void await scoped.agentPresets.mount(agentCtx, id),
+    })
+
+    await writeFile(path, countedRowFor(`${id}-new`, 'new-tool'))
+    const newAgent = await agentOn(scoped, 'sess-held-new', id)
+
+    expect(toolNames(scoped, oldHandle.agent)).toEqual(['old-tool'])
+    expect(toolNames(scoped, newAgent)).toEqual(['new-tool'])
+    expect(counters.get(`${id}-old`)).toEqual({ applied: 1, disposed: 0 })
+
+    await oldHandle.dispose()
+
+    expect(counters.get(`${id}-old`)).toEqual({ applied: 1, disposed: 1 })
+    expect(counters.get(`${id}-new`)).toEqual({ applied: 1, disposed: 0 })
+  })
+
+  it('counts parent and child holders on the same generation separately', async () => {
+    const counters = generationCounters()
+    const id = 'child-held'
+    counters.delete(`${id}-old`)
+    counters.delete(`${id}-new`)
+    const { scoped, path } = await editable(id)
+    await writeFile(path, countedRowFor(`${id}-old`, 'old-tool'))
+    const parentHandle = await scoped.agents.create({
+      sessionId: SessionId('sess-held-parent'),
+      setup: async (agentCtx: Context) => void await scoped.agentPresets.mount(agentCtx, id),
+    })
+    const childHandle = await scoped.agents.create({
+      sessionId: SessionId('sess-held-child'),
+      setup: (childCtx: Context) => void scoped.agentPresets.composeFrom(childCtx, parentHandle.agent.ctx),
+    })
+
+    await writeFile(path, countedRowFor(`${id}-new`, 'new-tool'))
+    await agentOn(scoped, 'sess-held-refresh', id)
+
+    await parentHandle.dispose()
+    expect(counters.get(`${id}-old`)).toEqual({ applied: 1, disposed: 0 })
+
+    await childHandle.dispose()
+    expect(counters.get(`${id}-old`)).toEqual({ applied: 1, disposed: 1 })
+  })
+
+  it('lets a cold-reader lease hold a retired generation and release idempotently', async () => {
+    const counters = generationCounters()
+    const id = 'cold-lease'
+    counters.delete(`${id}-old`)
+    counters.delete(`${id}-new`)
+    const { scoped, path } = await editable(id)
+    await writeFile(path, countedRowFor(`${id}-old`, 'old-tool'))
+    const lease = await scoped.agentPresets.acquireStanding(id)
+
+    await writeFile(path, countedRowFor(`${id}-new`, 'new-tool'))
+    await agentOn(scoped, 'sess-cold-refresh', id)
+
+    expect(counters.get(`${id}-old`)).toEqual({ applied: 1, disposed: 0 })
+    await lease.release()
+    await lease.release()
+
+    expect(counters.get(`${id}-old`)).toEqual({ applied: 1, disposed: 1 })
+  })
+
+  it('publishes one refreshed generation for concurrent stale readers', async () => {
+    const counters = generationCounters()
+    const id = 'concurrent-refresh'
+    counters.delete(`${id}-old`)
+    counters.delete(`${id}-new`)
+    const { scoped, path } = await editable(id)
+    await writeFile(path, countedRowFor(`${id}-old`, 'old-tool'))
+    const oldHandle = await scoped.agents.create({
+      sessionId: SessionId('sess-concurrent-old'),
+      setup: async (agentCtx: Context) => void await scoped.agentPresets.mount(agentCtx, id),
+    })
+
+    await writeFile(path, countedRowFor(`${id}-new`, 'new-tool'))
+    const [left, right] = await Promise.all([
+      agentOn(scoped, 'sess-concurrent-left', id),
+      agentOn(scoped, 'sess-concurrent-right', id),
+    ])
+
+    expect(toolNames(scoped, left)).toEqual(['new-tool'])
+    expect(toolNames(scoped, right)).toEqual(['new-tool'])
+    expect(counters.get(`${id}-new`)).toEqual({ applied: 1, disposed: 0 })
+    await oldHandle.dispose()
+    expect(counters.get(`${id}-old`)).toEqual({ applied: 1, disposed: 1 })
+  })
+
+  it('keeps the old generation current when a refresh mount fails', async () => {
+    const counters = generationCounters()
+    const id = 'refresh-rollback'
+    counters.delete(`${id}-old`)
+    const { scoped, path } = await editable(id)
+    await writeFile(path, countedRowFor(`${id}-old`, 'old-tool'))
+    const oldAgent = await agentOn(scoped, 'sess-refresh-rollback-old', id)
+    const service = scoped.agentPresets as unknown as {
+      standing: Map<string, Promise<unknown>>
+    }
+    const oldPointer = service.standing.get(id)
+
+    await writeFile(path, '- id: missing\n  name: ./missing.js\n')
+    await expect(agentOn(scoped, 'sess-refresh-rollback-new', id))
+      .rejects.toThrow(/failed to mount/)
+
+    expect(service.standing.get(id)).toBe(oldPointer)
+    expect(toolNames(scoped, oldAgent)).toEqual(['old-tool'])
+    expect(counters.get(`${id}-old`)).toEqual({ applied: 1, disposed: 0 })
+  })
+
+  it('keeps the old generation current while a replacement is still mounting', async () => {
+    const counters = generationCounters()
+    const id = 'pending-refresh'
+    counters.delete(`${id}-old`)
+    const { scoped, path } = await editable(id)
+    await writeFile(path, countedRowFor(`${id}-old`, 'old-tool'))
+    await agentOn(scoped, 'sess-pending-refresh-old', id)
+    const preset = await scoped.agentPresets.resolve(id)
+    const service = scoped.agentPresets as unknown as {
+      standing: Map<string, Promise<unknown>>
+      ensureStanding(current: typeof preset): Promise<unknown>
+      createStanding(current: typeof preset): Promise<unknown>
+    }
+    const oldPointer = service.standing.get(id)
+    const originalCreateStanding = service.createStanding.bind(service)
+    let replacementStarted!: () => void
+    const replacementStartedPromise = new Promise<void>((resolve) => { replacementStarted = resolve })
+    let rejectReplacement!: (error: Error) => void
+    service.createStanding = (current: typeof preset) => {
+      if (current.id !== id) return originalCreateStanding(current)
+      replacementStarted()
+      return new Promise((_resolve, reject) => { rejectReplacement = reject })
+    }
+
+    try {
+      await writeFile(path, rowFor('replacement'))
+      const refresh = service.ensureStanding(preset)
+      await replacementStartedPromise
+
+      expect(service.standing.get(id)).toBe(oldPointer)
+
+      rejectReplacement(new PresetMountError(id, 'delayed mount failure'))
+      await expect(refresh).rejects.toThrow(/delayed mount failure/)
+      expect(service.standing.get(id)).toBe(oldPointer)
+      expect(counters.get(`${id}-old`)).toEqual({ applied: 1, disposed: 0 })
+    } finally {
+      service.createStanding = originalCreateStanding
+    }
+  })
+
+  it('disposes active and retired generations once when the roster unloads', async () => {
+    const counters = generationCounters()
+    const id = 'roster-dispose'
+    counters.delete(`${id}-old`)
+    counters.delete(`${id}-new`)
+    const { scoped, path } = await editable(id)
+    await writeFile(path, countedRowFor(`${id}-old`, 'old-tool'))
+    const oldLease = await scoped.agentPresets.acquireStanding(id)
+    await writeFile(path, countedRowFor(`${id}-new`, 'new-tool'))
+    const newLease = await scoped.agentPresets.acquireStanding(id)
+    await newLease.release()
+
+    await scoped.fiber.dispose()
+    await oldLease.release()
+
+    expect(counters.get(`${id}-old`)).toEqual({ applied: 1, disposed: 1 })
+    expect(counters.get(`${id}-new`)).toEqual({ applied: 1, disposed: 1 })
   })
 })

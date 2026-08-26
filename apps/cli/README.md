@@ -13,7 +13,7 @@ The `dsh` command is the product launcher for profiles: ordered stacks of plugin
 | `dsh web` | Alias of `--profile web`. |
 | `dsh plugin --profile <name> <pnpm args>` | Manage a profile's plugins by forwarding to pnpm in the profile directory. |
 
-The invoking directory is the default workspace root. The `web` and `headless` profiles auto-initialize on first use from shipped templates; any other profile must be created through `dsh plugin`.
+The invoking directory is the default workspace root. The `web` and `headless` profiles auto-initialize on first use from shipped templates. Built-in curated profiles (`web-curated`, `web-coding`, `web-research`, `web-enterprise`, and `web-personal`) materialize from `@deepseek-ai/dsh-curated-profiles` on first use without changing the shipped templates; any other profile must be created through `dsh plugin`.
 
 ## App arguments
 

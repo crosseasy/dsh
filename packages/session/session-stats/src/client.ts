@@ -8,3 +8,5 @@
  */
 
 export type * from './types.ts'
+export { foldSessionStatsProjection, foldSessionStatsProjectionState } from './projection-fold.ts'
+export type { SessionStatsState, SessionStatsTotals } from './projection-fold.ts'

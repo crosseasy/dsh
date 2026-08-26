@@ -16,13 +16,10 @@ import { Session, SessionId } from '@deepseek-ai/dsh-session'
 import * as commandCompact from '@deepseek-ai/dsh-command-compact'
 
 const COMPACTION_ID = CompactionId('command-compact-test')
+const SUMMARY = [{ type: 'text' as const, text: 'summary' }]
 
 const RESULT: CompactionResult = {
-  compactionId: COMPACTION_ID,
-  startSeq: 1,
   summarySeq: 2,
-  endSeq: 3,
-  summary: [{ type: 'text', text: 'summary' }],
   shadowedRange: { start: 1, end: 7 },
   shadowedSeqs: [1, 3, 7],
   shadowedTokenCount: 42,
@@ -65,13 +62,13 @@ class StubCompactionEngine extends CompactionEngine {
     sourceCommandId: Parameters<CompactionEngine['compactNow']>[2],
   ): CompactionResult {
     const provenance = {
-      compactionId: result.compactionId,
+      compactionId: COMPACTION_ID,
       ...sourceCommandId === undefined ? {} : { sourceCommandId },
     }
     agent.session.append('compaction/start', { ...provenance, turn: null })
     agent.session.append('compaction/summary', {
       ...provenance,
-      summary: result.summary,
+      summary: SUMMARY,
       shadowedRange: result.shadowedRange,
       shadowedSeqs: result.shadowedSeqs,
       shadowedTokenCount: result.shadowedTokenCount,
@@ -79,7 +76,7 @@ class StubCompactionEngine extends CompactionEngine {
       model: 'command-test',
     })
     agent.session.append('compaction/end', { ...provenance, turn: null })
-    return { ...result, ...provenance }
+    return result
   }
 }
 

@@ -161,8 +161,7 @@ export abstract class WorkflowEngine extends Service {
 
   /**
    * Parse and execute a workflow script.
-   * @param request - the script, its `args`, the parent agent, and an
-   *   optional cancel signal.
+   * @param request - the script, its `args`, and the parent agent.
    * @returns the live run; its `result` resolves when the script settles.
    */
   abstract start(request: WorkflowStartRequest): WorkflowRun

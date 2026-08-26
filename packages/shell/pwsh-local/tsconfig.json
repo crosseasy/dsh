@@ -21,10 +21,10 @@
       "path": "../../util/brand"
     },
     {
-      "path": "../../util/timeout"
+      "path": "../../shell/shell"
     },
     {
-      "path": "../../shell/shell"
+      "path": "../../shell/shell-runtime"
     },
     {
       "path": "../../subprocess/subprocess"

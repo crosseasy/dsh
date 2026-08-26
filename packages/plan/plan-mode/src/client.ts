@@ -8,3 +8,5 @@
  */
 
 export type * from './types.ts'
+export { foldPlanProjection, foldPlanProjectionState } from './projection-fold.ts'
+export type { PlanProjectionState } from './projection-fold.ts'

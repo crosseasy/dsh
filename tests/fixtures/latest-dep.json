@@ -1,0 +1,39 @@
+{
+  "schemaVersion": 1,
+  "source": {
+    "awesome": {
+      "repository": "https://github.com/example/awesome",
+      "commit": "0123456789abcdef0123456789abcdef01234567",
+      "file": "README.md"
+    },
+    "matrix": "docs/plugin/superpowers/02-插件矩阵与择优.md"
+  },
+  "candidates": [
+    {
+      "id": "latest-dep",
+      "priority": "P0",
+      "capability": "web-search",
+      "score": 88,
+      "repository": "https://github.com/example/latest-dep",
+      "repositoryPath": null,
+      "commit": "latest",
+      "auditedAt": "2026-08-25",
+      "manifestPath": "package.json",
+      "expectedPackage": "latest-dep",
+      "nodeEngine": ">=22",
+      "license": "MIT",
+      "bundlePatch": "./cordis.patch.yml",
+      "tarballSha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "testFiles": 1,
+      "ciWorkflows": 1,
+      "installScripts": {},
+      "externalDependencies": [],
+      "networkAccess": [],
+      "credentials": [],
+      "targetProfiles": ["web-curated"],
+      "active": true,
+      "auditWarnings": [],
+      "rejections": []
+    }
+  ]
+}

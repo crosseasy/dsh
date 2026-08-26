@@ -405,6 +405,21 @@ describe.skipIf(!existsSync(dshBin))('dsh BUILT bin (node lib/bin.js, no tsx)', 
     }
   })
 
+  it('materializes built-in curated profiles through the published plugin path', async () => {
+    const home = mkdtempSync(join(tmpdir(), 'dsh-built-curated-profile-'))
+    try {
+      const result = await runBuiltBin(['plugin', '--profile', 'web-curated', '--help'], { DSH_HOME: home })
+      expect(result.code).toBe(0)
+      const manifest = JSON.parse(readFileSync(join(home, 'profiles', 'web-curated', 'package.json'), 'utf8')) as {
+        readonly dsh?: { readonly profile?: { readonly bundles?: readonly string[] } }
+      }
+      expect(manifest.dsh?.profile?.bundles).toContain('@deepseek-ai/dsh-curated-base')
+      expect(existsSync(join(home, 'profiles', 'web', 'package.json'))).toBe(false)
+    } finally {
+      rmSync(home, { recursive: true, force: true })
+    }
+  }, 30_000)
+
   it('fails loud on a nonexistent profile with the plugin-command hint', async () => {
     const home = mkdtempSync(join(tmpdir(), 'dsh-missing-profile-'))
     try {

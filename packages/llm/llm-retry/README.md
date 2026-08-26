@@ -28,6 +28,8 @@ The separately published `./invariant` companion checks that every scheduled ret
 
 The executor has no policy config. Multi-provider adapters such as `dsh-llm-pi-ai` place `retryPolicy` inside each provider profile, avoiding a second provider-name list.
 
+Repository tests that need deterministic retry delays use `@deepseek-ai/dsh-llm-retry/testing`. Production composition imports the package root, whose `apply(ctx, config)` signature has no test hooks.
+
 ## Model Experience
 
 ### Model-request recovery

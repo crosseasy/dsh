@@ -136,8 +136,8 @@ class WorkerThreadWorkflowEngine extends WorkflowEngine {
    * block, `SCRIPT_PARSE` for a body that does not compile) for a request
    * that cannot begin; once a run is returned, every failure resolves through
    * `result.stopReason` instead.
-   * @param request - the script body, its meta data and `args`, the parent
-   *   agent, and an optional cancel signal.
+   * @param request - the script body, its meta data and `args`, and the
+   *   parent agent.
    * @returns the live run (its `result` resolves when the script settles).
    */
   start(request: WorkflowStartRequest): WorkflowRun {
@@ -184,7 +184,6 @@ class WorkerThreadWorkflowEngine extends WorkflowEngine {
         agentStart: (agent) => { this.emitWorkflowEvent('workflow/agent-start', info, agent) },
         agentEnd: (agent) => { this.emitWorkflowEvent('workflow/agent-end', info, agent) },
       },
-      request.signal,
     )
 
     this.emitWorkflowEvent('workflow/start', info)

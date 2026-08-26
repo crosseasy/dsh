@@ -19,6 +19,7 @@ class StubEngine extends WorkflowEngine {
   requests: WorkflowStartRequest[] = []
   cancels: string[] = []
   disposed = 0
+  disposeBarrier: Promise<void> | undefined
   settle!: (result: WorkflowResult) => void
   startError: Error | undefined
   onStart: (() => void) | undefined
@@ -41,9 +42,9 @@ class StubEngine extends WorkflowEngine {
           agentsStarted: 0,
         })
       },
-      dispose: () => {
+      dispose: async () => {
         this.disposed += 1
-        return Promise.resolve()
+        await this.disposeBarrier
       },
     }
   }
@@ -153,6 +154,7 @@ describe('dsh-tool-ralph', () => {
       maxTotalAgents: 4,
       parent,
     })
+    expect('signal' in engine.requests[0]!).toBe(false)
     expect(engine.requests[0]!.script).toContain("status: 'budget-limited'")
     const result = await settleCompleted(engine, pending, {
       status: 'complete',
@@ -271,6 +273,7 @@ describe('dsh-tool-ralph', () => {
     const controller = new AbortController()
     const pending = execute(ctx, { objective: 'Work.' }, { agent: parent, signal: controller.signal })
     await vi.waitFor(() => { expect(engine.requests).toHaveLength(1) })
+    expect('signal' in engine.requests[0]!).toBe(false)
     controller.abort()
     expect((await pending).isError).toBe(true)
 
@@ -291,9 +294,25 @@ describe('dsh-tool-ralph', () => {
     const result = await execute(ctx, { objective: 'Work.' }, { agent: parent, signal: controller.signal })
 
     expect(result.isError).toBe(true)
-    expect(engine.requests[0]?.signal).toBe(controller.signal)
+    expect('signal' in engine.requests[0]!).toBe(false)
     expect(engine.cancels).toEqual(['parent step aborted'])
     expect(engine.disposed).toBe(1)
+  })
+
+  it('does not cancel the run when exec.signal aborts after settlement', async () => {
+    const { ctx, engine, parent } = await setup()
+    const controller = new AbortController()
+    const pending = execute(ctx, { objective: 'Work.' }, { agent: parent, signal: controller.signal })
+    await vi.waitFor(() => { expect(engine.requests).toHaveLength(1) })
+    engine.settle({
+      value: { status: 'complete', roundsStarted: 1, report: COMPLETE },
+      stopReason: 'completed',
+      agentsStarted: 1,
+    })
+    expect((await pending).isError).toBe(false)
+    expect(engine.cancels).toEqual([])
+    controller.abort()
+    expect(engine.cancels).toEqual([])
   })
 
   it('rejects absent authority, empty objectives, bad round caps, and schema-invalid calls before start', async () => {

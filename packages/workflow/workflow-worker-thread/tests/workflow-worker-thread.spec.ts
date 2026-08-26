@@ -664,22 +664,7 @@ describe('dsh-workflow-worker-thread', () => {
       expect(runEnds).toEqual([{ stopReason: 'cancelled', error: result.error, agentsStarted: result.agentsStarted }])
     })
 
-    it('an already-aborted request signal cancels before the body ever runs (the go handshake holds it)', async () => {
-      const { ctx, parent, provider } = await setup()
-      const controller = new AbortController()
-      controller.abort()
-      const logs: string[] = []
-      ctx.on('workflow/log', (_info, message) => { logs.push(message) })
-      const handle = ctx.workflowEngine.start({ ...scripted("log('ran')\nreturn 123"), parent, signal: controller.signal })
-      const result = await handle.result
-      expect(result.stopReason).toBe('cancelled')
-      expect(result.value).toBeNull()
-      expect(logs).toEqual([])
-      expect(provider.runs.length).toBe(0)
-      await handle.dispose()
-    })
-
-    it('cancel() right after start() cancels before the body runs; the signal aborting mid-run cancels like cancel()', async () => {
+    it('cancel() right after start() cancels before the body runs', async () => {
       const { ctx, parent, provider } = await setup({ manual: true })
       const first = ctx.workflowEngine.start({ ...scripted("return await agent('never')"), parent })
       // No-reason cancel: the canonical default reason must ride the result.
@@ -689,48 +674,6 @@ describe('dsh-workflow-worker-thread', () => {
       expect(firstResult.error).toContain('workflow cancelled')
       expect(provider.runs.length).toBe(0)
       await first.dispose()
-
-      const controller = new AbortController()
-      const second = ctx.workflowEngine.start({ ...scripted("return await agent('job')"), parent, signal: controller.signal })
-      await waitFor(() => { expect(provider.runs.length).toBe(1) })
-      controller.abort()
-      expect((await second.result).stopReason).toBe('cancelled')
-      await second.dispose()
-    })
-
-    it('removes the exact external abort callback on first settlement or teardown', async () => {
-      const { ctx, parent } = await setup()
-      const settledController = new AbortController()
-      const settledAdd = vi.spyOn(settledController.signal, 'addEventListener')
-      const settledRemove = vi.spyOn(settledController.signal, 'removeEventListener')
-      const completed = ctx.workflowEngine.start({ ...scripted('return 123'), parent, signal: settledController.signal })
-      const settledAbort = settledAdd.mock.calls.find(([type]) => type === 'abort')?.[1]
-      expect(typeof settledAbort).toBe('function')
-
-      await expect(completed.result).resolves.toMatchObject({ value: 123, stopReason: 'completed' })
-      expect(settledRemove).toHaveBeenCalledWith('abort', settledAbort)
-      const cancelAfterSettle = vi.spyOn(completed, 'cancel')
-      settledController.abort()
-      expect(cancelAfterSettle).not.toHaveBeenCalled()
-      cancelAfterSettle.mockRestore()
-      await completed.dispose()
-
-      const manual = await setup({ manual: true })
-      const teardownController = new AbortController()
-      const teardownAdd = vi.spyOn(teardownController.signal, 'addEventListener')
-      const teardownRemove = vi.spyOn(teardownController.signal, 'removeEventListener')
-      const tornDown = manual.ctx.workflowEngine.start({
-        ...scripted("return await agent('job')"),
-        parent: manual.parent,
-        signal: teardownController.signal,
-      })
-      await waitFor(() => { expect(manual.provider.runs).toHaveLength(1) })
-      const teardownAbort = teardownAdd.mock.calls.find(([type]) => type === 'abort')?.[1]
-      expect(typeof teardownAbort).toBe('function')
-
-      const disposing = tornDown.dispose()
-      expect(teardownRemove).toHaveBeenCalledWith('abort', teardownAbort)
-      await disposing
     })
 
     it('a child-start racing the host cancel is refused: no child starts after cancellation', async () => {

@@ -83,6 +83,15 @@ describe('pwsh executor over the bash settings section', () => {
     await bench.ctx.fiber.dispose()
   })
 
+  it('serves stored cwd to every later resolve', async () => {
+    const bench = await boot()
+
+    await bench.ctx.settings.update(SHELL_SETTINGS_NAMESPACE, { cwd: '/tmp/pwsh-workspace' })
+
+    expect(bench.pwsh.resolve({ command: 'Write-Output ok' }).workdir).toBe('/tmp/pwsh-workspace')
+    await bench.ctx.fiber.dispose()
+  })
+
   it('falls back to the composition entry when the settings provider detaches', async () => {
     const bench = await boot({ pwshPath: '/opt/first/pwsh' })
     await bench.ctx.settings.update(SHELL_SETTINGS_NAMESPACE, { timeoutMs: 5_000, pwshPath: '/opt/second/pwsh' })

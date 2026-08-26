@@ -33,6 +33,9 @@
       "path": "../../packages/bundle/web-app"
     },
     {
+      "path": "../../packages/curated/curated-profiles"
+    },
+    {
       "path": "../../packages/host/apiproxy"
     },
     {

@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest'
 import { Context } from '@deepseek-ai/cordis'
 import z from '@deepseek-ai/schemastery'
 import * as settingsModule from '../src/index.ts'
+import type { WireSettingsDescriptor } from '../src/index.ts'
 import { MemorySettings } from './memory.ts'
 
 const { redactSecrets, settingsNamespace } = settingsModule
@@ -248,7 +249,7 @@ describe('describe() layers and redaction', () => {
     expect(descriptor?.value).toEqual({ apiKey: 'entry-key', baseURL: 'https://user' })
     ;(descriptor?.user as Record<string, unknown>).baseURL = 'mutated'
     expect(ctx.settings.describe()[0]?.user).toEqual({ baseURL: 'https://user' })
-    expect(descriptor?.secrets).toBeUndefined()
+    expect(descriptor).not.toHaveProperty('secrets')
   })
 
   it('omits the layers when neither a base nor a user section exists', async () => {
@@ -274,7 +275,7 @@ describe('describe() layers and redaction', () => {
     const ctx = await boot()
     ctx.settings.register(NS, Profile)
     const [descriptor] = (ctx.settings as typeof ctx.settings & {
-      describeForWire(): ReturnType<typeof ctx.settings.describe>
+      describeForWire(): WireSettingsDescriptor[]
     }).describeForWire()
     expect(descriptor).not.toHaveProperty('base')
     expect(descriptor).not.toHaveProperty('user')
@@ -285,7 +286,7 @@ describe('describe() layers and redaction', () => {
     const ctx = await boot({ adapter: { apiKey: 'user-key', baseURL: 'https://user' } })
     ctx.settings.register(NS, Profile, { base: { apiKey: 'entry-key' } })
     const [descriptor] = (ctx.settings as typeof ctx.settings & {
-      describeForWire(): ReturnType<typeof ctx.settings.describe>
+      describeForWire(): WireSettingsDescriptor[]
     }).describeForWire()
     expect(descriptor?.value).toEqual({ baseURL: 'https://user' })
     expect(descriptor?.base).toEqual({})
