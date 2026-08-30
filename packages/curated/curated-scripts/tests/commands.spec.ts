@@ -176,6 +176,7 @@ interface MutableBenchmarkFixture {
     profile: { sha256: string; snapshot: Record<string, unknown> }
   }
   baseline: {
+    profile: string
     execution: {
       id: string
       startedAt: string
@@ -188,6 +189,7 @@ interface MutableBenchmarkFixture {
     runs: Array<Record<string, unknown>>
   }
   candidate: {
+    profile: string
     execution: {
       id: string
       startedAt: string
@@ -1519,6 +1521,38 @@ describe('verify-lock command', () => {
     }
   }, 45_000)
 
+  it('accepts a direct Git runtime dependency with a package subdirectory', () => {
+    const root = mkdtempSync(join(tmpdir(), 'dsh-curated-direct-git-path-'))
+    const candidate = artifactCandidate({
+      repositoryPath: 'packages/plugin-a',
+      targetProfiles: ['fixture-curated'],
+    })
+    writeFileSync(join(root, 'package.json'), JSON.stringify({
+      name: 'dsh-profile-fixture-curated',
+      private: true,
+      dsh: { profile: { bundles: ['plugin-a'] } },
+    }))
+    const packageDir = stageCandidatePackage(root, 'plugin-a', undefined, {}, undefined, candidate)
+    stageManagedPnpmEvidence(root, candidate)
+    const catalogPath = join(root, 'catalog.json')
+    writeFileSync(catalogPath, artifactCatalog({
+      repositoryPath: candidate.repositoryPath,
+      targetProfiles: candidate.targetProfiles,
+      treeSha256: fixtureTreeSha256(packageDir),
+      runtimeDependencyClosureSha256: candidate.runtimeDependencyClosureSha256,
+    }))
+    try {
+      const result = runVerifyLockCommand(['--fixture', catalogPath, '--json'], {
+        artifactRoots: [root],
+      })
+
+      expect(result.status, result.stdout).toBe(0)
+      expect(JSON.parse(result.stdout)).toMatchObject({ observed: true, issues: [] })
+    } finally {
+      rmSync(root, { recursive: true, force: true })
+    }
+  })
+
   it('accepts only exact pnpm 11.7 GitHub codeload provenance across curated commands', async () => {
     const home = mkdtempSync(join(tmpdir(), 'dsh-curated-codeload-provenance-'))
     const profileRoot = join(home, 'profile')
@@ -2042,6 +2076,12 @@ describe('verify-lock command', () => {
           name: 'commit',
           mutate: (lock: typeof baseLock) => {
             lock.packages[`git-dep@${gitLocator}`].resolution.commit = fixtureCommitB
+          },
+        },
+        {
+          name: 'package subdirectory',
+          mutate: (lock: typeof baseLock) => {
+            Reflect.set(lock.packages[`git-dep@${gitLocator}`].resolution, 'path', 'packages/git-dep')
           },
         },
       ]) {
@@ -2780,6 +2820,104 @@ describe('verify-lock command', () => {
       rmSync(root, { recursive: true, force: true })
     }
   })
+
+  it('does not translate an unexpected artifact reference failure', async () => {
+    const root = mkdtempSync(join(tmpdir(), 'dsh-curated-reference-failure-'))
+    const packageDir = stageCandidatePackage(root, 'plugin-a')
+    const catalogPath = tempFile('catalog.json', artifactCatalog({
+      treeSha256: fixtureTreeSha256(packageDir),
+    }))
+    vi.resetModules()
+    vi.doMock('node:fs', async () => {
+      const actual = await vi.importActual<typeof import('node:fs')>('node:fs')
+      let nativeCalls = 0
+      const mockedRealpath = actual.realpathSync.bind(undefined)
+      mockedRealpath.native = ((path: Parameters<typeof actual.realpathSync.native>[0]) => {
+        nativeCalls += 1
+        if (nativeCalls === 14) {
+          throw new Error('simulated artifact reference failure')
+        }
+        return actual.realpathSync.native(path)
+      }) as typeof actual.realpathSync.native
+      return {
+        ...actual,
+        realpathSync: mockedRealpath,
+      }
+    })
+    try {
+      const commands = await import('../src/index.ts')
+      const candidate = artifactCandidate({ treeSha256: fixtureTreeSha256(packageDir) })
+      const result = commands.runVerifyLock(['--fixture', catalogPath, '--json'], {
+        artifactRoots: [root],
+        artifactResolver: {
+          resolve: () => ({
+            packageDir,
+            repository: candidate.repository,
+            commit: candidate.commit,
+            sourceContentSha256: fixtureShaA,
+            changedPaths: [],
+          }),
+        },
+      })
+
+      expect(result.stdout).toContain('simulated artifact reference failure')
+      expect(result.stdout).not.toContain('artifact-file-not-regular')
+    } finally {
+      cleanup(catalogPath)
+      rmSync(root, { recursive: true, force: true })
+    }
+  })
+
+  it.each(['symlink', 'file'] as const)(
+    'rejects an artifact whose intermediate ancestor becomes a %s during reading',
+    async (replacement) => {
+      const root = mkdtempSync(join(tmpdir(), 'dsh-curated-intermediate-ancestor-'))
+      const packageDir = stageCandidatePackage(root, 'plugin-a', undefined, {
+        main: './lib/plugin.mjs',
+      })
+      const libraryDir = join(packageDir, 'lib')
+      const mainPath = join(libraryDir, 'plugin.mjs')
+      mkdirSync(libraryDir)
+      writeFileSync(mainPath, 'export const nested = true\n')
+      const catalogPath = tempFile('catalog.json', artifactCatalog({
+        treeSha256: fixtureTreeSha256(packageDir),
+      }))
+      vi.resetModules()
+      vi.doMock('node:fs', async () => {
+        const actual = await vi.importActual<typeof import('node:fs')>('node:fs')
+        let libraryStats = 0
+        return {
+          ...actual,
+          lstatSync: ((...args: Parameters<typeof actual.lstatSync>) => {
+            const stat = actual.lstatSync(...args)
+            if (String(args[0]).endsWith('/lib') && ++libraryStats === 2) {
+              if (replacement === 'symlink') {
+                Object.defineProperty(stat, 'isSymbolicLink', { value: () => true })
+              } else {
+                Object.defineProperty(stat, 'isDirectory', { value: () => false })
+              }
+            }
+            return stat
+          }) as typeof actual.lstatSync,
+        }
+      })
+      try {
+        const commands = await import('../src/index.ts')
+        const result = commands.runVerifyLock(['--fixture', catalogPath, '--json'], {
+          artifactRoots: [root],
+          artifactResolver: fixtureArtifactResolver([root]),
+        })
+
+        expect(commandIssues(result)).toContainEqual(expect.objectContaining({
+          code: 'artifact-file-changed',
+          target: 'plugin-a',
+        }))
+      } finally {
+        cleanup(catalogPath)
+        rmSync(root, { recursive: true, force: true })
+      }
+    },
+  )
 
   it('rejects a declared main path that resolves to a directory', () => {
     const root = mkdtempSync(join(tmpdir(), 'dsh-curated-directory-main-'))
@@ -7877,6 +8015,56 @@ ${child}`, {}, undefined, candidate)
     }
   })
 
+  it.each([
+    {
+      name: 'non-string dependency version',
+      mutate: (manifest: Record<string, unknown>) => {
+        const dependencies = manifest.dependencies as Record<string, unknown>
+        dependencies[Object.keys(dependencies)[0] as string] = 1
+      },
+    },
+    {
+      name: 'non-empty bundled dependency list',
+      mutate: (manifest: Record<string, unknown>) => { manifest.bundledDependencies = ['unexpected'] },
+    },
+    {
+      name: 'non-empty development dependency map',
+      mutate: (manifest: Record<string, unknown>) => { manifest.devDependencies = { unexpected: '1.0.0' } },
+    },
+    {
+      name: 'malformed optional dependency field',
+      mutate: (manifest: Record<string, unknown>) => { manifest.optionalDependencies = 'unexpected' },
+    },
+  ])('rejects generated curated manifest metadata with a $name', async ({ mutate }) => {
+    const home = mkdtempSync(join(tmpdir(), 'dsh-curated-generated-manifest-'))
+    try {
+      const profileRoot = materializeCuratedProfile('web-personal', home)
+      stageEmptyManagedPnpmEvidence(profileRoot)
+      const manifestPath = join(profileRoot, 'package.json')
+      const manifest = JSON.parse(readFileSync(manifestPath, 'utf8')) as Record<string, unknown>
+      mutate(manifest)
+      writeFileSync(manifestPath, JSON.stringify(manifest))
+
+      const result = runPreflight(['--profile', 'web-personal', '--json'], { profileRoot })
+      const smoke = await runSmokeProfile(['--profile', 'web-personal', '--json'], {
+        profiles: { 'web-personal': CURATED_PROFILE_TEMPLATES['web-personal'] },
+        profileRoot,
+        runner: async () => ({ status: 0, stdout: '', stderr: '', durationMs: 1 }),
+      })
+
+      expect(result.status).toBe(1)
+      expect(commandIssues(result)).toContainEqual({
+        code: 'preflight-profile-generated-manifest-mismatch',
+        target: 'package.json',
+        message: 'curated profile manifest must match generated profile metadata',
+      })
+      expect(smoke.status).toBe(1)
+      expect(smoke.stdout).toContain('curated profile manifest must match generated profile metadata')
+    } finally {
+      rmSync(home, { recursive: true, force: true })
+    }
+  })
+
   it('rejects script execution grants and package transformations in observed curated profiles', async () => {
     const cases = [
       {
@@ -7889,6 +8077,24 @@ ${child}`, {}, undefined, candidate)
         name: 'scripts enabled',
         path: '.npmrc',
         content: 'ignore-scripts=false\n',
+        code: 'preflight-profile-scripts-enabled',
+      },
+      {
+        name: 'setting without a separator',
+        path: '.npmrc',
+        content: 'ignore-scripts\n',
+        code: 'preflight-profile-scripts-enabled',
+      },
+      {
+        name: 'setting with an empty key',
+        path: '.npmrc',
+        content: '=ignore-scripts\n',
+        code: 'preflight-profile-scripts-enabled',
+      },
+      {
+        name: 'script policy without a value',
+        path: '.npmrc',
+        content: 'ignore-scripts=\n',
         code: 'preflight-profile-scripts-enabled',
       },
       {
@@ -11067,6 +11273,32 @@ describe('smoke-profile command', () => {
     }
   })
 
+  it('rejects a non-directory production profile path component', async () => {
+    const home = mkdtempSync(join(tmpdir(), 'dsh-curated-smoke-profile-file-'))
+    const profilesRoot = join(home, 'profiles')
+    writeFileSync(profilesRoot, 'not a directory')
+    const profileRoot = join(profilesRoot, 'web-personal')
+    try {
+      const result = await runSmokeProfile([
+        '--profile',
+        'web-personal',
+        '--profile-root',
+        profileRoot,
+        '--json',
+      ])
+
+      expect(result.status).toBe(1)
+      expect(JSON.parse(result.stdout)).toMatchObject({
+        issues: [{
+          code: 'smoke-profile-input-invalid',
+          message: '--profile-root components must be directories',
+        }],
+      })
+    } finally {
+      rmSync(home, { recursive: true, force: true })
+    }
+  })
+
   it('rejects a production profile root outside canonical profiles/<profile>', async () => {
     const home = mkdtempSync(join(tmpdir(), 'dsh-curated-production-profile-root-'))
     const profileRoot = join(home, 'other', 'web-personal')
@@ -11115,6 +11347,46 @@ describe('smoke-profile command', () => {
       })
     } finally {
       rmSync(home, { recursive: true, force: true })
+    }
+  })
+
+  it('materializes a private execution home and rejects non-canonical managed profiles', () => {
+    const home = mkdtempSync(join(tmpdir(), 'dsh-curated-direct-execution-home-'))
+    const executionHome = mkdtempSync(join(tmpdir(), 'dsh-curated-direct-execution-target-'))
+    const executionHomeWithoutPatch = mkdtempSync(join(tmpdir(), 'dsh-curated-direct-execution-no-patch-'))
+    const invalidRoot = join(home, 'other', 'web-personal')
+    try {
+      const profileRoot = materializeCuratedProfile('web-personal', home)
+      stageEmptyManagedPnpmEvidence(profileRoot)
+      writeFileSync(join(home, 'cordis.patch.yml'), '- id: home-setting\n  config: {}\n')
+      const input: SmokeProfileStagingInput = {
+        profileRoot,
+        profile: 'web-personal',
+        bundles: CURATED_PROFILE_TEMPLATES['web-personal'].bundles,
+        artifactRoots: [],
+        executionHome,
+      }
+
+      expect(inspectSmokeProfileStaging(input)).toEqual({ ok: true })
+      expect(readFileSync(join(executionHome, 'cordis.patch.yml'), 'utf8'))
+        .toBe('- id: home-setting\n  config: {}\n')
+      expect(readFileSync(join(executionHome, 'profiles/web-personal/package.json')))
+        .toEqual(readFileSync(join(profileRoot, 'package.json')))
+
+      rmSync(join(home, 'cordis.patch.yml'))
+      expect(inspectSmokeProfileStaging({ ...input, executionHome: executionHomeWithoutPatch }))
+        .toEqual({ ok: true })
+      expect(existsSync(join(executionHomeWithoutPatch, 'cordis.patch.yml'))).toBe(false)
+
+      mkdirSync(invalidRoot, { recursive: true })
+      expect(inspectSmokeProfileStaging({ ...input, profileRoot: invalidRoot })).toEqual({
+        ok: false,
+        error: 'smoke execution staging requires a canonical managed profile',
+      })
+    } finally {
+      rmSync(home, { recursive: true, force: true })
+      rmSync(executionHome, { recursive: true, force: true })
+      rmSync(executionHomeWithoutPatch, { recursive: true, force: true })
     }
   })
 
@@ -13509,6 +13781,14 @@ describe('compare-benchmark command', () => {
         mutate: (fixture) => { fixture.baseline.execution.startedAt = 'yesterday' },
       },
       {
+        message: 'baseline.execution.build.sourceDirty must be a boolean',
+        mutate: (fixture) => { fixture.baseline.execution.build.sourceDirty = 'false' },
+      },
+      {
+        message: 'baseline.execution.build must contain exactly artifactSha256, dshVersion, nodeVersion, sourceDirty, sourceRevision, and sourceTreeSha256',
+        mutate: (fixture) => { fixture.baseline.execution.build.extra = true },
+      },
+      {
         message: 'baseline.execution.environment must contain exactly model, prompt, workspace, network, and seed',
         mutate: (fixture) => { fixture.baseline.execution.environment.extra = true },
       },
@@ -13540,6 +13820,20 @@ describe('compare-benchmark command', () => {
         message: 'requiredCriticalTaskIds must not contain duplicates',
         mutate: (fixture) => { fixture.requiredCriticalTaskIds = ['a', 'a'] },
       },
+      {
+        message: 'baseline.profileSnapshot profile must name a shipped or curated profile template',
+        mutate: (fixture) => {
+          fixture.baseline.profile = 'unknown-profile'
+          fixture.previousSnapshots.lock = snapshotEnvelope({
+            ...previousLockSnapshot,
+            profile: 'unknown-profile',
+          })
+          fixture.previousSnapshots.profile = snapshotEnvelope({
+            ...previousProfileSnapshot,
+            profile: 'unknown-profile',
+          })
+        },
+      },
     ]
     for (const testCase of cases) {
       const fixture = JSON.parse(benchmarkFixture()) as MutableBenchmarkFixture
@@ -13554,6 +13848,27 @@ describe('compare-benchmark command', () => {
       }
     }
   })
+
+  it.each(['lock', 'profile'] as const)(
+    'rejects a previous %s snapshot profile that differs from baseline.profile',
+    (field) => {
+      const path = tempFile(`previous-${field}-profile.json`, benchmarkFixture())
+      const fixture = JSON.parse(readFileSync(path, 'utf8')) as MutableBenchmarkFixture
+      const snapshot = {
+        ...fixture.previousSnapshots[field].snapshot,
+        profile: 'other-profile',
+      }
+      fixture.previousSnapshots[field] = snapshotEnvelope(snapshot)
+      writeFileSync(path, JSON.stringify(fixture))
+      try {
+        expect(JSON.parse(runCompareBenchmark(['--fixture', path, '--json']).stdout)).toMatchObject({
+          issues: [{ message: `previousSnapshots.${field}.snapshot.profile must match baseline.profile` }],
+        })
+      } finally {
+        cleanup(path)
+      }
+    },
+  )
 
   it('rejects legacy benchmark schema and missing execution identities', () => {
     const fixture = JSON.parse(benchmarkFixture()) as MutableBenchmarkFixture
@@ -13664,6 +13979,72 @@ describe('compare-benchmark command', () => {
     }
   })
 
+  it.each([
+    {
+      name: 'profile snapshot kind',
+      field: 'profileSnapshot',
+      mutate: (snapshot: Record<string, unknown>) => { snapshot.kind = 'curated-lock-snapshot' },
+      message: 'candidate.profileSnapshot snapshot.kind must be curated-profile-snapshot',
+    },
+    {
+      name: 'lock snapshot catalog reference',
+      field: 'lockSnapshot',
+      mutate: (snapshot: Record<string, unknown>) => { snapshot.catalogRef = 'mutable' },
+      message: 'candidate.lockSnapshot snapshot must not depend on a mutable catalogRef',
+    },
+  ] as const)('rejects a bound candidate $name', ({ field, mutate, message }) => {
+    const path = tempFile(`candidate-${field}.json`, benchmarkFixture())
+    const fixture = JSON.parse(readFileSync(path, 'utf8')) as MutableBenchmarkFixture
+    const snapshotPath = join(dirname(path), fixture.candidate[field].path)
+    const snapshot = JSON.parse(readFileSync(snapshotPath, 'utf8')) as Record<string, unknown>
+    mutate(snapshot)
+    writeFileSync(snapshotPath, JSON.stringify(snapshot))
+    fixture.candidate[field].sha256 = createHash('sha256').update(canonicalJson(snapshot)).digest('hex')
+    writeFileSync(path, JSON.stringify(fixture))
+    try {
+      expect(JSON.parse(runCompareBenchmark(['--fixture', path, '--json']).stdout)).toMatchObject({
+        issues: [{ message }],
+      })
+    } finally {
+      cleanup(path)
+    }
+  })
+
+  it.each([
+    {
+      field: 'lockSnapshot',
+      mutate: (snapshot: Record<string, unknown>) => { snapshot.candidates = [] },
+      message: 'previousSnapshots.lock.snapshot must equal the canonical baseline.lockSnapshot content',
+    },
+    {
+      field: 'profileSnapshot',
+      mutate: (snapshot: Record<string, unknown>) => {
+        snapshot.bundles = ['@deepseek-ai/dsh-base']
+      },
+      message: 'previousSnapshots.profile.snapshot must equal the canonical baseline.profileSnapshot content',
+    },
+  ] as const)('rejects baseline $field content that differs from the previous snapshot', ({
+    field,
+    mutate,
+    message,
+  }) => {
+    const path = tempFile(`baseline-${field}-content.json`, benchmarkFixture())
+    const fixture = JSON.parse(readFileSync(path, 'utf8')) as MutableBenchmarkFixture
+    const snapshotPath = join(dirname(path), fixture.baseline[field].path)
+    const snapshot = JSON.parse(readFileSync(snapshotPath, 'utf8')) as Record<string, unknown>
+    mutate(snapshot)
+    writeFileSync(snapshotPath, JSON.stringify(snapshot))
+    fixture.baseline[field].sha256 = createHash('sha256').update(canonicalJson(snapshot)).digest('hex')
+    writeFileSync(path, JSON.stringify(fixture))
+    try {
+      expect(JSON.parse(runCompareBenchmark(['--fixture', path, '--json']).stdout)).toMatchObject({
+        issues: [{ message }],
+      })
+    } finally {
+      cleanup(path)
+    }
+  })
+
   it('rejects authoritative profile-template drift in the comparator', () => {
     const path = tempFile('profile-template-drift.json', benchmarkFixture())
     const fixture = JSON.parse(readFileSync(path, 'utf8')) as MutableBenchmarkFixture
@@ -13680,6 +14061,45 @@ describe('compare-benchmark command', () => {
         issues: [{
           message: 'candidate.profileSnapshot snapshot bundles must match the authoritative web-curated template in order',
         }],
+      })
+    } finally {
+      cleanup(path)
+    }
+  })
+
+  it('requires symmetric execution provenance for pending benchmarks', () => {
+    const fixture = JSON.parse(benchmarkFixture()) as MutableBenchmarkFixture
+    fixture.evidenceKind = 'planned'
+    fixture.pendingCampaigns = ['campaign']
+    fixture.baseline.runs = []
+    fixture.candidate.runs = []
+    Reflect.deleteProperty(fixture.candidate, 'execution')
+    const path = tempFile('pending-one-sided-execution.json', JSON.stringify(fixture))
+    try {
+      expect(JSON.parse(runCompareBenchmark(['--fixture', path, '--json']).stdout)).toMatchObject({
+        issues: [{ message: 'benchmark runs require baseline and candidate execution provenance' }],
+      })
+    } finally {
+      cleanup(path)
+    }
+  })
+
+  it('accepts matching execution provenance on pending benchmarks', () => {
+    const fixture = JSON.parse(benchmarkFixture()) as MutableBenchmarkFixture
+    fixture.evidenceKind = 'planned'
+    fixture.pendingCampaigns = ['campaign']
+    fixture.baseline.runs = []
+    fixture.candidate.runs = []
+    const path = tempFile('pending-with-execution.json', JSON.stringify(fixture))
+    try {
+      const result = runCompareBenchmark(['--fixture', path, '--json'])
+
+      expect(result.status).toBe(1)
+      expect(JSON.parse(result.stdout)).toMatchObject({
+        command: 'compare-benchmark',
+        evidenceKind: 'planned',
+        status: 'pending',
+        pendingCampaigns: ['campaign'],
       })
     } finally {
       cleanup(path)

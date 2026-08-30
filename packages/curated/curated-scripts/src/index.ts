@@ -2762,8 +2762,9 @@ function parseNpmrc(content: string): readonly NpmrcEntry[] {
 
 function npmrcDisablesScripts(entries: readonly NpmrcEntry[]): boolean {
   const settings = entries.filter(entry => entry.key === 'ignore-scripts')
-  return settings.length === 1
-    && /^(?:true)(?:\s*[#;].*)?$/iu.test(settings[0]?.value ?? '')
+  if (settings.length !== 1) return false
+  const setting = settings[0] as NpmrcEntry
+  return /^(?:true)(?:\s*[#;].*)?$/iu.test(setting.value)
 }
 
 function npmrcContainsPackageTransformation(entries: readonly NpmrcEntry[]): boolean {

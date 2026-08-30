@@ -2243,6 +2243,7 @@ rules:
     const checkedIn = new Map(loadCuratedCatalog().candidates.map(item => [item.id, item]))
 
     expect(deriveCandidateStatus(candidate({}))).toBe('active')
+    expect(deriveCandidateStatus(candidate({ active: false, rejections: [] }))).toBe('pending')
     expect(deriveCandidateStatus(checkedIn.get('dsh-memento')!)).toBe('qualified')
     expect(deriveCandidateStatus(checkedIn.get('dsh-agent-team-gui')!)).toBe('pending')
     expect(deriveCandidateStatus(checkedIn.get('dsh-background-agents')!)).toBe('pending')

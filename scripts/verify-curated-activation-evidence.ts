@@ -29,12 +29,14 @@ import {
   type CuratedRuntimeEvidenceFile,
 } from '@deepseek-ai/dsh-curated-policy'
 import { CURATED_PROFILE_TEMPLATES } from '@deepseek-ai/dsh-curated-profiles'
+import { runOwnedProcess } from './run-owned-process.ts'
 
 const root = resolve(import.meta.dirname, '..')
 const MAX_EVIDENCE_BYTES = 16 * 1024 * 1024
 const EVIDENCE_DIRECTORY = 'packages/curated/curated-bench/evidence/'
 const SNAPSHOT_CONFIG = 'vitest.snapshot.config.ts'
 const ACTIVATION_SNAPSHOT_TIMEOUT_MS = 50_000
+const ACTIVATION_SNAPSHOT_MAX_OUTPUT_BYTES = 1024 * 1024
 const ACTIVATION_REPLAY_ENV_NAMES = new Set([
   'COMSPEC',
   'LANG',
@@ -879,34 +881,35 @@ type ActivationSnapshotExecutor = (
 
 /**
  * Replay every operation snapshot required by active candidates.
- * The default executor removes its private credential-free home after each synchronous command.
+ * The default executor removes its private credential-free home after each process tree exits.
  * @param catalog - Catalog whose active candidates own replay commands.
  * @param execute - Command executor used by tests and the repository gate.
  * @param isTrackedRegularBlob - Predicate rechecking snapshot bytes immediately before execution.
  * @returns stable replay diagnostics, empty when every snapshot passes.
  */
-export function replayCuratedActivationSnapshots(
+export async function replayCuratedActivationSnapshots(
   catalog: CuratedCatalog,
-  execute: ActivationSnapshotExecutor = (command, args) => {
+  execute: ActivationSnapshotExecutor = async (command, args) => {
     const home = mkdtempSync(join(tmpdir(), 'dsh-curated-activation-replay-'))
     const config = join(home, '.config')
     const dshHome = join(home, '.dsh')
     try {
       mkdirSync(config, { mode: 0o700 })
       mkdirSync(dshHome, { mode: 0o700 })
-      return execFileSync(command, args, {
+      const result = await runOwnedProcess(command, args, {
         cwd: root,
-        encoding: 'utf8',
+        deadline: Date.now() + ACTIVATION_SNAPSHOT_TIMEOUT_MS,
         env: activationReplayEnvironment(home, config, dshHome),
-        stdio: ['ignore', 'pipe', 'pipe'],
-        timeout: ACTIVATION_SNAPSHOT_TIMEOUT_MS,
+        maxOutputBytes: ACTIVATION_SNAPSHOT_MAX_OUTPUT_BYTES,
       })
+      if (result.timedOut || result.exitCode !== 0) throw new Error('activation snapshot replay failed')
+      return result.stdout
     } finally {
       rmSync(home, { recursive: true, force: true })
     }
   },
   isTrackedRegularBlob: (path: string) => boolean = isGitTrackedRegularBlob.bind(undefined, root),
-): string[] {
+): Promise<string[]> {
   const messages: string[] = []
   for (const candidate of catalog.candidates) {
     if (!candidate.active) continue
@@ -921,7 +924,7 @@ export function replayCuratedActivationSnapshots(
           continue
         }
         try {
-          if (!isSuccessfulVitestReplay(execute(command as string, args))) {
+          if (!isSuccessfulVitestReplay(await execute(command as string, args))) {
             messages.push(`candidate ${candidate.id} activation snapshot failed for ${profile}:${operations[field]}`)
           }
         } catch {
@@ -975,14 +978,14 @@ function isSuccessfulVitestReplay(output: unknown): boolean {
  * @param options - Evidence accessors used by the repository gate or focused tests.
  * @returns stable diagnostics, empty when policy, evidence, and replay all pass.
  */
-export function curatedActivationEvidenceIssues(
+export async function curatedActivationEvidenceIssues(
   catalog: CuratedCatalog = loadCuratedCatalog(),
   options: {
     readonly repositoryRoot?: string
     readonly isTrackedRegularBlob?: (path: string) => boolean
     readonly readEvidenceFile?: typeof readVerifiedFile
   } = {},
-): string[] {
+): Promise<string[]> {
   const policyIssues = validateCandidateLock(catalog)
   const policyDiagnostics = policyIssues.map(issue => `${issue.code}: ${issue.message}`)
   if (policyDiagnostics.length > 0) return redactDiagnostics(policyDiagnostics)
@@ -996,7 +999,7 @@ export function curatedActivationEvidenceIssues(
   return redactDiagnostics([
     ...evidenceIssues,
     ...evidenceIssues.length === 0
-      ? replayCuratedActivationSnapshots(
+      ? await replayCuratedActivationSnapshots(
         catalog,
         undefined,
         options.isTrackedRegularBlob ?? isGitTrackedRegularBlob.bind(undefined, repositoryRoot),
@@ -1013,10 +1016,10 @@ function redactDiagnostics(messages: readonly string[]): string[] {
  * Run the curated activation evidence verifier.
  * @param catalog - Catalog to verify; defaults to the checked-in catalog.
  */
-export function runCuratedActivationEvidenceVerifier(
+export async function runCuratedActivationEvidenceVerifier(
   catalog: CuratedCatalog = loadCuratedCatalog(),
-): void {
-  const messages = curatedActivationEvidenceIssues(catalog)
+): Promise<void> {
+  const messages = await curatedActivationEvidenceIssues(catalog)
   if (messages.length > 0) {
     console.error(`verify-curated-activation-evidence failed:\n${messages.map(message => `- ${message}`).join('\n')}`)
     process.exitCode = 1
@@ -1029,5 +1032,8 @@ if (
   process.argv[1] !== undefined
   && resolve(process.argv[1]) === fileURLToPath(import.meta.url)
 ) {
-  runCuratedActivationEvidenceVerifier()
+  void runCuratedActivationEvidenceVerifier().catch(() => {
+    console.error('verify-curated-activation-evidence failed')
+    process.exitCode = 1
+  })
 }

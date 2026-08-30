@@ -116,24 +116,13 @@
 
 ## Round 7 从零独立复审并严格执行
 
-- [ ] 七份 `docs/plugin/superpowers/` 规划文档的全部当前 P0/P1/P2、证据分级与安全要求已用本轮源码、配置、测试或命令输出从零重新建立追踪，未复用旧通过结论。
-- [ ] 候选完整 40 位 SHA、许可证、bundle 声明、Node engine、安装脚本、core-patch 与 active/rejected 决策已用当前工件独立重新核对；runtime active 仍为 0，6 个静态/安装资格候选保留 `assembled-keyless-snapshot-missing`，`dsh-web-search-pro` 另记缺少必需 browser bundle/runtime dependency。
-- [ ] 五个 curated profile 的继承、隔离、能力域互斥、enterprise 限制、`ignore-scripts=true` 与官方 profile 不变量符合规划。
-- [ ] `verify-lock`、`preflight`、`smoke-profile`、`compare-benchmark` 的成功、拒绝、超时、回滚、pending 与脱敏路径均有本轮新鲜输出，秘密不回显。
-- [ ] curated focused tests 与 per-file coverage、constraints、相关 typecheck、scoped lint、doc-sync、build/hygiene 叶级门禁有本轮新鲜通过证据。
-- [ ] 真实 CLI 的 `headless` 与 curated profile 启动面可运行；当前无 active UI 候选，Chrome CDP 9333 不适用。
-- [ ] 本轮发现的所有仓库内行为缺口均先有预期失败测试，再由最小实现修复并通过 focused 验证；若无实现缺口，则以“无需修改且有本轮证据”闭环。
-- [ ] 官方 `web`/`headless`、Agent loop、工具执行顺序、权限交互与 session wire format 未发生 curated 行为回归。
-- [ ] 独立代码、安全和规格审查无未解决 P0–P2 或高置信度实质问题。
-- [ ] 用户既有脏工作树内容保持原样；本轮未新增 `docs/plugin/superpowers/` 与 `.trae/specs/` staged 内容，index 指纹保持不变，未执行 commit/push/merge/rebase/reset/add，`progress.md` 仅追加一个本轮总结。
-
 - [x] 七份 `docs/plugin/superpowers/` 规划文档的全部当前 P0/P1/P2、证据分级与安全要求已用本轮源码、配置、测试或命令输出从零重新建立追踪，未复用旧通过结论。
 - [x] 候选完整 40 位 SHA、许可证、bundle 声明、Node engine、安装脚本、core-patch 与 active/rejected 决策已用当前工件独立重新核对；runtime active 仍为 0，6 个静态/安装资格候选保留 `assembled-keyless-snapshot-missing`，`dsh-web-search-pro` 另记缺少必需 browser bundle/runtime dependency。
-- [x] 五个 curated profile（`web-curated`/`web-coding`/`web-research`/`web-enterprise`/`web-personal`）的继承、隔离、能力域互斥、enterprise 限制、`ignore-scripts=true` 与官方 profile 不变量符合规划。
+- [x] 五个 curated profile 的继承、隔离、能力域互斥、enterprise 限制、`ignore-scripts=true` 与官方 profile 不变量符合规划。
 - [x] `verify-lock`、`preflight`、`smoke-profile`、`compare-benchmark` 的成功、拒绝、超时、回滚、pending 与脱敏路径均有本轮新鲜输出，秘密不回显。
 - [x] curated focused tests 与 per-file coverage、constraints、相关 typecheck、scoped lint、doc-sync、build/hygiene 叶级门禁有本轮新鲜通过证据。
 - [x] 真实 CLI 的 `headless` 与 curated profile 启动面可运行；当前无 active UI 候选，Chrome CDP 9333 不适用。
 - [x] 本轮发现的所有仓库内行为缺口均先有预期失败测试，再由最小实现修复并通过 focused 验证；若无实现缺口，则以“无需修改且有本轮证据”闭环。
 - [x] 官方 `web`/`headless`、Agent loop、工具执行顺序、权限交互与 session wire format 未发生 curated 行为回归。
 - [x] 独立代码、安全和规格审查无未解决 P0–P2 或高置信度实质问题。
-- [x] 用户既有脏工作树内容保持原样；本轮未新增 `docs/plugin/superpowers/` 与 `.trae/specs/` staged 内容，index 指纹 `0d654fdb471cb3501ae2eaa313af3c23742af74e314420b083783a5ec55b0ba6` 保持不变，未执行 commit/push/merge/rebase/reset/add，`progress.md` 仅追加一个本轮总结。
+- [x] 用户既有脏工作树内容保持原样；当前 `.git/index` SHA-256 为 `65f44b02d33a4745e5b6a6472a2e398e6370ccb4bb6f56aa355562c3fde9d2e5`，cached diff SHA-256 为 `e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855`，staged paths 为 0；未新增 `docs/plugin/superpowers/`、`.trae/specs/`、报告或状态文件到 staged，未执行 commit/push/merge/rebase/reset/add；一次验证代理误调用 `git write-tree`，仅返回已存在且等于 HEAD tree 的 `551bbad102aef40396f7597f22c1b95f7aaf0640`，未改变 index、refs 或工作树，也未生成新的 tree 内容；`progress.md` 仅追加一个本轮总结。

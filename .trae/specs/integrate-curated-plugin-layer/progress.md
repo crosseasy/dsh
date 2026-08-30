@@ -103,3 +103,12 @@
   - Tests/Coverage: pass；curated-scripts commands 400/400，curated policy/profiles/base/bench 404/404，CLI curated-profile bridge 18/18，activation-evidence + candidate-audit 门禁 139/139；scoped oxlint 0 warning/0 error（25 文件）。
   - Checklist audit: 全部 checklist 项通过（`spec.md` 场景、`checklist.md` 六轮共 90+ 勾选项均有本轮命令证据支撑），0 failed。
 - **Risks and issues**: 无 in-scope blocker。对抗性探针：向 profile patch 注入明文 secret 被 `preflight-profile-patch-secret` fail-closed（`accepted:false`），原始 secret 泄漏 0 次。官方不变量成立：`packages/core/agent-loop` 无 curated 相关行为改动（仅 settings 测试的独立 revision-assertion 变更，属更广分支非本任务），`profile-boot.ts` 变更为预期的 curated boot-admission。Git 边界完好：index SHA-256 保持 `0d654fdb471cb3501ae2eaa313af3c23742af74e314420b083783a5ec55b0ba6`，HEAD 未变，本轮未执行任何 git 写操作。E3/E4、真实 A/B、故障注入与 3–7 天 canary 按文档诚实保持 pending，不作为完成证据。
+
+## Round 7
+
+- 实现：按 TDD 修复 coverage 缺口、sync timeout 与正常 leader 遗留后代、stdin EPIPE、Windows test guard、late overflow 延迟终止和 tree observation ordering。
+- 测试：process/audit/activation 153 项、curated + CLI 901 项、coverage 905 项及 commands 关键 7 项通过；所有 curated 可执行源四维 100%，constraints、5 个 curated typecheck、Host/client、scoped lint、`doc-sync` 29/29、build、hygiene 14/14、release/activation 与 source CLI 6/6 均通过，每条命令少于 55 秒；active UI 为 0，Chrome CDP 9333 不适用。
+- 审查：Bits `final_comments=[]`，security 与 spec 结论均为 CLEAN。
+- 边界：HEAD 始终为 `8a8cc0029d29e8620826d7307b2d97e91ce24a57`；最终 `.git/index` SHA-256 为 `65f44b02d33a4745e5b6a6472a2e398e6370ccb4bb6f56aa355562c3fde9d2e5`，cached diff SHA-256 为 `e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855`，staged paths 为 0，未执行 commit/push/merge/rebase/reset/add；一次误调用的 `git write-tree` 仅返回已存在且等于 HEAD tree 的 `551bbad102aef40396f7597f22c1b95f7aaf0640`，未改变 index、refs 或工作树，也未生成新的 tree 内容。
+- 长周期 pending：E3/E4、真实 A/B、故障注入与 3–7 天 canary 继续保持 pending，不作为完成证据。
+- 文件范围：最终 bookkeeping 仅修改 `.trae/specs/integrate-curated-plugin-layer/tasks.md`、`checklist.md` 和 `progress.md`；报告与状态文件未 staged。

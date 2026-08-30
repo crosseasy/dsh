@@ -2,5 +2,5 @@
 # side as of the last confirmed-consistent state. Both languages carry equal authority;
 # after editing either side, bring the other along and re-record with:
 #   pnpm run verify-translation-pairing --write .agents/notes/implemented/architecture/2026-08-25-curated-plugin-layer-governance.md
-2026-08-25-curated-plugin-layer-governance.md: ee11108731b0b6fe3e567efeff5a940b26ad7903
-2026-08-25-curated-plugin-layer-governance.zh.md: fd672d451acb229af85ef80e35cd3f574ad98ea6
+2026-08-25-curated-plugin-layer-governance.md: 73438ab290b50bbd1f88a3618f7142f0b490955e
+2026-08-25-curated-plugin-layer-governance.zh.md: 8602e9311ffead6599d6419b1997ebeaa2758116

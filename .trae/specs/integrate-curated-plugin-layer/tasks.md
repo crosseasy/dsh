@@ -167,12 +167,12 @@
   - [x] 23.3 以 TDD 对 activation diagnostics 中的 candidate、profile 和 path 做结构化脱敏，覆盖 `key=value`、`Authorization Basic`、URL userinfo，并修复合法 ID/path 含 `authorization` 的误拒绝。
   - [x] 23.4 重跑全量相关门禁和安全/代码复审。
 
-- [ ] Task 30: 从零独立复审并严格执行 `integrate-curated-plugin-layer`，取得本轮新鲜证据后收敛。
+- [x] Task 30: 从零独立复审并严格执行 `integrate-curated-plugin-layer`，取得本轮新鲜证据后收敛。
   - [x] 30.1 并行委派只读子代理，从零重建需求追踪：分别审计七份 `docs/plugin/superpowers/` 规划文档的 P0/P1/P2 要求、curated 源码与 per-file 覆盖、候选供应链事实（完整 40 位 SHA/许可证/bundle/Node engine/安装脚本/active-rejected）、五个 profile 组合与隔离、以及长周期评测证据诚实性；不复用旧通过结论，每项结论引用当前源码、配置、测试或本轮命令输出。
-  - [ ] 30.2 取得本轮新鲜证据：运行 curated focused tests 与 per-file coverage、workspace constraints、相关 typecheck、scoped lint、doc-sync、build/hygiene 叶级门禁；运行 verify-lock/preflight/smoke-profile/compare-benchmark 的成功、拒绝、超时、回滚、pending 与脱敏路径，核对退出码与脱敏输出（每条命令 < 1 分钟）。
+  - [x] 30.2 取得本轮新鲜证据：运行 curated focused tests 与 per-file coverage、workspace constraints、相关 typecheck、scoped lint、doc-sync、build/hygiene 叶级门禁；运行 verify-lock/preflight/smoke-profile/compare-benchmark 的成功、拒绝、超时、回滚、pending 与脱敏路径，核对退出码与脱敏输出（每条命令 < 1 分钟）。
   - [x] 30.3 通过真实 CLI 在洁净隔离 DSH home 下验证 `headless` 与五个 curated profile 启动面；当前无 active UI 候选，Chrome CDP 9333 不适用。
-  - [ ] 30.4 对本轮发现的任何仓库内行为缺口先添加预期失败测试再最小修复；委派独立代码、安全与规格一致性复审，修复全部 P0–P2 或高置信度实质问题后由唯一写入代理重跑受影响门禁。
-  - [ ] 30.5 核对工作树与 index 指纹未变、未执行任何 git 写操作、无新增 staged 规划工件；更新 tasks/checklist，并向 append-only `progress.md` 追加本轮唯一总结。
+  - [x] 30.4 对本轮发现的任何仓库内行为缺口先添加预期失败测试再最小修复；委派独立代码、安全与规格一致性复审，修复全部 P0–P2 或高置信度实质问题后由唯一写入代理重跑受影响门禁。
+  - [x] 30.5 核对 index 与工作树边界，无新增 staged 报告或状态文件，未执行 commit/push/merge/rebase/reset/add；一次验证代理误调用 `git write-tree`，仅返回已存在且等于 HEAD tree 的 `551bbad102aef40396f7597f22c1b95f7aaf0640`，未改变 index、refs 或工作树，也未生成新的 tree 内容；更新 tasks/checklist，并向 append-only `progress.md` 追加本轮唯一总结。
 
 ## Task Dependencies
 

@@ -3,13 +3,13 @@
  * creating a checkout or extracting an archive.
  */
 
-import { spawnSync } from 'node:child_process'
 import { createHash } from 'node:crypto'
 import { mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { loadCuratedCatalog } from '@deepseek-ai/dsh-curated-policy'
+import { runOwnedProcess } from './run-owned-process.ts'
 
 const DEFAULT_TIMEOUT_MS = 50_000
 const MAX_TIMEOUT_MS = 50_000
@@ -90,7 +90,7 @@ export function auditGitCommit(
   gitDirectory: string,
   commit: string,
   timeoutMs = DEFAULT_TIMEOUT_MS,
-): SourceContentAudit {
+): Promise<SourceContentAudit> {
   return auditGitCommitBefore(
     gitDirectory,
     commit,
@@ -104,17 +104,17 @@ export function auditGitCommit(
  * @param options - Repository, commit, executable, and total timeout.
  * @returns the source-content digest and included entry count.
  */
-export function auditRepositorySource(
+export async function auditRepositorySource(
   options: RepositorySourceAuditOptions,
-): SourceContentAudit {
+): Promise<SourceContentAudit> {
   const repository = normalizeGitHubRepository(options.repository)
   assertCommit(options.commit)
   const deadline = deadlineFromTimeout(options.timeoutMs ?? DEFAULT_TIMEOUT_MS)
   const gitExecutable = options.gitExecutable ?? 'git'
   const gitDirectory = mkdtempSync(resolve(tmpdir(), 'dsh-curated-source-audit-'))
   try {
-    runGit(['init', '--bare', '--quiet', gitDirectory], { deadline, gitExecutable })
-    runGit([
+    await runGit(['init', '--bare', '--quiet', gitDirectory], { deadline, gitExecutable })
+    await runGit([
       '-c',
       'protocol.allow=never',
       '-c',
@@ -133,12 +133,12 @@ export function auditRepositorySource(
       repository,
       `${options.commit}:refs/dsh/source-audit`,
     ], { deadline, gitExecutable })
-    const fetched = runGit(
+    const fetched = (await runGit(
       ['-C', gitDirectory, 'rev-parse', 'refs/dsh/source-audit^{commit}'],
       { deadline, gitExecutable },
-    ).toString('utf8').trim()
+    )).toString('utf8').trim()
     if (fetched !== options.commit) throw new Error('fetched commit does not match the requested commit')
-    return auditGitCommitBefore(gitDirectory, fetched, deadline, gitExecutable)
+    return await auditGitCommitBefore(gitDirectory, fetched, deadline, gitExecutable)
   } finally {
     rmSync(gitDirectory, { recursive: true, force: true })
   }
@@ -193,20 +193,20 @@ function normalizeGitHubRepository(value: string): string {
   return canonical
 }
 
-function auditGitCommitBefore(
+async function auditGitCommitBefore(
   gitDirectory: string,
   commit: string,
   deadline: number,
   gitExecutable: string,
-): SourceContentAudit {
+): Promise<SourceContentAudit> {
   assertCommit(commit)
-  const type = runGit(
+  const type = (await runGit(
     ['-C', gitDirectory, 'cat-file', '-t', commit],
     { deadline, gitExecutable },
-  ).toString('utf8').trim()
+  )).toString('utf8').trim()
   if (type !== 'commit') throw new Error(`${commit} must identify a commit, found ${type}`)
 
-  const entries = parseTree(runGit([
+  const entries = parseTree(await runGit([
     '-C',
     gitDirectory,
     'ls-tree',
@@ -222,7 +222,7 @@ function auditGitCommitBefore(
   const blobs = entries.length === 0
     ? []
     : parseBatch(
-      runGit(['-C', gitDirectory, 'cat-file', '--batch'], {
+      await runGit(['-C', gitDirectory, 'cat-file', '--batch'], {
         deadline,
         gitExecutable,
         input,
@@ -358,25 +358,22 @@ function assertCommit(commit: string): void {
   if (!SHA1_PATTERN.test(commit)) throw new Error('commit must be a full lowercase SHA-1')
 }
 
-function runGit(args: readonly string[], options: GitRunOptions): Buffer {
-  const timeout = options.deadline - Date.now()
-  if (timeout <= 0) throw new Error('Git source audit timed out')
-  const result = spawnSync(options.gitExecutable, args, {
-    encoding: 'buffer',
-    env: gitAuditEnvironment(),
-    input: options.input,
-    maxBuffer: MAX_GIT_OUTPUT_BYTES,
-    timeout,
-  })
-  if (result.error !== undefined) {
-    if ('code' in result.error && result.error.code === 'ETIMEDOUT') {
-      throw new Error('Git source audit timed out')
-    }
+async function runGit(args: readonly string[], options: GitRunOptions): Promise<Buffer> {
+  if (options.deadline <= Date.now()) throw new Error('Git source audit timed out')
+  let result
+  try {
+    result = await runOwnedProcess(options.gitExecutable, args, {
+      cwd: process.cwd(),
+      deadline: options.deadline,
+      env: gitAuditEnvironment(),
+      maxOutputBytes: MAX_GIT_OUTPUT_BYTES,
+      ...options.input === undefined ? {} : { input: options.input },
+    })
+  } catch {
     throw new Error('Git source audit failed')
   }
-  if (result.status !== 0) {
-    throw new Error('Git source audit failed')
-  }
+  if (result.timedOut) throw new Error('Git source audit timed out')
+  if (result.exitCode !== 0) throw new Error('Git source audit failed')
   return result.stdout
 }
 
@@ -449,7 +446,7 @@ export function parseAuditArgs(rawArgs: readonly string[]): AuditRequest {
   }
 }
 
-function main(): void {
+async function main(): Promise<void> {
   const request = parseAuditArgs(process.argv.slice(2))
   let candidateId: string | undefined
   let expected: string | undefined
@@ -468,7 +465,7 @@ function main(): void {
     commit = candidate.commit
   }
   if (repository === undefined || commit === undefined) throw new Error('audit source is incomplete')
-  const result = auditRepositorySource({
+  const result = await auditRepositorySource({
     commit,
     repository,
     timeoutMs: request.timeoutMs,
@@ -489,10 +486,8 @@ if (
   process.argv[1] !== undefined
   && resolve(process.argv[1]) === fileURLToPath(import.meta.url)
 ) {
-  try {
-    main()
-  } catch (error) {
+  void main().catch((error: unknown) => {
     console.error(`audit-curated-candidates: ${error instanceof Error ? error.message : String(error)}`)
     process.exitCode = 1
-  }
+  })
 }

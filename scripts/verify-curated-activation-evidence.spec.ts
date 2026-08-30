@@ -64,6 +64,16 @@ function successfulVitestReport(): string {
   })
 }
 
+function successfulOwnedProcessResult() {
+  return {
+    exitCode: 0,
+    signal: null,
+    stdout: Buffer.from(successfulVitestReport()),
+    stderr: Buffer.alloc(0),
+    timedOut: false,
+  } as const
+}
+
 function git(root: string, args: readonly string[]): void {
   const result = spawnSync('git', args, { cwd: root, encoding: 'utf8' })
   if (result.status !== 0) {
@@ -229,19 +239,24 @@ function singleProfileReplayCandidate(): CuratedCandidate {
 }
 
 async function withMockedReplayExecutor<T>(
-  execFileSync: unknown,
+  runOwnedProcess: unknown,
   run: (verifier: ActivationEvidenceVerifierModule) => T | Promise<T>,
 ): Promise<T> {
   vi.resetModules()
+  vi.doMock('./run-owned-process.ts', () => ({ runOwnedProcess }))
   vi.doMock('node:child_process', async () => {
     const actual = await vi.importActual<typeof import('node:child_process')>('node:child_process')
-    return { ...actual, execFileSync }
+    return {
+      ...actual,
+      execFileSync: () => { throw new Error('legacy replay executor called') },
+    }
   })
   try {
     const verifier = await import('./verify-curated-activation-evidence.ts')
     const result = await run(verifier)
     return result
   } finally {
+    vi.doUnmock('./run-owned-process.ts')
     vi.doUnmock('node:child_process')
     vi.resetModules()
   }
@@ -619,7 +634,7 @@ describe('curated runtime activation evidence gate', () => {
     ])
   })
 
-  it('redacts secret-like candidate, profile, and path identifiers from public diagnostics', () => {
+  it('redacts secret-like candidate, profile, and path identifiers from public diagnostics', async () => {
     const root = mkdtempSync(join(tmpdir(), 'dsh-curated-redacted-evidence-'))
     const base = qualificationCandidate()
     const candidateId = 'https://plain-user:plain-password@example.com'
@@ -640,7 +655,7 @@ describe('curated runtime activation evidence gate', () => {
     try {
       const diagnostics = [
         ...validateEvidence(root, catalogWith(candidate)),
-        ...replayCuratedActivationSnapshots(catalogWith(candidate), () => {
+        ...await replayCuratedActivationSnapshots(catalogWith(candidate), () => {
           throw new Error('snapshot failed')
         }, () => true),
       ].join('\n')
@@ -658,7 +673,7 @@ describe('curated runtime activation evidence gate', () => {
     }
   })
 
-  it('returns only redacted policy diagnostics before touching injected evidence accessors', () => {
+  it('returns only redacted policy diagnostics before touching injected evidence accessors', async () => {
     const root = mkdtempSync(join(tmpdir(), 'dsh-curated-policy-first-'))
     try {
       const active = activeCandidate(root)
@@ -686,7 +701,7 @@ describe('curated runtime activation evidence gate', () => {
         throw new Error('evidence reader must not run')
       })
 
-      expect(curatedActivationEvidenceIssues(catalog, {
+      expect(await curatedActivationEvidenceIssues(catalog, {
         repositoryRoot: root,
         isTrackedRegularBlob,
         readEvidenceFile,
@@ -698,7 +713,7 @@ describe('curated runtime activation evidence gate', () => {
     }
   })
 
-  it('skips replay when activation evidence validation fails', () => {
+  it('skips replay when activation evidence validation fails', async () => {
     const root = mkdtempSync(join(tmpdir(), 'dsh-curated-invalid-evidence-'))
     try {
       const active = activeCandidate(root)
@@ -722,7 +737,7 @@ describe('curated runtime activation evidence gate', () => {
       const evidence = activationEvidenceSet(candidate)
       rmSync(join(root, evidence.install.path))
 
-      expect(curatedActivationEvidenceIssues(catalogWith(candidate), {
+      expect(await curatedActivationEvidenceIssues(catalogWith(candidate), {
         repositoryRoot: root,
         isTrackedRegularBlob: () => true,
       })).toEqual([
@@ -780,7 +795,7 @@ describe('curated runtime activation evidence gate', () => {
     }
   })
 
-  it('replays every operation snapshot for every active target profile', () => {
+  it('replays every operation snapshot for every active target profile', async () => {
     const root = mkdtempSync(join(tmpdir(), 'dsh-curated-replay-'))
     try {
       const [firstProfile, secondProfile] = qualificationCandidate().targetProfiles
@@ -788,7 +803,7 @@ describe('curated runtime activation evidence gate', () => {
       const candidate = activeCandidate(root, [firstProfile, secondProfile])
       const commands: string[][] = []
 
-      expect(replayCuratedActivationSnapshots(catalogWith(candidate), (command, args) => {
+      expect(await replayCuratedActivationSnapshots(catalogWith(candidate), (command, args) => {
         commands.push([command, ...args])
         return successfulVitestReport()
       }, () => true)).toEqual([])
@@ -798,7 +813,7 @@ describe('curated runtime activation evidence gate', () => {
       )
       expect(commands[0]).toContain('--reporter=json')
 
-      expect(replayCuratedActivationSnapshots(catalogWith(candidate), (_command, args) => {
+      expect(await replayCuratedActivationSnapshots(catalogWith(candidate), (_command, args) => {
         if (args.at(-1)?.endsWith(':restart') === true) throw new Error('snapshot failed')
         return successfulVitestReport()
       }, () => true)).toEqual([
@@ -811,26 +826,27 @@ describe('curated runtime activation evidence gate', () => {
   })
 
   it('keeps the default replay executor below the 55-second outer deadline', async () => {
-    const execFileSync = vi.fn((..._args: unknown[]) => successfulVitestReport())
+    const runOwnedProcess = vi.fn((..._args: unknown[]) => Promise.resolve(successfulOwnedProcessResult()))
 
-    await withMockedReplayExecutor(execFileSync, (verifier) => {
+    await withMockedReplayExecutor(runOwnedProcess, async (verifier) => {
       const candidate = singleProfileReplayCandidate()
-      expect(verifier.replayCuratedActivationSnapshots(
+      expect(await verifier.replayCuratedActivationSnapshots(
         catalogWith(candidate),
         undefined,
         () => true,
       )).toEqual([])
-      expect(execFileSync).toHaveBeenCalledTimes(5)
-      for (const call of execFileSync.mock.calls) {
-        const options = call[2] as { timeout?: number }
-        expect(options.timeout).toBeGreaterThan(0)
-        expect(options.timeout).toBeLessThan(55_000)
+      expect(runOwnedProcess).toHaveBeenCalledTimes(5)
+      for (const call of runOwnedProcess.mock.calls) {
+        const options = call[2] as { deadline: number; maxOutputBytes: number }
+        expect(options.deadline).toBeGreaterThan(Date.now())
+        expect(options.deadline).toBeLessThan(Date.now() + 55_000)
+        expect(options.maxOutputBytes).toBe(1024 * 1024)
       }
     })
   })
 
   it('runs the default replay executor with a minimal credential-free environment', async () => {
-    const execFileSync = vi.fn((..._args: unknown[]) => successfulVitestReport())
+    const runOwnedProcess = vi.fn((..._args: unknown[]) => Promise.resolve(successfulOwnedProcessResult()))
     vi.stubEnv('DEEPSEEK_API_KEY', 'deepseek-hidden')
     vi.stubEnv('ACTIVATION_TOKEN', 'token-hidden')
     vi.stubEnv('HTTPS_PROXY', 'https://proxy-user:proxy-hidden@example.com')
@@ -841,14 +857,14 @@ describe('curated runtime activation evidence gate', () => {
     vi.stubEnv('LC_SECRET', 'locale-secret-hidden')
 
     try {
-      await withMockedReplayExecutor(execFileSync, (verifier) => {
+      await withMockedReplayExecutor(runOwnedProcess, async (verifier) => {
         const candidate = singleProfileReplayCandidate()
-        expect(verifier.replayCuratedActivationSnapshots(
+        expect(await verifier.replayCuratedActivationSnapshots(
           catalogWith(candidate),
           undefined,
           () => true,
         )).toEqual([])
-        const options = execFileSync.mock.calls[0]?.[2] as { env?: NodeJS.ProcessEnv }
+        const options = runOwnedProcess.mock.calls[0]?.[2] as { env?: NodeJS.ProcessEnv }
         expect(options.env).toMatchObject({
           CI: 'true',
           LC_ALL: 'C',
@@ -867,7 +883,7 @@ describe('curated runtime activation evidence gate', () => {
     }
   })
 
-  it('isolates and cleans each default replay home after synchronous execution', async () => {
+  it('keeps each default replay home private until asynchronous execution settles', async () => {
     const hostHome = '/host/private-home'
     const hostProfile = 'C:\\Users\\host'
     const observations: Array<{
@@ -876,7 +892,9 @@ describe('curated runtime activation evidence gate', () => {
       readonly configMode: number
       readonly dshHomeMode: number
     }> = []
-    const execFileSync = vi.fn((
+    let releaseFirst!: () => void
+    const firstPending = new Promise<void>((resolve) => { releaseFirst = resolve })
+    const runOwnedProcess = vi.fn(async (
       _command: unknown,
       _args: unknown,
       options: { env?: NodeJS.ProcessEnv },
@@ -891,8 +909,11 @@ describe('curated runtime activation evidence gate', () => {
         configMode: config !== undefined && existsSync(config) ? statSync(config).mode & 0o777 : -1,
         dshHomeMode: dshHome !== undefined && existsSync(dshHome) ? statSync(dshHome).mode & 0o777 : -1,
       })
-      if (observations.length === 1) throw new Error('fixture replay failure')
-      return successfulVitestReport()
+      if (observations.length === 1) {
+        await firstPending
+        throw new Error('fixture replay failure')
+      }
+      return successfulOwnedProcessResult()
     })
     vi.stubEnv('HOME', hostHome)
     vi.stubEnv('USERPROFILE', hostProfile)
@@ -902,13 +923,17 @@ describe('curated runtime activation evidence gate', () => {
     vi.stubEnv('NPM_CONFIG_USERCONFIG', '/host/.npmrc')
 
     try {
-      await withMockedReplayExecutor(execFileSync, (verifier) => {
+      await withMockedReplayExecutor(runOwnedProcess, async (verifier) => {
         const candidate = singleProfileReplayCandidate()
-        expect(verifier.replayCuratedActivationSnapshots(
+        const replay = verifier.replayCuratedActivationSnapshots(
           catalogWith(candidate),
           undefined,
           () => true,
-        )).toEqual([
+        )
+        await vi.waitFor(() => { expect(observations).toHaveLength(1) })
+        expect(existsSync(observations[0]!.env.HOME as string)).toBe(true)
+        releaseFirst()
+        await expect(replay).resolves.toEqual([
           `candidate ${candidate.id} activation snapshot failed for ${candidate.targetProfiles[0]}:keyless-assembled-snapshot`,
         ])
         expect(observations).toHaveLength(5)
@@ -940,7 +965,7 @@ describe('curated runtime activation evidence gate', () => {
     }
   })
 
-  it('rejects a successful Vitest process when no snapshot test matched', () => {
+  it('rejects a successful Vitest process when no snapshot test matched', async () => {
     const root = mkdtempSync(join(tmpdir(), 'dsh-curated-replay-no-match-'))
     try {
       const base = qualificationCandidate()
@@ -952,7 +977,7 @@ describe('curated runtime activation evidence gate', () => {
         numPendingTests: 101,
       })
 
-      expect(replayCuratedActivationSnapshots(catalogWith(candidate), () => report, () => true)).toEqual([
+      expect(await replayCuratedActivationSnapshots(catalogWith(candidate), () => report, () => true)).toEqual([
         `candidate ${candidate.id} activation snapshot failed for ${candidate.targetProfiles[0]}:keyless-assembled-snapshot`,
         `candidate ${candidate.id} activation snapshot failed for ${candidate.targetProfiles[0]}:install`,
         `candidate ${candidate.id} activation snapshot failed for ${candidate.targetProfiles[0]}:enable`,
@@ -980,13 +1005,13 @@ describe('curated runtime activation evidence gate', () => {
       output: '{',
       expectedIssues: 5,
     },
-  ])('validates $name from the replay executor', ({ output, expectedIssues }) => {
+  ])('validates $name from the replay executor', async ({ output, expectedIssues }) => {
     const root = mkdtempSync(join(tmpdir(), 'dsh-curated-replay-result-'))
     try {
       const base = qualificationCandidate()
       const candidate = activeCandidate(root, [base.targetProfiles[0] as string])
 
-      expect(replayCuratedActivationSnapshots(
+      expect(await replayCuratedActivationSnapshots(
         catalogWith(candidate),
         () => output,
         () => true,
@@ -996,7 +1021,7 @@ describe('curated runtime activation evidence gate', () => {
     }
   })
 
-  it('rechecks each tracked snapshot immediately before replay', () => {
+  it('rechecks each tracked snapshot immediately before replay', async () => {
     const root = mkdtempSync(join(tmpdir(), 'dsh-curated-replay-recheck-'))
     try {
       const base = qualificationCandidate()
@@ -1004,7 +1029,7 @@ describe('curated runtime activation evidence gate', () => {
       const execute = vi.fn(() => successfulVitestReport())
       const isTrackedRegularBlob = vi.fn(() => false)
 
-      expect(replayCuratedActivationSnapshots(
+      expect(await replayCuratedActivationSnapshots(
         catalogWith(candidate),
         execute,
         isTrackedRegularBlob,
@@ -1020,6 +1045,14 @@ describe('curated runtime activation evidence gate', () => {
     } finally {
       rmSync(root, { recursive: true, force: true })
     }
+  })
+
+  it('does not spawn when no candidate is active', async () => {
+    const execute = vi.fn(() => successfulVitestReport())
+
+    expect(await replayCuratedActivationSnapshots(loadCuratedCatalog(), execute, () => true))
+      .toEqual([])
+    expect(execute).not.toHaveBeenCalled()
   })
 
   it('invalidates evidence when the active profile composition changes', () => {
@@ -1892,7 +1925,7 @@ describe('curated runtime activation evidence gate', () => {
     }
   })
 
-  it('sets a nonzero exit code when activation evidence validation fails', () => {
+  it('sets a nonzero exit code when activation evidence validation fails', async () => {
     const base = qualificationCandidate()
     const {
       runtimeActivationEvidence: _runtimeActivationEvidence,
@@ -1908,7 +1941,7 @@ describe('curated runtime activation evidence gate', () => {
     try {
       process.exitCode = undefined
 
-      runCuratedActivationEvidenceVerifier(catalogWith(candidate))
+      await runCuratedActivationEvidenceVerifier(catalogWith(candidate))
 
       expect(process.exitCode).toBe(1)
       expect(error).toHaveBeenCalledWith(expect.stringContaining(

@@ -1,4 +1,16 @@
-import { existsSync, fstatSync, lstatSync, mkdirSync, mkdtempSync, readFileSync, symlinkSync, writeFileSync } from 'node:fs'
+import {
+  existsSync,
+  fstatSync,
+  lstatSync,
+  mkdirSync,
+  mkdtempSync,
+  readdirSync,
+  readFileSync,
+  rmSync,
+  symlinkSync,
+  writeFileSync,
+  type BigIntStats,
+} from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -18,6 +30,7 @@ import {
   curatedProfileDependenciesForBundles,
   materializeCuratedProfile,
   materializeCuratedProfileForLoad,
+  openExistingCuratedProfileFiles,
   type CuratedProfileManifest,
   type CuratedProfileName,
 } from '../src/index.ts'
@@ -1151,6 +1164,27 @@ describe('materializeCuratedProfile', () => {
     }
   })
 
+  it('rejects a canonical profiles directory that resolves outside its DSH home', async () => {
+    const home = tmp()
+    const profilesDir = join(home, 'profiles')
+    mkdirSync(profilesDir, { recursive: true })
+    vi.resetModules()
+    vi.doMock('node:fs', async () => {
+      const actual = await vi.importActual<typeof import('node:fs')>('node:fs')
+      const mockedRealpath = actual.realpathSync.bind(undefined)
+      mockedRealpath.native = ((path: Parameters<typeof actual.realpathSync.native>[0]) =>
+        String(path) === profilesDir
+          ? join(tmpdir(), 'outside-profiles')
+          : actual.realpathSync.native(path)) as typeof actual.realpathSync.native
+      return { ...actual, realpathSync: mockedRealpath }
+    })
+    const profiles = await import('../src/index.ts')
+
+    expect(() => profiles.materializeCuratedProfile('web-curated', home)).toThrow(
+      'web-curated profile root resolves outside the DSH home',
+    )
+  })
+
   it.each(managedProfileFiles)('rejects a dangling %s symlink without partial profile writes', (file) => {
     const home = tmp()
     const dir = resolveProfileDir('web-curated', home)
@@ -1557,6 +1591,39 @@ describe('materializeCuratedProfile', () => {
     expect(() => { snapshot.assertCurrent() }).toThrow('managed profile file snapshot is closed')
   })
 
+  it.each(managedProfileFiles)('rejects an existing profile missing managed file %s', (file) => {
+    const home = tmp()
+    const dir = materializeCuratedProfile('web-personal', home)
+    rmSync(join(dir, file))
+
+    expect(() => openExistingCuratedProfileFiles('web-personal', home)).toThrow(
+      `web-personal managed profile file ${file} is missing`,
+    )
+  })
+
+  it('rejects duplicate retain and mismatched rollback identities on a retained snapshot', () => {
+    const home = tmp()
+    const snapshot = materializeCuratedProfileForLoad('web-personal', home)
+    const managed = snapshot as typeof snapshot & {
+      retain(file: typeof managedProfileFiles[number], expectedIdentity?: BigIntStats): string
+      rollbackCreated(file: typeof managedProfileFiles[number], expectedIdentity: BigIntStats): void
+    }
+    try {
+      expect(() => managed.retain('package.json')).toThrow(
+        'web-personal managed profile file package.json is already retained',
+      )
+      expect(() => {
+        managed.rollbackCreated(
+          'package.json',
+          lstatSync(join(snapshot.dir, '.npmrc'), { bigint: true }),
+        )
+      }).toThrow('web-personal managed profile file package.json changed while it was being read')
+      expect(existsSync(join(snapshot.dir, 'package.json'))).toBe(true)
+    } finally {
+      snapshot.close()
+    }
+  })
+
   it.each(managedProfileFiles)('rejects a non-regular %s without partial profile writes', (file) => {
     const home = tmp()
     const dir = resolveProfileDir('web-curated', home)
@@ -1596,6 +1663,155 @@ describe('materializeCuratedProfile', () => {
     for (const other of managedProfileFiles) {
       if (other !== 'package.json') expect(existsSync(join(resolveProfileDir('web-curated', home), other))).toBe(false)
     }
+  })
+
+  it('accepts a concurrently created managed file with identical content', async () => {
+    const expected = readFileSync(join(materializeCuratedProfile('web-curated', tmp()), 'package.json'))
+    const home = tmp()
+    const dir = resolveProfileDir('web-curated', home)
+    const manifestPath = join(dir, 'package.json')
+    vi.resetModules()
+    vi.doMock('node:fs', async () => {
+      const actual = await vi.importActual<typeof import('node:fs')>('node:fs')
+      let raced = false
+      return {
+        ...actual,
+        linkSync: (...args: Parameters<typeof actual.linkSync>) => {
+          if (!raced && String(args[1]) === manifestPath) {
+            raced = true
+            actual.writeFileSync(manifestPath, expected)
+          }
+          actual.linkSync(...args)
+        },
+      }
+    })
+    const profiles = await import('../src/index.ts')
+
+    expect(profiles.materializeCuratedProfile('web-curated', home)).toBe(dir)
+    expect(readFileSync(manifestPath)).toEqual(expected)
+    expect(readdirSync(dir).filter(file => file.startsWith('.package.json.'))).toEqual([])
+  })
+
+  it('rejects a concurrently published managed file whose retained content drifts', async () => {
+    const home = tmp()
+    const dir = resolveProfileDir('web-curated', home)
+    const manifestPath = join(dir, 'package.json')
+    vi.resetModules()
+    vi.doMock('node:fs', async () => {
+      const actual = await vi.importActual<typeof import('node:fs')>('node:fs')
+      return {
+        ...actual,
+        linkSync: (...args: Parameters<typeof actual.linkSync>) => {
+          actual.linkSync(...args)
+          if (String(args[1]) === manifestPath) actual.writeFileSync(manifestPath, 'drifted\n')
+        },
+      }
+    })
+    const profiles = await import('../src/index.ts')
+
+    expect(() => profiles.materializeCuratedProfile('web-curated', home)).toThrow(
+      'web-curated managed profile file package.json changed while it was being read',
+    )
+    expect(existsSync(manifestPath)).toBe(false)
+    expect(readdirSync(dir).filter(file => file.startsWith('.package.json.'))).toEqual([])
+  })
+
+  it.each([
+    {
+      name: 'disappears during retain',
+      replace: false,
+      expected: 'web-curated managed profile file package.json changed while it was being read',
+    },
+    {
+      name: 'becomes a directory during retain',
+      replace: 'directory',
+      expected: 'web-curated managed profile file package.json must be a regular file',
+    },
+    {
+      name: 'changes identity during retain',
+      replace: 'file',
+      expected: 'web-curated managed profile file package.json changed while it was being read',
+    },
+  ] as const)('rejects a published managed file that $name and removes its temporary file', async ({
+    replace,
+    expected,
+  }) => {
+    const home = tmp()
+    const dir = resolveProfileDir('web-curated', home)
+    const manifestPath = join(dir, 'package.json')
+    let published = false
+    let manifestStats = 0
+    vi.resetModules()
+    vi.doMock('node:fs', async () => {
+      const actual = await vi.importActual<typeof import('node:fs')>('node:fs')
+      return {
+        ...actual,
+        linkSync: (...args: Parameters<typeof actual.linkSync>) => {
+          actual.linkSync(...args)
+          if (String(args[1]) === manifestPath) published = true
+        },
+        lstatSync: ((...args: Parameters<typeof actual.lstatSync>) => {
+          if (replace === false && published && String(args[0]) === manifestPath && ++manifestStats === 2) {
+            throw Object.assign(new Error('concurrent disappearance'), { code: 'ENOENT' })
+          }
+          return actual.lstatSync(...args)
+        }) as typeof lstatSync,
+        unlinkSync: (path: Parameters<typeof actual.unlinkSync>[0]) => {
+          actual.unlinkSync(path)
+          if (
+            replace !== false
+            && published
+            && String(path).startsWith(join(dir, '.package.json.'))
+          ) {
+            actual.unlinkSync(manifestPath)
+            if (replace === 'directory') actual.mkdirSync(manifestPath)
+            else actual.writeFileSync(manifestPath, 'replacement\n')
+          }
+        },
+      }
+    })
+    const profiles = await import('../src/index.ts')
+
+    expect(() => profiles.materializeCuratedProfile('web-curated', home)).toThrow(expected)
+    expect(readdirSync(dir).filter(file => file.startsWith('.package.json.'))).toEqual([])
+  })
+
+  it('stringifies a non-Error write failure when rollback also fails', async () => {
+    const home = tmp()
+    const dir = resolveProfileDir('web-curated', home)
+    const manifestPath = join(dir, 'package.json')
+    let manifestPublished = false
+    vi.resetModules()
+    vi.doMock('node:fs', async () => {
+      const actual = await vi.importActual<typeof import('node:fs')>('node:fs')
+      let patchDescriptor: number | undefined
+      return {
+        ...actual,
+        linkSync: (...args: Parameters<typeof actual.linkSync>) => {
+          actual.linkSync(...args)
+          if (String(args[1]) === manifestPath) manifestPublished = true
+        },
+        openSync: (...args: Parameters<typeof actual.openSync>) => {
+          const descriptor = actual.openSync(...args)
+          if (String(args[0]).includes('.cordis.patch.yml.')) {
+            patchDescriptor = descriptor
+            actual.unlinkSync(manifestPath)
+            actual.writeFileSync(manifestPath, 'replacement\n')
+          }
+          return descriptor
+        },
+        fstatSync: ((...args: Parameters<typeof actual.fstatSync>) => {
+          if (manifestPublished && args[0] === patchDescriptor) throw 'non-error write failure'
+          return actual.fstatSync(...args)
+        }) as typeof actual.fstatSync,
+      }
+    })
+    const profiles = await import('../src/index.ts')
+
+    expect(() => profiles.materializeCuratedProfile('web-curated', home)).toThrow(
+      'non-error write failure; web-curated managed profile rollback failed',
+    )
+    expect(readdirSync(dir).filter(file => file.includes('.tmp'))).toEqual([])
   })
 
   it('does not write managed files through a profile ancestor replaced during the first write', async () => {
@@ -1959,6 +2175,25 @@ describe('materializeCuratedProfile', () => {
     expect(readFileSync(patchPath, 'utf8')).toBe(userFiles.patch)
     expect(readFileSync(workspacePath, 'utf8')).toBe(userFiles.workspace)
     expect(readFileSync(npmrcPath, 'utf8')).toBe(userFiles.npmrc)
+  })
+
+  it.each([
+    {
+      profile: 'web-personal',
+      patch: '- insert:\n    - id: unapproved\n      name: unapproved-plugin\n',
+      message: 'web-personal existing patch introduces an unapproved executable or group',
+    },
+    {
+      profile: 'web-enterprise',
+      patch: '- id: existing\n  config: !!js "process.env.SECRET"\n',
+      message: 'web-enterprise existing patch must not contain dynamic expressions',
+    },
+  ] as const)('rejects an unsafe existing patch for $profile', ({ profile, patch, message }) => {
+    const home = tmp()
+    const dir = materializeCuratedProfile(profile, home)
+    writeFileSync(join(dir, PROFILE_PATCH_FILENAME), patch)
+
+    expect(() => openExistingCuratedProfileFiles(profile, home)).toThrow(message)
   })
 
   it('rejects resolved bundle order and catalog assignment drift at boot admission', async () => {

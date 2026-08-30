@@ -29,6 +29,7 @@ import {
   assertBenchmarkRollbackCandidate,
   assertBenchmarkSnapshotSchemaVersion,
   canonicalBenchmarkJson,
+  readBoundBenchmarkSnapshotReference,
   readBenchmarkSnapshotReference,
 } from '../src/snapshot.ts'
 
@@ -1018,6 +1019,63 @@ describe('curated benchmark assets', () => {
           `${side}.${field}`,
         ).toContain(`benchmark ${side} ${field === 'lockSnapshot' ? 'lock' : 'profile'} snapshot.sha256 does not match the referenced snapshot`)
       }
+    } finally {
+      rmSync(root, { recursive: true, force: true })
+    }
+  })
+
+  it.each([
+    ['baseline lock', null, 'benchmark baseline lock snapshot must be a JSON object'],
+    ['baseline lock', { path: 'locks/web.json', sha256: 'INVALID' }, 'benchmark baseline lock snapshot.sha256 must be a lowercase SHA-256 digest'],
+    ['baseline profile', null, 'benchmark baseline profile snapshot must be a JSON object'],
+    ['baseline profile', { path: 'profiles/web.json', sha256: 'INVALID' }, 'benchmark baseline profile snapshot.sha256 must be a lowercase SHA-256 digest'],
+    ['candidate lock', null, 'benchmark candidate lock snapshot must be a JSON object'],
+    ['candidate lock', { path: 'locks/web-curated.json', sha256: 'INVALID' }, 'benchmark candidate lock snapshot.sha256 must be a lowercase SHA-256 digest'],
+    ['candidate profile', null, 'benchmark candidate profile snapshot must be a JSON object'],
+    ['candidate profile', { path: 'profiles/web-curated.json', sha256: 'INVALID' }, 'benchmark candidate profile snapshot.sha256 must be a lowercase SHA-256 digest'],
+  ] as const)('rejects an invalid $0 snapshot reference', (label, reference, message) => {
+    expect(() => readBoundBenchmarkSnapshotReference('benchmark.json', reference, `benchmark ${label} snapshot`))
+      .toThrow(message)
+  })
+
+  it.each([
+    {
+      name: 'profile snapshot kind',
+      field: 'profileSnapshot',
+      mutate: (snapshot: Record<string, unknown>) => { snapshot.kind = 'curated-lock-snapshot' },
+      message: 'benchmark candidate profile snapshot.kind must be curated-profile-snapshot',
+    },
+    {
+      name: 'profile snapshot profile',
+      field: 'profileSnapshot',
+      mutate: (snapshot: Record<string, unknown>) => { snapshot.profile = 'web' },
+      message: 'benchmark candidate profile snapshot.profile must match the benchmark profile',
+    },
+    {
+      name: 'lock snapshot catalog reference',
+      field: 'lockSnapshot',
+      mutate: (snapshot: Record<string, unknown>) => { snapshot.catalogRef = 'mutable' },
+      message: 'benchmark candidate lock snapshot must not depend on a mutable catalogRef',
+    },
+  ] as const)('rejects referenced $name with a synchronized digest', ({ field, mutate, message }) => {
+    const root = mkdtempSync(join(tmpdir(), 'dsh-curated-bench-referenced-snapshot-'))
+    const manifests = join(root, 'manifests')
+    const tasks = join(root, 'tasks')
+    const baselines = join(root, 'baselines')
+    cpSync(curatedBenchManifestsDir, manifests, { recursive: true })
+    cpSync(curatedBenchTasksDir, tasks, { recursive: true })
+    cpSync(curatedBenchBaselinesDir, baselines, { recursive: true })
+    const benchmarkPath = join(baselines, 'benchmark.json')
+    const benchmark = JSON.parse(readFileSync(benchmarkPath, 'utf8')) as {
+      candidate: Record<'lockSnapshot' | 'profileSnapshot', { path: string; sha256: string }>
+    }
+    const snapshotPath = join(baselines, benchmark.candidate[field].path)
+    const snapshot = JSON.parse(readFileSync(snapshotPath, 'utf8')) as Record<string, unknown>
+    mutate(snapshot)
+    writeFileSync(snapshotPath, JSON.stringify(snapshot))
+    bindBenchmarkSnapshot(benchmarkPath, 'candidate', field, snapshot)
+    try {
+      expect(invariantPlugin.validateCuratedBenchAssets({ manifests, tasks, baselines })).toContain(message)
     } finally {
       rmSync(root, { recursive: true, force: true })
     }
