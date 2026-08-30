@@ -1,11 +1,14 @@
 import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
+import { fileURLToPath } from 'node:url'
 import { expect, it } from 'vitest'
 import type {} from '@deepseek-ai/dsh-skill'
 import { SessionId } from '@deepseek-ai/dsh-session'
 import type {} from '@deepseek-ai/dsh-agent-presets'
 import { launchWebScaffold, type WebScaffold } from './scaffold.ts'
+
+const FIXTURE_PACKAGE = fileURLToPath(new URL('./fixtures/plugin-config-overlay', import.meta.url))
 
 async function writeSkill(root: string, name: string): Promise<void> {
   const bundle = join(root, name)
@@ -70,5 +73,27 @@ it('isolates replay skill discovery from every ambient host root', async () => {
       else process.env.DSH_BUNDLED_SKILL_DIR = originalBundled
       await rm(ambient, { recursive: true, force: true })
     }
+  }
+})
+
+it('rejects fixture packages when the caller owns the harness home', async () => {
+  const ambient = await mkdtemp(join(tmpdir(), 'dsh-web-shared-home-'))
+  let scaffold: WebScaffold | undefined
+  let failure: unknown
+  try {
+    try {
+      scaffold = await launchWebScaffold({
+        harnessHome: ambient,
+        fixturePackages: [{ name: '@dsh-test/plugin-config-overlay', sourceDir: FIXTURE_PACKAGE }],
+      })
+    } catch (error: unknown) {
+      failure = error
+    }
+    expect(failure).toBeInstanceOf(Error)
+    expect((failure as Error).message)
+      .toBe('web e2e scaffold: fixturePackages require a scaffold-owned harnessHome')
+  } finally {
+    await scaffold?.close()
+    await rm(ambient, { recursive: true, force: true })
   }
 })

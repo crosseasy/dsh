@@ -2,11 +2,11 @@
 
 [English](README.md) | 中文
 
-DeepSeek Harness SDK 运行时的共享协议格式（wire format）：一个按换行分帧的 JSON-RPC 2.0 传输类，加上协议两端共同使用的具名请求、结果与通知类型。包根枚举协议消费方接口；源模块不支持深层导入。服务端是 [`dsh-sdk-jsonrpc-server`](../server/README.zh.md) 插件；客户端是 [`dsh-sdk-client`](../client/README.zh.md)（TypeScript）与 [Python SDK](../../../python/README.zh.md)（后者复现这些结构但不导入它们）。纯库——无插件、无 Config、无注册。
+DeepSeek Harness SDK 运行时的共享协议格式（wire format）：按方向划分、以换行分帧的 JSON-RPC 2.0 传输，加上协议两端共同使用的具名请求、结果与通知类型。包根枚举协议消费方接口；源模块不支持深层导入。服务端是 [`dsh-sdk-jsonrpc-server`](../server/README.zh.md) 插件；客户端是 [`dsh-sdk-client`](../client/README.zh.md)（TypeScript）与 [Python SDK](../../../python/README.zh.md)（后者复现这些类型但不导入它们）。纯库——无插件、无 Config、无注册。
 
 ## 传输
 
-`JsonRpcLineTransport` 在调用方持有的字节流上为 JSON-RPC 2.0 分帧，每行一个紧凑 JSON 帧、以 `\n` 结尾。带 `id` 与 `method` 的帧是请求，仅 `id` 是响应，仅 `method` 是通知；非法 JSON 行被忽略。`start()` 挂接流监听器，`close()` 移除监听器并拒绝挂起请求，但不销毁流。缺失请求处理器时应答 `-32601`；处理器返回的 Promise 被拒绝时，则应答携带错误消息的 `-32603`。错误响应会以 `JsonRpcResponseError` 拒绝挂起的 `request()` Promise，并保留协议格式中的 `code` 与可选 `data`。`JsonRpcTransportPeer` 是服务器类据以进行类型声明的出站接口（request/notify）。
+`JsonRpcLineServerTransport` 与 `JsonRpcLineClientTransport` 在调用方持有的字节流上共享同一套分帧解析器和写入器，每行一个紧凑 JSON 帧、以 `\n` 结尾。服务端接收请求并发送响应或通知；方向外的响应与客户端通知会被忽略。客户端发送请求或通知并接收响应或通知；服务端请求会被忽略，且不能结算挂起请求。非法 JSON 行会被忽略。`start()` 挂接流监听器，`close()` 移除监听器并拒绝客户端挂起请求，但不销毁流。缺失服务端请求处理器时应答 `-32601`；处理器返回的 Promise 被拒绝时，则应答携带错误消息的 `-32603`。错误响应会以 `JsonRpcResponseError` 拒绝关联的客户端 `request()`，并保留协议格式中的 `code` 与可选 `data`。
 
 ## 协议类型
 
@@ -36,4 +36,4 @@ DeepSeek Harness SDK 运行时的共享协议格式（wire format）：一个按
 
 - **无协议版本协商**——握手只携带 `serverInfo.version`（`0.0.1`，客户端不校验）；处于预发布阶段，无兼容承诺。
 - **无取消与会话关闭方法**——客户端放弃轮次的方式是关闭运行时进程；见 [`dsh-sdk-jsonrpc-server` README](../server/README.zh.md)。
-- **server→client 请求是未使用的功能**——传输层支持，但服务器从不发送；Python SDK 的应答接口为未来审批流程预留。
+- **没有 server→client 请求**——两个 SDK 客户端都会忽略该方向，且不公开响应 API；增加交互请求需要显式的协议设计。

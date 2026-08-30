@@ -10,6 +10,7 @@ import { describe, expect, it } from 'vitest'
 const repositoryRoot = fileURLToPath(new URL('..', import.meta.url))
 const oxlintCli = fileURLToPath(new URL('../node_modules/oxlint/bin/oxlint', import.meta.url))
 const tsxCli = fileURLToPath(new URL('../node_modules/tsx/dist/cli.mjs', import.meta.url))
+const typescriptCli = fileURLToPath(new URL('../node_modules/typescript/bin/tsc', import.meta.url))
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value)
@@ -46,6 +47,92 @@ async function writeContractConfig(suffix: string): Promise<string> {
 }
 
 describe('Oxlint executable contract', () => {
+  it('resolves Client Context.sessions as ISessions without Host augmentation errors', async () => {
+    const suffix = randomUUID()
+    const configPath = await writeContractConfig(suffix)
+    const hostDirectory = join(repositoryRoot, 'packages/core', `oxlint-contract-host-${suffix}`)
+    const clientDirectory = join(repositoryRoot, 'packages/client', `oxlint-contract-client-${suffix}`)
+    const path = join(clientDirectory, 'src/index.ts')
+    const contextSpecifier = relative(join(clientDirectory, 'src'), join(hostDirectory, 'src/context.ts')).replaceAll('\\', '/')
+
+    try {
+      await Promise.all([
+        mkdir(join(hostDirectory, 'src'), { recursive: true }),
+        mkdir(join(clientDirectory, 'src'), { recursive: true }),
+      ])
+      await Promise.all([
+        writeFile(join(hostDirectory, 'tsconfig.json'), JSON.stringify({
+          extends: '../../../tsconfig.base.json',
+          compilerOptions: { outDir: 'lib', rootDir: 'src' },
+          include: ['src'],
+        })),
+        writeFile(join(hostDirectory, 'src/context.ts'), `interface SessionStore {
+  list(): readonly string[]
+}
+
+export interface Context {
+  sessions: SessionStore
+}
+`),
+        writeFile(join(clientDirectory, 'tsconfig.json'), JSON.stringify({
+          extends: '../../../tsconfig.base.client.json',
+          compilerOptions: { outDir: 'lib', rootDir: 'src' },
+          include: ['src'],
+          references: [{ path: relative(clientDirectory, hostDirectory) }],
+        })),
+        writeFile(path, `import type { Context, ISessions } from '${contextSpecifier}'
+
+declare const ctx: Context
+
+export const sessions: ISessions = ctx.sessions
+sessions.open()
+`),
+      ])
+      const build = spawnSync(process.execPath, [
+        typescriptCli,
+        '-b',
+        relative(repositoryRoot, join(hostDirectory, 'tsconfig.json')),
+      ], {
+        cwd: repositoryRoot,
+        encoding: 'utf8',
+      })
+      expect(build.error).toBeUndefined()
+      expect(build.status, normalizedOutput(build)).toBe(0)
+      // The Client consumes a declaration projection that omits the Host-only service.
+      await writeFile(join(hostDirectory, 'lib/context.d.ts'), `export interface ISessions {
+  open(): void
+}
+
+export interface Context {
+  sessions: ISessions
+}
+`)
+
+      const result = runRepositoryOxlint([
+        '--config',
+        relative(repositoryRoot, configPath),
+        '--format',
+        'unix',
+        relative(repositoryRoot, path),
+      ], { OXC_LOG: 'debug' })
+      const output = normalizedOutput(result)
+
+      expect(result.error).toBeUndefined()
+      expect(result.status, output).toBe(0)
+      expect(output).toContain(
+        `Got tsconfig for file ${path.replaceAll('\\', '/')}: ${join(clientDirectory, 'tsconfig.json').replaceAll('\\', '/')}`,
+      )
+      expect(output).toMatch(/Program created with \d+ source files/)
+      expect(output).not.toContain('typescript(no-unsafe')
+    } finally {
+      await Promise.all([
+        rm(hostDirectory, { recursive: true, force: true }),
+        rm(clientDirectory, { recursive: true, force: true }),
+        rm(configPath, { force: true }),
+      ])
+    }
+  }, 20_000)
+
   it('discovers the owning TypeScript project for every file class', async () => {
     const suffix = randomUUID()
     const configPath = await writeContractConfig(suffix)

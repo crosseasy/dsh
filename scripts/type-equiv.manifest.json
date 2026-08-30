@@ -123,8 +123,43 @@
     },
     {
       "doc": "docs/subsystems/curated.md",
+      "symbol": "CuratedRuntimeEvidenceFile",
+      "source": "packages/curated/curated-policy/src/index.ts"
+    },
+    {
+      "doc": "docs/subsystems/curated.md",
+      "symbol": "CuratedRuntimeActivationEvidenceSet",
+      "source": "packages/curated/curated-policy/src/index.ts"
+    },
+    {
+      "doc": "docs/subsystems/curated.md",
+      "symbol": "CuratedRuntimeActivationEvidence",
+      "source": "packages/curated/curated-policy/src/index.ts"
+    },
+    {
+      "doc": "docs/subsystems/curated.md",
+      "symbol": "CuratedCandidateStatus",
+      "source": "packages/curated/curated-policy/src/index.ts"
+    },
+    {
+      "doc": "docs/subsystems/curated.md",
       "symbol": "CuratedCandidate",
       "source": "packages/curated/curated-policy/src/index.ts"
+    },
+    {
+      "doc": "docs/subsystems/curated.md",
+      "symbol": "BenchmarkSnapshotReference",
+      "source": "packages/curated/curated-bench/src/snapshot.ts"
+    },
+    {
+      "doc": "docs/subsystems/curated.md",
+      "symbol": "BenchmarkBuildIdentity",
+      "source": "packages/curated/curated-scripts/src/index.ts"
+    },
+    {
+      "doc": "docs/subsystems/curated.md",
+      "symbol": "BenchmarkMeasurementIdentity",
+      "source": "packages/curated/curated-scripts/src/index.ts"
     },
     {
       "doc": "docs/subsystems/curated.md",

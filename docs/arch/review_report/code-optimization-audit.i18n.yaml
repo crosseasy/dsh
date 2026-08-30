@@ -2,5 +2,5 @@
 # side as of the last confirmed-consistent state. Both languages carry equal authority;
 # after editing either side, bring the other along and re-record with:
 #   pnpm run verify-translation-pairing --write docs/arch/review_report/code-optimization-audit.md
-code-optimization-audit.md: 6f3bac4c69576668973d00dd825dd4762777a49c
-code-optimization-audit.zh.md: 14163a6ba6fbbb682edf41e31d03ca44fa57115a
+code-optimization-audit.md: d50e3a6f7ea2ec7da48b167a05e6d95cb73649bc
+code-optimization-audit.zh.md: a277563f77ddeacf6a10819b4e9e3ba8d2a1b291

@@ -38,10 +38,15 @@ export class MemorySettings extends SettingsProvider {
     return Promise.resolve(structuredClone(this.doc))
   }
 
-  protected async persist(ns: SettingsNamespace, section: Record<string, unknown>): Promise<void> {
+  protected async persist(
+    ns: SettingsNamespace,
+    section: Record<string, unknown>,
+    assertRevision: () => void,
+  ): Promise<void> {
     if (this.persistDelayMs > 0) {
       await new Promise(resolve => setTimeout(resolve, this.persistDelayMs))
     }
+    assertRevision()
     this.persisted.push({ ns, section: structuredClone(section) })
     this.doc[ns] = structuredClone(section)
   }

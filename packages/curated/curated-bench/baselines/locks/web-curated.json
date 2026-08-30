@@ -1,10 +1,6 @@
 {
-  "schemaVersion": 1,
+  "schemaVersion": 2,
   "kind": "curated-lock-snapshot",
-  "source": "packages/curated/curated-policy/policy/plugin-allowlist.yaml",
-  "createdAt": "2026-08-25",
   "profile": "web-curated",
-  "candidateCount": 37,
-  "activeCount": 13,
-  "catalogRef": "packages/curated/curated-policy/policy/plugin-allowlist.yaml"
+  "candidates": []
 }

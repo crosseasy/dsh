@@ -6,6 +6,7 @@
   "compilerOptions": {
     "jsx": "react-jsx",
     "lib": ["ES2024", "DOM", "DOM.Iterable"],
+    "disableSourceOfProjectReferenceRedirect": true,
     "typeRoots": ["./scripts/types", "./node_modules/@types"],
     "types": ["client-build-environment"]
   }

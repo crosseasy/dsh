@@ -54,7 +54,7 @@ export class RequestTimeoutError extends Error {
 
 /**
  * The runtime answered outside its documented protocol (for example a
- * `session/prompt` response without `accepted: true`).
+ * `session/prompt` response without a string `messageId`).
  */
 export class SdkProtocolError extends Error {
   /** @param message - the protocol violation description. */

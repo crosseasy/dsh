@@ -35,6 +35,12 @@ Status: implemented
 
 `compactIfNeeded(agent, trigger, signal)` 接受显式的 `'pressure' | 'context-overflow'` 触发原因与取消信号。它只读取最新的持久化已路由请求；没有 header 就不执行工作，任何已路由的提供方/模型目标都使用单例估算器。`compactNow(agent, signal)` 要求 agent 处于 idle，即使未达到压力也进行一次有效的平衡缩减；不存在这种范围时返回 `null`，且不写入任何内容。`compactRegion(start, end, agent, signal?)` 将 `agent.session` 作为唯一会话身份，并为显式调用方保留可选 signal。默认摘要器依次从显式配置、最新记录的已路由目标和 agent 选项解析目标，并在任何 `llm/stream` 路由后记录提供方/模型对。它回放已路由请求的前缀，并将压缩指令追加为尾部 user 消息，从而复用提供方的热 KV Cache；见[摘要前缀缓存 Agent Note](../bug-fix/2026-07-21-compaction-summary-prefix-cache-reuse.zh.md)。summary 事件携带 `llmStreamCall: true`，因为生成它时恰好通过此上下文的 LLM 服务发起了一次调用；只有满足相同条件时，子类才设置该标记，因为单有保留的 `rawOutput` 并不能判定调用路径。该调用将提供方无关的 `GenerateOptions.purpose` 设为 `compaction`；适配器可以将此用途映射为对模型隐藏的传输元数据，DeepSeek 适配器会发送 `x-deepseek-harness-compact: 1`。
 
+### `CompactionResult` 只报告当前操作的输出
+
+`CompactionResult` 包含 `summarySeq`、`shadowedRange`、`shadowedSeqs` 和 `shadowedTokenCount`。`summarySeq` 让命令消费方能够引用持久摘要事件；范围、有序 seq 与 token 数无需回放即可支持操作日志和面向用户的条目数／token 数。事务身份、命令关联、生命周期 start/end seq 与原始摘要内容仍由持久 `compaction/*` 事件和检查点来源持有。返回 `compactionId`、`sourceCommandId`、`startSeq`、`endSeq` 或 `summary` 会造成两处事实所有者，并使内存结果可能偏离日志，因此结果不包含这些字段。
+
+这放弃了不持有会话日志的调用方可直接获得自包含结果的便利。此类调用方必须通过 `summarySeq` 查找持久事件；没有已交付调用方需要重复信息，而每个保留字段都有生产消费方。
+
 ### 成功的持久步骤工作完成后运行自动压力检查
 
 成功调用的压力检查在下一个 `agent/pre-step` 运行；此时前一响应、工具结果、缓冲上下文与 steering（中途引导）已经持久化，而下一个请求尚未派生。`dsh-compaction-basic` 通过 `ctx.tokenMeter` 测量规范的已记录请求，因此下一个请求无需推测性覆盖信封即可看到任何替换。压力达到条件后，可选的 `ctx.toolResultPruner` 重写在摘要范围选择前运行；compaction-basic 重新测量持久 surface，如果修剪恢复到安全压力便跳过摘要生成。
@@ -111,6 +117,7 @@ compaction/end      → log-only. Releases the lock (carries `error` on a recove
 ## 曾考虑的替代方案
 
 - **完整算法作为接口的具体方法**——否决，因为它将约定重新耦合到一种保留策略。三个操作都是抽象的；可复用测量属于单独的 LLM 系列服务，`summarize()` 是 basic 唯一的钩子。
+- **镜像持久压缩事件的自包含结果**——否决，因为这会让事务身份、命令关联、生命周期位置与摘要内容各有两处事实所有者。窄结果只携带直接调用方消费的事实；持久事件仍是回放和检查的权威记录。
 - **在 `agent/request` 或压缩专属的 loop 回调上执行压缩**——否决，因为前者观察的是临时请求，后者会将通用生命周期耦合到压缩策略。对先前持久请求进行 pre-step 回放，再加上规范溢出恢复，即可覆盖成功和被拒绝的调用。
 - **`compact` 布尔值或无类型的请求元数据 map**——否决，因为多个辅助调用种类会变成互斥标志，而开放 map 会丢弃由编译器检查的词汇。一个类型化的 `purpose` 判别字段可以扩展其他调用种类，而无需再为 `GenerateOptions` 添加字段。
 - **单独的 `compaction/error` 事件**——否决：`compaction/end` 保留 `error?` 字段，与 `tool/result` 的自包含错误一致——一个事件即可区分成功与失败，无需关联兄弟事件。
@@ -128,6 +135,7 @@ compaction/end      → log-only. Releases the lock (carries `error` on a recove
 ## 测试
 
 - **单元测试：** 使用真实 Loader 和 invariant 插件覆盖完整单元保留、修剪配置与回放、富块顺序、元数据保留、收敛、`compaction/end` 的两种结果、开放尾部拒绝、仅修剪与带摘要的溢出恢复、generation 证明、上限和原始错误保留。
+- **结果约定：** 压缩、基础后端和手动压缩测试固定四个返回字段、它们与持久摘要事件及遮蔽计量的对应关系，以及五个事件所属字段不存在于结果中。
 - **循环测试：** 测试固定 pre-step 发生在前一个 `step/end` 之后、下一个 `step/start` 之前，使用实际 `agent/request` 路由，关闭失败步骤，分配新的重试编号，并覆盖完整的抛出/带内溢出 → 压缩 → 重建重试组合。
 - **手动测试：** 无需模型密钥即可固定 maintenance 串行化、标记顺序、注入保留、活动／陈旧未匹配标记分类、取消、闭合／flush 失败、命令映射以及排队 TUI 流程。
 - **带密钥 e2e：** 真实模型和 bash 会话在降低的限制下触发压缩，记录完整的 `compaction/start…end` 对，缩小 surface，并完成任务。

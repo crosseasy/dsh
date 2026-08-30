@@ -1,5 +1,5 @@
 {
-  "schemaVersion": 2,
+  "schemaVersion": 3,
   "evidenceKind": "planned",
   "pendingCampaigns": [
     "web-search",
@@ -40,36 +40,26 @@
   },
   "baseline": {
     "profile": "web",
-    "execution": {
-      "id": "planned-web-baseline",
-      "startedAt": "2026-08-26T00:00:00.000Z",
-      "environment": {
-        "model": "pending-selection",
-        "prompt": "curated-long-cycle-v1",
-        "workspace": "pending-fixture",
-        "network": "pending-observation",
-        "seed": "pending"
-      }
+    "lockSnapshot": {
+      "path": "locks/web.json",
+      "sha256": "d7a3a78c48ee48368c4747992334dcb3dd70c63a19e23031e7ab3c2a3f017232"
     },
-    "lockSnapshot": "baselines/locks/web.json",
-    "profileSnapshot": "baselines/profiles/web.json",
+    "profileSnapshot": {
+      "path": "profiles/web.json",
+      "sha256": "99e3ff17f8a06e04b824970adfe3966544bc6c7746929bfd369db05c35c69d5d"
+    },
     "runs": []
   },
   "candidate": {
     "profile": "web-curated",
-    "execution": {
-      "id": "planned-web-curated-candidate",
-      "startedAt": "2026-08-26T00:00:00.000Z",
-      "environment": {
-        "model": "pending-selection",
-        "prompt": "curated-long-cycle-v1",
-        "workspace": "pending-fixture",
-        "network": "pending-observation",
-        "seed": "pending"
-      }
+    "lockSnapshot": {
+      "path": "locks/web-curated.json",
+      "sha256": "a60530fe4c1c007694a4882bef0c4d307543642a032154d442f75ffac8b37514"
     },
-    "lockSnapshot": "baselines/locks/web-curated.json",
-    "profileSnapshot": "baselines/profiles/web-curated.json",
+    "profileSnapshot": {
+      "path": "profiles/web-curated.json",
+      "sha256": "b2dc481f98fa7f2b754451795880b06c400904b904d9a461a90afc7dcfce4b9a"
+    },
     "runs": []
   }
 }

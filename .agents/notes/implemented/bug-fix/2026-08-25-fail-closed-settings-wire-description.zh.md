@@ -1,4 +1,4 @@
-# Agent Note: Settings wire 描述快速失败
+# Agent Note: Settings wire 描述失败时拒绝
 
 Status: implemented
 
@@ -10,7 +10,7 @@ Settings RPC 服务每个已注册 namespace，但其脱敏器只遍历 `object`
 
 ## 决定
 
-`SettingsProvider.describeForWire(ns?)` 是已注册 namespace 生成 RPC descriptor 的唯一路径。它在序列化前检查完整的实时 Schemastery 图，对解析值、`base` 与 `user` 值执行脱敏，通过同一遍历清理序列化 schema 中的默认值，并发出 `{ path, set }` secret 伴随列表。`describe()` 保留为同进程原样 API。
+`SettingsProvider.describeForWire(ns?)` 是已注册 namespace 生成 RPC descriptor 的唯一路径。它在序列化前检查完整的实时 Schemastery 图，对解析值、`base` 与 `user` 值执行脱敏，通过同一遍历清理序列化 schema 中的默认值，并发出 `{ path, set }` secret 伴随列表。缺失的 secret 与空 secret 字典报告 `set: false`；其他已存在的 secret 均报告 `set: true`。`describe()` 保留为同进程原样 API。
 
 系统支持 `object`、`dict` 与 `array` 下的直接 secret 叶节点。`union` 或 `intersect` 下的 secret、任何 `transform`、格式错误的关系元数据，以及任何不受支持的节点，都会以不含节点元数据或值的固定文本拒绝。没有 secret 后代的 union 与 intersection 节点仍可用于普通枚举和组合 schema。
 

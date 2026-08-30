@@ -130,6 +130,10 @@ class ProtocolPeer {
     return this.next(frame => frame.id === id && frame.method === undefined)
   }
 
+  has(predicate: (frame: JsonObject) => boolean): boolean {
+    return this.frames.some(predicate)
+  }
+
   send(...frames: readonly JsonObject[]): void {
     this.output.write(`${frames.map(frame => JSON.stringify(frame)).join('\n')}\n`)
   }
@@ -986,6 +990,30 @@ describe('CodexAppServerWire', () => {
     wire.close()
   })
 
+  it.each([
+    ['result', { result: { injected: true } }],
+    ['error', { error: { code: -32000, message: 'injected' } }],
+  ])('ignores a request carrying %s response metadata', async (_field, responseMetadata) => {
+    const { child, wire } = await initializeWire()
+    const result = wire.runTurn(['task'], new AbortController().signal)
+    const turnStart = await child.peer.nextMethod('turn/start')
+    child.peer.respond(turnStart, { turn: { id: 'turn-1' } })
+    child.peer.send({
+      id: 'hybrid',
+      method: 'future/request',
+      params: {},
+      ...responseMetadata,
+    })
+    child.peer.send(agentMessage('answer', 'final_answer'), turnCompleted('completed'))
+
+    await expect(result).resolves.toEqual({
+      output: [{ type: 'text', text: 'answer' }],
+      stopReason: 'completed',
+    })
+    expect(child.peer.has(frame => frame.id === 'hybrid')).toBe(false)
+    wire.close()
+  })
+
   it('answers all five unattended request classes without granting authority', async () => {
     const { child, wire } = await initializeWire()
     const result = wire.runTurn(['task'], new AbortController().signal)
@@ -1013,73 +1041,87 @@ describe('CodexAppServerWire', () => {
     )
     const requests = [
       {
-        id: 'command-decline',
-        method: 'item/commandExecution/requestApproval',
-        params: {
-          threadId: 'thread-1',
-          turnId: 'turn-1',
-          availableDecisions: ['decline'],
+        frame: {
+          id: 'command-decline',
+          method: 'item/commandExecution/requestApproval',
+          params: {
+            threadId: 'thread-1',
+            turnId: 'turn-1',
+            availableDecisions: ['decline'],
+          },
         },
-        result: { decision: 'decline' },
-        diagnostic: 'Codex unattended decision (mode: never; request: command approval; decision: declined): the provider does not grant interactive approval',
+        expectedResult: { decision: 'decline' },
+        expectedDiagnostic: 'Codex unattended decision (mode: never; request: command approval; decision: declined): the provider does not grant interactive approval',
       },
       {
-        id: 'file',
-        method: 'item/fileChange/requestApproval',
-        params: {
-          threadId: 'thread-1',
-          turnId: 'turn-1',
-          availableDecisions: ['decline'],
+        frame: {
+          id: 'file',
+          method: 'item/fileChange/requestApproval',
+          params: {
+            threadId: 'thread-1',
+            turnId: 'turn-1',
+            availableDecisions: ['decline'],
+          },
         },
-        result: { decision: 'decline' },
-        diagnostic: 'Codex unattended decision (mode: never; request: file approval; decision: declined): the provider does not grant interactive approval',
+        expectedResult: { decision: 'decline' },
+        expectedDiagnostic: 'Codex unattended decision (mode: never; request: file approval; decision: declined): the provider does not grant interactive approval',
       },
       {
-        id: 'file-cancel',
-        method: 'item/fileChange/requestApproval',
-        params: {
-          threadId: 'thread-1',
-          turnId: 'turn-1',
-          availableDecisions: ['cancel'],
+        frame: {
+          id: 'file-cancel',
+          method: 'item/fileChange/requestApproval',
+          params: {
+            threadId: 'thread-1',
+            turnId: 'turn-1',
+            availableDecisions: ['cancel'],
+          },
         },
-        result: { decision: 'cancel' },
-        diagnostic: 'Codex unattended decision (mode: never; request: file approval; decision: cancelled): the provider does not grant interactive approval',
+        expectedResult: { decision: 'cancel' },
+        expectedDiagnostic: 'Codex unattended decision (mode: never; request: file approval; decision: cancelled): the provider does not grant interactive approval',
       },
       {
-        id: 'file-default',
-        method: 'item/fileChange/requestApproval',
-        params: { threadId: 'thread-1', turnId: 'turn-1' },
-        result: { decision: 'decline' },
-        diagnostic: 'Codex unattended decision (mode: never; request: file approval; decision: declined): the provider does not grant interactive approval',
+        frame: {
+          id: 'file-default',
+          method: 'item/fileChange/requestApproval',
+          params: { threadId: 'thread-1', turnId: 'turn-1' },
+        },
+        expectedResult: { decision: 'decline' },
+        expectedDiagnostic: 'Codex unattended decision (mode: never; request: file approval; decision: declined): the provider does not grant interactive approval',
       },
       {
-        id: 'permissions',
-        method: 'item/permissions/requestApproval',
-        params: { threadId: 'thread-1', turnId: 'turn-1' },
-        result: { permissions: {}, scope: 'turn' },
-        diagnostic: 'Codex unattended decision (mode: never; request: permission grant; decision: denied): the provider grants no additional turn permissions',
+        frame: {
+          id: 'permissions',
+          method: 'item/permissions/requestApproval',
+          params: { threadId: 'thread-1', turnId: 'turn-1' },
+        },
+        expectedResult: { permissions: {}, scope: 'turn' },
+        expectedDiagnostic: 'Codex unattended decision (mode: never; request: permission grant; decision: denied): the provider grants no additional turn permissions',
       },
       {
-        id: 'user-input',
-        method: 'item/tool/requestUserInput',
-        params: { threadId: 'thread-1', turnId: 'turn-1', questions: [] },
-        result: { answers: {} },
-        diagnostic: 'Codex unattended decision (mode: never; request: user input; decision: empty response): the provider does not collect interactive answers',
+        frame: {
+          id: 'user-input',
+          method: 'item/tool/requestUserInput',
+          params: { threadId: 'thread-1', turnId: 'turn-1', questions: [] },
+        },
+        expectedResult: { answers: {} },
+        expectedDiagnostic: 'Codex unattended decision (mode: never; request: user input; decision: empty response): the provider does not collect interactive answers',
       },
       {
-        id: 'mcp',
-        method: 'mcpServer/elicitation/request',
-        params: { threadId: 'thread-1', turnId: null },
-        result: { action: 'decline', content: null, _meta: null },
-        diagnostic: 'Codex unattended decision (mode: never; request: MCP elicitation; decision: declined): the provider does not collect interactive MCP input',
+        frame: {
+          id: 'mcp',
+          method: 'mcpServer/elicitation/request',
+          params: { threadId: 'thread-1', turnId: null },
+        },
+        expectedResult: { action: 'decline', content: null, _meta: null },
+        expectedDiagnostic: 'Codex unattended decision (mode: never; request: MCP elicitation; decision: declined): the provider does not collect interactive MCP input',
       },
     ] as const
     for (const serverRequest of requests) {
-      child.peer.send(serverRequest)
-      expect(await child.peer.nextResponse(serverRequest.id)).toMatchObject({
-        result: serverRequest.result,
+      child.peer.send(serverRequest.frame)
+      expect(await child.peer.nextResponse(serverRequest.frame.id)).toMatchObject({
+        result: serverRequest.expectedResult,
       })
-      expect(wire.collectDiagnostic()).toBe(serverRequest.diagnostic)
+      expect(wire.collectDiagnostic()).toBe(serverRequest.expectedDiagnostic)
     }
     expect(wire.collectDiagnostic()).not.toContain('/private/secret.txt')
 

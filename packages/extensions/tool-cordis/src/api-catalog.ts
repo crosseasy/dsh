@@ -729,7 +729,7 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
         signature: 'getProfileCandidates(profileId: string): readonly CuratedCandidate[]',
         description: 'List active candidates assigned to one profile.',
         parameters: [{ name: 'profileId', description: 'Curated profile id.' }],
-        returns: 'a stable frozen array with shared candidates before scenario-specific candidates.',
+        returns: 'a stable frozen array in catalog order.',
       },
     ],
   },
@@ -2354,12 +2354,12 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
   {
     key: 'workflowEngine',
     summary: 'Workflow Service Definition contract.',
-    description: 'Workflow Service Definition contract. Invalid requests throw before publication; a live run is holder-owned, its result never rejects, cancellation and disposal are bounded, and disposal waits for child cleanup within that bound. Lifecycle listener failures are contained, and `workflow/end` fires exactly once as the result settles.',
+    description: 'Workflow Service Definition contract. Invalid requests throw before publication; a live run is holder-owned, its result never rejects, and cancellation settles engine-owned execution within its configured grace. Disposal uses `disposeGraceMs` to escalate worker termination, then awaits host-owned pending starts and child disposal to quiescence. Lifecycle listener failures are contained, and `workflow/end` fires exactly once as the result settles.',
     methods: [
       {
         signature: 'abstract start(request: WorkflowStartRequest): WorkflowRun',
         description: 'Parse and execute a workflow script.',
-        parameters: [{ name: 'request', description: 'the script, its `args`, and the parent agent.' }],
+        parameters: [{ name: 'request', description: 'the script, its `args`, and the parent agent; cancellation belongs to the returned run.' }],
         returns: 'the live run; its `result` resolves when the script settles.',
       },
     ],
@@ -3291,11 +3291,7 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   },
   {
     name: 'CuratedCandidate',
-    declaration: 'export interface CuratedCandidate {\n    readonly id: string;\n    readonly priority: CuratedPriority;\n    readonly capability: string;\n    readonly repository: string;\n    readonly repositoryPath: string | null;\n    readonly commit: string;\n    readonly sourceStatus: CuratedSourceStatus;\n    readonly auditedAt: string;\n    readonly manifestPath: string | null;\n    readonly expectedPackage: string | null;\n    readonly nodeEngine: string | null;\n    readonly nodeEngineEvidence: string | null;\n    readonly requiresCorePatch: boolean | null;\n    readonly license: string | null;\n    readonly bundlePatch: string | null;\n    readonly tarballSha256?: string;\n    readonly testFiles: number;\n    readonly ciWorkflows: number;\n    readonly installScripts: Readonly<Record<string, string>>;\n    readonly externalDependencies: readonly string[];\n    readonly networkAccess: readonly string[];\n    readonly credentials: readonly string[];\n    readonly targetProfiles: readonly string[];\n    readonly active: boolean;\n    readonly auditWarnings: readonly string[];\n    readonly rejections: readonly CuratedRejection[];\n    readonly scoreDimensions: CuratedScoreDimensions;\n    readonly score: number;\n    readonly resources?: CuratedCandidateResources;\n    readonly config?: CuratedCandidateConfig;\n}',
-  },
-  {
-    name: 'CuratedCandidateConfig',
-    declaration: 'export interface CuratedCandidateConfig {\n    readonly entryId: string;\n    readonly values: Readonly<Record<string, unknown>>;\n}',
+    declaration: 'export interface CuratedCandidate {\n    readonly id: string;\n    readonly priority: CuratedPriority;\n    readonly capability: string;\n    readonly repository: string;\n    readonly repositoryPath: string | null;\n    readonly commit: string;\n    readonly sourceStatus: CuratedSourceStatus;\n    readonly auditedAt: string;\n    readonly manifestPath: string | null;\n    readonly expectedPackage: string | null;\n    readonly nodeEngine: string | null;\n    readonly nodeEngineEvidence: string | null;\n    readonly requiresCorePatch: boolean | null;\n    readonly license: string | null;\n    readonly bundlePatch: string | null;\n    readonly sourceContentSha256?: string;\n    readonly treeSha256?: string;\n    readonly runtimeDependencyClosureSha256?: string;\n    readonly npmVersion?: string;\n    readonly npmIntegrity?: string;\n    readonly testFiles: number;\n    readonly ciWorkflows: number;\n    readonly installScripts: Readonly<Record<string, string>>;\n    readonly externalDependencies: readonly string[];\n    readonly requiredRuntimeBundles?: readonly string[];\n    readonly networkAccess: readonly string[];\n    readonly credentials: readonly string[];\n    readonly targetProfiles: readonly string[];\n    readonly active: boolean;\n    readonly auditWarnings: readonly string[];\n    readonly rejections: readonly CuratedRejection[];\n    readonly scoreDimensions: CuratedScoreDimensions;\n    readonly score: number;\n    readonly resources?: CuratedCandidateResources;\n    readonly config?: CuratedCand /* …truncated — full shape in source */',
   },
   {
     name: 'CuratedCandidateResources',

@@ -41,7 +41,7 @@
         "p95": true,
         "failureDistribution": true
       },
-      "nonCompensableThresholds": ["security-correctness-below-95", "data-loss-detected", "rollback-impossible"]
+      "nonCompensableThresholds": ["security-correctness-below-95", "data-loss-detected", "rollback-impossible", "startup-failure-rate-above-1", "critical-success-rate-drop"]
     },
     {
       "id": "computer-use-vs-tabbit",
@@ -59,7 +59,7 @@
         "p95": true,
         "failureDistribution": true
       },
-      "nonCompensableThresholds": ["security-correctness-below-95", "data-loss-detected", "rollback-impossible"]
+      "nonCompensableThresholds": ["security-correctness-below-95", "data-loss-detected", "rollback-impossible", "startup-failure-rate-above-1", "critical-success-rate-drop"]
     },
     {
       "id": "mcp-panel-vs-mcp-manager",
@@ -77,10 +77,11 @@
         "p95": true,
         "failureDistribution": true
       },
-      "nonCompensableThresholds": ["security-correctness-below-95", "data-loss-detected", "rollback-impossible"]
+      "nonCompensableThresholds": ["security-correctness-below-95", "data-loss-detected", "rollback-impossible", "startup-failure-rate-above-1", "critical-success-rate-drop"]
     },
     {
       "id": "cost-meter-vs-tokenledger",
+      "status": "pending",
       "capability": "cost-metering",
       "primary": "dsh-cost-meter",
       "alternative": "TokenLedger",
@@ -95,7 +96,7 @@
         "p95": true,
         "failureDistribution": true
       },
-      "nonCompensableThresholds": ["security-correctness-below-95", "data-loss-detected", "rollback-impossible"]
+      "nonCompensableThresholds": ["security-correctness-below-95", "data-loss-detected", "rollback-impossible", "startup-failure-rate-above-1", "critical-success-rate-drop"]
     }
   ]
 }

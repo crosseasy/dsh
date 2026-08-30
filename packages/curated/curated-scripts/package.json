@@ -14,10 +14,10 @@
   "main": "lib/index.js",
   "types": "lib/types/index.d.ts",
   "bin": {
-    "dsh-curated-verify-lock": "lib/bin.js",
-    "dsh-curated-preflight": "lib/bin.js",
-    "dsh-curated-smoke-profile": "lib/bin.js",
-    "dsh-curated-compare-benchmark": "lib/bin.js"
+    "dsh-curated-verify-lock": "lib/verify-lock.js",
+    "dsh-curated-preflight": "lib/preflight.js",
+    "dsh-curated-smoke-profile": "lib/smoke-profile.js",
+    "dsh-curated-compare-benchmark": "lib/compare-benchmark.js"
   },
   "exports": {
     ".": {
@@ -32,17 +32,17 @@
       "types": "./lib/types/bin.d.ts",
       "default": "./lib/bin.js"
     },
-    "./src/*": "./src/*",
     "./package.json": "./package.json"
   },
   "files": [
     "lib/index.js",
     "lib/invariant.js",
+    "lib/verify-lock.js",
+    "lib/preflight.js",
+    "lib/smoke-profile.js",
+    "lib/compare-benchmark.js",
     "lib/bin.js",
-    "preflight.mjs",
-    "verify-lock.mjs",
-    "smoke-profile.mjs",
-    "compare-benchmark.mjs",
+    "lib/staging-worker.js",
     "lib/types/**/*.d.ts"
   ],
   "scripts": {
@@ -51,6 +51,7 @@
   "license": "MIT",
   "dependencies": {
     "@deepseek-ai/cordis-plugin-include": "workspace:^",
+    "@deepseek-ai/dsh": "workspace:^",
     "@deepseek-ai/dsh-app-boot": "workspace:^",
     "@deepseek-ai/dsh-curated-bench": "workspace:^",
     "@deepseek-ai/dsh-curated-policy": "workspace:^",

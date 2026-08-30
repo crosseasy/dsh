@@ -5,11 +5,6 @@
 
 import type { Context } from '@deepseek-ai/cordis'
 import type { InvariantInstaller } from '@deepseek-ai/dsh-invariants'
-import {
-  CURATED_BASELINE_BUNDLES,
-  CURATED_PROFILE_TEMPLATES,
-  curatedProfileDependenciesForBundles,
-} from './index.ts'
 
 const PACKAGE_NAME = '@deepseek-ai/dsh-curated-profiles'
 
@@ -18,35 +13,9 @@ export const name = 'curated-profiles-invariant'
 /** Service required before the companion can reserve package ownership. */
 export const inject = ['invariants']
 
-/** Verify curated templates keep the shared web baseline and accepted dependencies. */
-const install: InvariantInstaller = (_ctx, fail) => {
-  const curated = CURATED_PROFILE_TEMPLATES['web-curated'].bundles
-  const baselineBundles = new Set<string>(CURATED_BASELINE_BUNDLES)
-  const personalShell = curated.filter(bundle => !baselineBundles.has(bundle))
-  const dependencyMessages = new Set<string>()
-  for (const profileName of Object.keys(CURATED_PROFILE_TEMPLATES)) {
-    const bundles = CURATED_PROFILE_TEMPLATES[profileName as keyof typeof CURATED_PROFILE_TEMPLATES].bundles
-    if (profileName === 'web-personal') {
-      if (bundles.length !== personalShell.length || !bundles.every((bundle, index) => bundle === personalShell[index])) {
-        fail('profile web-personal must stay physically isolated from curated baseline and scenario bundles')
-      }
-    } else if (bundles.length < curated.length || !curated.every((bundle, index) => bundles[index] === bundle)) {
-      fail(`profile ${profileName} must keep the curated baseline as its leading bundle list`)
-    }
-    try {
-      curatedProfileDependenciesForBundles(
-        bundles,
-        profileName as keyof typeof CURATED_PROFILE_TEMPLATES,
-      )
-    } catch (error) {
-      const message = error instanceof Error ? error.message : String(error)
-      if (!dependencyMessages.has(message)) {
-        dependencyMessages.add(message)
-        fail(message)
-      }
-    }
-  }
-}
+// No runtime invariant: this package owns fixed profile templates and no
+// observable event-stream or mutable-data relationship.
+const install: InvariantInstaller = () => {}
 
 /**
  * Register this package's invariant companion.

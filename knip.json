@@ -6,6 +6,7 @@
   "ignoreBinaries": [
     "bwrap",
     "icacls",
+    "mkfifo",
     "musl-gcc",
     "python3",
     "sandbox-exec",
@@ -209,6 +210,23 @@
       "project": [
         "src/**/*.ts",
         "tests/**/*.ts"
+      ]
+    },
+    "packages/curated/curated-scripts": {
+      "entry": [
+        "src/verify-lock.ts",
+        "src/preflight.ts",
+        "src/smoke-profile.ts",
+        "src/compare-benchmark.ts",
+        "tests/**/*.spec.ts",
+        "tests/**/*.e2e.ts"
+      ],
+      "project": [
+        "src/**/*.ts",
+        "tests/**/*.ts"
+      ],
+      "ignoreDependencies": [
+        "@deepseek-ai/dsh"
       ]
     },
     "packages/typert/generator": {

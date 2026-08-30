@@ -103,33 +103,58 @@
   - [x] 若提取，更新两组 README、shell subsystem、shell-lifecycle Note 和 jscpd config；若不提取，Task 13-15 的净删除与 ignore 减少仍须满足审计 acceptance。
   - [x] 验证两组 one-shot tool/integration suites、ACP/headless/JSON-RPC/Web 对应 snapshots、typecheck、lint 与 duplication。
 
-- [ ] Task 17: 让 Workflow 只有一个 cancellation owner（P2）
-  - [ ] 先在 tool-workflow、tool-ralph 与 worker tests 覆盖 pre-aborted、abort during synchronous start、mid-flight、post-settlement、reentrant cancel 和 dispose quiescence，并断言最多一次 `cancel()`。
-  - [ ] 从 `WorkflowStartRequest` 和 WorkerRun 删除 input signal/listener；consumer 在 start 前检查、start 后注册 `run.cancel()` listener 并立即复查，再在 finally detach + dispose。
-  - [ ] 更新 Workflow README/subsystem、生成 API catalog、新 simplification Note 和受影响既有 Note triplets。
-  - [ ] 验证 workflow focused suites、worker built-artifact tests、Ralph/workflow snapshots、typecheck 与 lint。
+- [x] Task 17: 让 Workflow 只有一个 cancellation owner（P2）
+  - [x] 先在 tool-workflow、tool-ralph 与 worker tests 覆盖 pre-aborted、abort during synchronous start、mid-flight、post-settlement、reentrant cancel 和 dispose quiescence，并断言最多一次 `cancel()`。
+  - [x] 从 `WorkflowStartRequest` 和 WorkerRun 删除 input signal/listener；consumer 在 start 前检查、start 后注册 `run.cancel()` listener 并立即复查，再在 finally detach + dispose。
+  - [x] 更新 Workflow README/subsystem、生成 API catalog、新 simplification Note 和受影响既有 Note triplets。
+  - [x] 验证 workflow focused suites、worker built-artifact tests、Ralph/workflow snapshots、typecheck 与 lint。
 
-- [ ] Task 18: 按实际方向收窄 TypeScript/Python JSON-RPC transports（P2）
-  - [ ] 先用 per-direction tests 替换 TypeScript symmetric-pair tests，并为 Python 意外 server-request frame、并发 request、notification、process exit 和 malformed frame 建立用例。
-  - [ ] TypeScript 保留共享 frame parser/writer，但提供 server/client 窄接口或实现；删除 server-originated request 与 client-side request handler/response，保留 `subagent-codex` 的 outbound `notify('initialized')`。
-  - [ ] Python 删除 `IncomingRequest`、request queue、`notify`、`next_request`、`respond`、`respond_error`，且意外 server request 不得命中 response waiter。
-  - [ ] 保持当前 `session/prompt` message-id settlement，不实施旧 proposal 的 `session.finished`/同步结果改造；将 directional JSON-RPC proposal 改写为当前决定并按实际落地迁移 lifecycle。
-  - [ ] 更新 SDK/protocol README、Python SDK README、public exports/JSDoc、双 SDK expected outputs、smoke 和生成目录。
-  - [ ] 验证 TypeScript protocol/client/server tests、Python SDK tests、built JSON-RPC smoke、snapshots、typecheck 与 doc-sync。
+- [x] Task 18: 按实际方向收窄 TypeScript/Python JSON-RPC transports（P2）
+  - [x] 先用 per-direction tests 替换 TypeScript symmetric-pair tests，并为 Python 意外 server-request frame、并发 request、notification、process exit 和 malformed frame 建立用例。
+  - [x] TypeScript 保留共享 frame parser/writer，但提供 server/client 窄接口或实现；删除 server-originated request 与 client-side request handler/response，保留 `subagent-codex` 的 outbound `notify('initialized')`。
+  - [x] Python 删除 `IncomingRequest`、request queue、`notify`、`next_request`、`respond`、`respond_error`，且意外 server request 不得命中 response waiter。
+  - [x] 保持当前 `session/prompt` message-id settlement，不实施旧 proposal 的 `session.finished`/同步结果改造；将 directional JSON-RPC proposal 改写为当前决定并按实际落地迁移 lifecycle。
+  - [x] 更新 SDK/protocol README、Python SDK README、public exports/JSDoc、双 SDK expected outputs、smoke 和生成目录。
+  - [x] 验证 TypeScript protocol/client/server tests、Python SDK tests、built JSON-RPC smoke、snapshots、typecheck 与 doc-sync。
 
-- [ ] Task 19: 让 client fixture 复用领域 projection folds（P2）
-  - [ ] 为 plan、session stats、token usage、context pressure 和 context breakdown/request composition 增加 shared event-vector parity tests，先证明 fixture 与 production 可漂移。
-  - [ ] 在各领域 package 提取无 Cordis/Node runtime 依赖的 client-safe init/apply/view pure modules，production `ProjectionDefinition` 组合这些函数。
-  - [ ] 在 `packages/client/connection/src/client/fixture.ts` 删除 `foldPlan/planViewOf`、`sessionStatsOf`、token usage、context pressure 和 request composition 平行实现，改为领域 subpath imports；不导入 Host registry。
-  - [ ] 更新 package exports/dependencies、README、相关 projection Agent Note triplets 和生成目录。
-  - [ ] 验证各 projection package tests、fixture client tests、client demo/screenshot tests、typecheck、build graph 与 bundle dependency gate。
+- [x] Task 19: 让 client fixture 复用领域 projection folds（P2）
+  - [x] 为 plan、session stats、token usage、context pressure 和 context breakdown/request composition 增加 shared event-vector parity tests，先证明 fixture 与 production 可漂移。
+  - [x] 在各领域 package 提取无 Cordis/Node runtime 依赖的 client-safe init/apply/view pure modules，production `ProjectionDefinition` 组合这些函数。
+  - [x] 在 `packages/client/connection/src/client/fixture.ts` 删除 `foldPlan/planViewOf`、`sessionStatsOf`、token usage、context pressure 和 request composition 平行实现，改为领域 subpath imports；不导入 Host registry。
+  - [x] 更新 package exports/dependencies、README、相关 projection Agent Note triplets 和生成目录。
+  - [x] 验证各 projection package tests、fixture client tests、client demo/screenshot tests、typecheck、build graph 与 bundle dependency gate。
 
-- [ ] Task 20: 完成全量分层验证与最终审查
-  - [ ] 按 Task 1-19 的 focused commands 逐组运行，所有命令用 `gtimeout 55s`，失败时遵循 systematic-debugging 的假设、证据、修复、重验闭环。
-  - [ ] 运行受 55 秒限制的 `pnpm run typecheck`、`pnpm run lint`、`pnpm run duplication`、`pnpm run doc-sync`、`pnpm run build`、`pnpm run hygiene`；超时不是通过，改用拥有同等覆盖的叶级命令并记录缺口。
-  - [ ] 运行所有受影响 keyless snapshot、双 SDK expected-output、built-artifact 和 Chrome CDP `9333` Settings UI 验证；检查浏览器 console 无错误。
-  - [ ] 由独立 reviewer 对完整 diff 做 correctness、simplicity、architecture、security、performance 和系统语义回归审查，修复所有 Critical/Important findings 后重新验证。
-  - [ ] 核对没有 vendor 或 archived Agent Note 改动，没有未经授权 Git 操作，没有回滚用户原有改动；将所有 checklist 项逐条勾选。
+- [x] Task 20: 完成全量分层验证与最终审查
+  - [x] 按 Task 1-19 的 focused commands 逐组运行，所有命令用 `gtimeout 55s`，失败时遵循 systematic-debugging 的假设、证据、修复、重验闭环。
+  - [x] 运行受 55 秒限制的 `pnpm run typecheck`、`pnpm run lint`、`pnpm run duplication`、`pnpm run doc-sync`、`pnpm run build`、`pnpm run hygiene`；超时不是通过，改用拥有同等覆盖的叶级命令并记录缺口。
+  - [x] 运行所有受影响 keyless snapshot、双 SDK expected-output、built-artifact 和 Chrome CDP `9333` Settings UI 验证；检查浏览器 console 无错误。
+  - [x] 由独立 reviewer 对完整 diff 做 correctness、simplicity、architecture、security、performance 和系统语义回归审查，修复所有 Critical/Important findings 后重新验证。
+  - [x] 核对没有 vendor 或 archived Agent Note 改动，没有未经授权 Git 操作，没有回滚用户原有改动；将所有 checklist 项逐条勾选。
+
+- [x] Task 21: 修复 translation-prompt snapshot 漂移: `gtimeout 55s pnpm exec vitest run --config vitest.snapshot.config.ts scripts/translation-prompt.snapshot.ts` 当前失败，期望输出未包含 `docs/development*` 的 `tsconfig.base.client.json` 项目引用说明更新。
+
+- [x] Task 22: 从当前工作树独立重建 12 项审计结论
+  - [x] 不采信既有完成标记，逐项追踪生产调用、实现、测试、文档和 Agent Note，确认报告中的问题已按当前 `HEAD` 修复且未恢复明确拒绝的方案。
+  - [x] 将 Settings/hygiene、preset/settings/instructions/subagent/FS、公开面/shell、workflow/JSON-RPC/projection 分片交给独立只读 reviewer 并行审查。
+  - [x] 汇总 correctness、security、lifecycle、simplicity、public API、docs 和测试证据；所有 Critical/Important finding 必须转为新的修复任务。
+
+- [x] Task 23: 修复独立重审发现并完成新鲜验收
+  - [x] 修复 Settings replacement 在旧写入已持久化但新 schema 解析失败时不推进 raw revision/document-updated 的竞态，并补充回归测试。
+  - [x] 修复 Settings external publish 接受不兼容 raw section 后不推进 raw revision/document-updated 的同类竞态，并补充回归测试。
+  - [x] 修复 persistent shell 多会话 teardown 因单个 close 失败而提前返回，等待全部关闭后再传播失败，并补充 quiescence 回归测试。
+  - [x] 修正 preset、Settings、session-reference 和 compaction active Notes 的过时陈述；翻译四个新增中文 simplification Note 的标题和标准章节。
+  - [x] 按 Agent Note 归档规则处理低未来价值的 tools/llm-retry testing-subpath Note triplets，并更新 frozen manifest 与所有 inbound links。
+  - [x] 逐项复验 Task 22 的发现，并运行 55 秒限制内的 focused tests、typecheck、lint、duplication、build、hygiene、doc-sync 和 whitespace 检查；超时改用等价叶级门禁并记录缺口。
+  - [x] 通过外部 Chrome CDP `9333` 重验 Settings UI 且 console 无错误，并执行仓库实际提供的 built CLI PTY teardown/help smoke；仓库没有 TUI profile 时不得声称 TUI 渲染通过。
+  - [x] 独立最终 reviewer 确认完整审计 scope 无 Critical/Important finding、scope drift 或 debug residue；`vendor/` 与既有 archived Note 未修改，新归档 triplet 已封存，且无未经授权 Git 操作。
+
+- [x] Task 24: 消除 replacement registration 的重复 revision：旧 owner 的 `persist()` 在等待期间已通过 `publish()` 提交同一 section 时，恢复后不得再次推进 replacement revision 或重复发出 `settings/document-updated`；补充真实 provider 时序回归测试。
+
+- [x] Task 25: 修正省略 `headers` 的 secret 配置状态：`llm-pi-ai` profile 未配置或配置空 headers 时不得报告 `set: true`，非空 headers 仍须整体只写且不得在 value、schema、日志或错误文本中泄露名称和值；补充 omitted/empty/non-empty 覆盖。
+
+- [x] Task 26: 在 Settings 持久化提交点复核 `expectedRevision`：provider 在 `persist()` 内 reconciliation 到不同 section 并推进 revision 后，陈旧写必须抛出 `SettingsConflictError` 且不得覆盖外部值；补充真实 file-provider 时序回归测试。
+
+- [x] Task 27: 让 Settings raw revision 跨 registration generation 保持 namespace 单调：旧 owner 与 replacement revision 数字碰撞或暂时无 owner 时，provider reconciliation 后的陈旧写仍须冲突并保留外部 section；补充非零 replacement 与 no-owner 回归测试。
 
 ## Task Dependencies
 
@@ -137,3 +162,6 @@
 - Task 3、Task 4、Task 5、Task 6、Task 7、Task 8、Task 9、Task 10、Task 11、Task 17、Task 18、Task 19 在文件所有权不重叠时可并行。
 - Task 12 先于 Task 13；Task 13、Task 14、Task 15 按共享 runtime 的实际文件所有权串行，Task 16 在前三项完成后执行净删除评估。
 - Task 20 依赖 Task 1-19 全部完成。
+- Task 22 在 Task 1-21 的当前工作树结果上重新建立独立证据；Task 23 依赖 Task 22 的完整 finding 清单。
+- Task 26 依赖 Task 24 的 post-persist raw authority 修复，并须在最终验证与审查前完成。
+- Task 27 依赖 Task 26 的 commit-point guard，并须在最终验证与审查前完成。

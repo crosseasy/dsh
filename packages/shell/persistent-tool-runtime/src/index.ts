@@ -157,8 +157,17 @@ function persistentShells(ctx: Context, config: PersistentShellDialect) {
     lifecycle.abort(new Error(`${pluginName} disposed during shell creation`))
     await Promise.allSettled([...creating])
     const closing = [...live].map(async ([owner, id]) => { await close(owner, id, `${pluginName} disposed`) })
-    await Promise.all(closing)
+    let closeFailed = false
+    let closeFailure: unknown
+    try {
+      await Promise.all(closing)
+    } catch (error: unknown) {
+      closeFailed = true
+      closeFailure = error
+    }
+    await Promise.allSettled(closing)
     live.clear()
+    if (closeFailed) throw closeFailure
   }, `${pluginName} shell cleanup`)
 
   const reset = async (owner: Agent, reason: string): Promise<void> => {

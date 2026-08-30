@@ -4,9 +4,10 @@
  */
 
 import { readFileSync } from 'node:fs'
+import { isAbsolute, posix } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import type { Context } from '@deepseek-ai/cordis'
-import { load as loadYaml } from 'js-yaml'
+import { FAILSAFE_SCHEMA, load as loadYaml, YAMLException } from 'js-yaml'
 
 /** Cordis plugin name used by loader diagnostics. */
 export const name = 'curated-policy'
@@ -16,6 +17,9 @@ export const inject: string[] = []
 
 /** Admission tier derived from the static score and hard rejection list. */
 export type AdmissionTier = 'default' | 'scenario' | 'experimental' | 'rejected'
+
+/** Current delivery state derived from activation, artifact evidence, and blockers. */
+export type CuratedCandidateStatus = 'active' | 'qualified' | 'pending' | 'rejected'
 
 /** Candidate priority copied from the curated planning matrix. */
 export type CuratedPriority = 'P0' | 'P1' | 'P2'
@@ -114,7 +118,7 @@ export interface PermissionRuleCatalog {
   readonly schemaVersion: number
   /** Repository-local planning source path or fragment. */
   readonly source: string
-  /** Fixed execution order for security controls. */
+  /** Authoritative five-stage execution sequence for security controls. */
   readonly order: readonly string[]
   /** Default safety settings used by curated profiles. */
   readonly defaults: Readonly<Record<string, string | boolean>>
@@ -160,6 +164,33 @@ export interface CuratedCandidateConfig {
   readonly values: Readonly<Record<string, unknown>>
 }
 
+/** One repository-owned tracked regular blob that establishes runtime activation evidence. */
+export interface CuratedRuntimeEvidenceFile {
+  /** Safe repository-relative POSIX path below the curated benchmark evidence directory. */
+  readonly path: string
+  /** SHA-256 of the checked-in file bytes. */
+  readonly sha256: string
+}
+
+/** Complete secret-free operation evidence for one candidate target profile. */
+export interface CuratedRuntimeActivationEvidenceSet {
+  /** Keyless assembled snapshot produced from the pinned candidate artifact. */
+  readonly keylessAssembledSnapshot: CuratedRuntimeEvidenceFile
+  /** Runtime bundles exercised by the assembled snapshot. */
+  readonly requiredRuntimeBundles: readonly string[]
+  /** Installation evidence. */
+  readonly install: CuratedRuntimeEvidenceFile
+  /** Enablement evidence. */
+  readonly enable: CuratedRuntimeEvidenceFile
+  /** Restart evidence. */
+  readonly restart: CuratedRuntimeEvidenceFile
+  /** Disable or uninstall evidence. */
+  readonly disableOrUninstall: CuratedRuntimeEvidenceFile
+}
+
+/** Complete runtime activation evidence keyed by candidate target profile. */
+export type CuratedRuntimeActivationEvidence = Readonly<Record<string, CuratedRuntimeActivationEvidenceSet>>
+
 /** One audited third-party plugin candidate in the curated catalog. */
 export interface CuratedCandidate {
   /** Stable lowercase identifier used by curated profile templates. */
@@ -192,8 +223,16 @@ export interface CuratedCandidate {
   readonly license: string | null
   /** Bundle patch path, or null when missing. */
   readonly bundlePatch: string | null
-  /** Optional SHA-256 digest for the resolved package tarball. */
-  readonly tarballSha256?: string
+  /** SHA-256 of the audited commit's domain-separated, path-sorted Git mode, type, path, and blob records. */
+  readonly sourceContentSha256?: string
+  /** SHA-256 digest of sorted installed relative paths and file bytes. */
+  readonly treeSha256?: string
+  /** SHA-256 digest of the complete sorted runtime dependency lock identities. */
+  readonly runtimeDependencyClosureSha256?: string
+  /** Exact npm version used for installation instead of the audited Git source. */
+  readonly npmVersion?: string
+  /** Exact npm registry integrity for `npmVersion`. */
+  readonly npmIntegrity?: string
   /** Count of discovered test files. */
   readonly testFiles: number
   /** Count of discovered CI workflows. */
@@ -202,11 +241,13 @@ export interface CuratedCandidate {
   readonly installScripts: Readonly<Record<string, string>>
   /** External runtime or build dependencies named by the candidate. */
   readonly externalDependencies: readonly string[]
+  /** Additional bundle packages required when this candidate runs. */
+  readonly requiredRuntimeBundles?: readonly string[]
   /** Network destinations or classes used by the candidate. */
   readonly networkAccess: readonly string[]
   /** Credential references required or optionally accepted by the candidate. */
   readonly credentials: readonly string[]
-  /** Curated profiles this candidate may appear in. */
+  /** Profiles this candidate may enter when each has complete activation evidence. */
   readonly targetProfiles: readonly string[]
   /** Whether this candidate is eligible for profile activation. */
   readonly active: boolean
@@ -222,11 +263,13 @@ export interface CuratedCandidate {
   readonly resources?: CuratedCandidateResources
   /** Optional complete profile override required for safe activation. */
   readonly config?: CuratedCandidateConfig
+  /** Checked-in activation evidence keyed by target profile. */
+  readonly runtimeActivationEvidence?: CuratedRuntimeActivationEvidence
 }
 
 /** Parsed curated plugin catalog. */
 export interface CuratedCatalog {
-  /** Catalog schema version. Task 3 supports version 1. */
+  /** Catalog schema version. */
   readonly schemaVersion: number
   /** Source material used to create the catalog. */
   readonly source: CuratedCatalogSource
@@ -264,12 +307,31 @@ const defaultConflictPath = fileURLToPath(new URL('../policy/capability-conflict
 const defaultPermissionRulesPath = fileURLToPath(new URL('../policy/permission-rules.yaml', import.meta.url))
 const fullShaPattern = /^[0-9a-f]{40}$/
 const sha256Pattern = /^[0-9a-f]{64}$/
+const semverNumericIdentifier = String.raw`(?:0|[1-9]\d*)`
+const semverPrereleaseIdentifier = String.raw`(?:${semverNumericIdentifier}|[0-9A-Za-z-]*[A-Za-z-][0-9A-Za-z-]*)`
+const exactNpmVersionPattern = new RegExp(
+  String.raw`^${semverNumericIdentifier}\.${semverNumericIdentifier}\.${semverNumericIdentifier}`
+  + String.raw`(?:-${semverPrereleaseIdentifier}(?:\.${semverPrereleaseIdentifier})*)?`
+  + String.raw`(?:\+[0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*)?$`,
+  'u',
+)
+const npmIntegrityPattern = /^sha512-([A-Za-z0-9+/]+={0,2})$/u
 const candidateIdPattern = /^[a-z0-9-]+$/
-const githubRepositoryPattern = /^https:\/\/github\.com\/[^/]+\/[^/]+$/
+const githubOwnerPattern = /^[A-Za-z0-9](?:[A-Za-z0-9-]{0,37}[A-Za-z0-9])?$/u
+const githubRepositoryNamePattern = /^[A-Za-z0-9._-]{1,100}$/u
+const windowsAbsolutePathPattern = /^(?:[A-Za-z]:|\\\\)/u
 const redacted = '[REDACTED]'
-const secretKeyPattern = /(?:api[-_]?key|authorization|cookie|credential|password|private[-_]?key|secret|token)/iu
-const secretValuePattern = /(?:bearer\s+\S+|gh[pousr]_[a-z0-9_]+|sk-[a-z0-9_-]+|-----BEGIN [A-Z ]*PRIVATE KEY-----)/iu
-const unsafeInstallScriptPattern = /(?:curl|wget|invoke-webrequest|https?:\/\/|sudo|\/usr\/|\/etc\/|\/Library\/)/iu
+const secretKeyPattern =
+  /(?:api[-_]?key|authorization|cookie|credential|password|private[-_]?key|secret|token|(?:^|[-_])auth(?:$|[-_]))/iu
+const secretValuePattern = /(?:bearer\s+\S+|gh[pousr]_[a-z0-9_]+|(?<![\p{L}\p{N}_-])sk-[a-z0-9_-]+|-----BEGIN [A-Z ]*PRIVATE KEY-----)/iu
+const privateKeyBlockReplacementPattern =
+  /-----BEGIN [A-Z ]*PRIVATE KEY-----[\s\S]*?(?:-----END[^\r\n]*(?=\r?\n|$)|$)/giu
+const secretValueReplacementPattern = /(?:bearer\s+\S+|gh[pousr]_[a-z0-9_]+|(?<![\p{L}\p{N}_-])sk-[a-z0-9_-]+)/giu
+const secretAssignmentReplacementPattern =
+  /((?:^|[^\p{L}\p{N}_-])(?:api[-_]?key|authorization|cookie|credential|password|private[-_]?key|secret|token|auth)\s*[:=]\s*)[^\r\n]*/gimu
+const urlUserinfoReplacementPattern = /([A-Za-z][A-Za-z0-9+.-]*:\/\/)[^\s/?#]+@/gu
+const schemelessUrlUserinfoReplacementPattern =
+  /\b[^\s/?#:@]+:[^\s/?#]*@(?=(?:\[[^\]\s]+\]|[^\s/?#@:]+):\d+(?:[/?#\s]|$))/gu
 const catalogKeys = ['schemaVersion', 'source', 'candidates'] as const
 const catalogSourceKeys = ['awesome', 'matrix'] as const
 const awesomeSourceKeys = ['repository', 'commit', 'file'] as const
@@ -280,7 +342,6 @@ const candidateKeys = [
   'score',
   'scoreDimensions',
   'config',
-  'tarball',
   'repository',
   'repositoryPath',
   'commit',
@@ -293,11 +354,16 @@ const candidateKeys = [
   'requiresCorePatch',
   'license',
   'bundlePatch',
-  'tarballSha256',
+  'sourceContentSha256',
+  'treeSha256',
+  'runtimeDependencyClosureSha256',
+  'npmVersion',
+  'npmIntegrity',
   'testFiles',
   'ciWorkflows',
   'installScripts',
   'externalDependencies',
+  'requiredRuntimeBundles',
   'networkAccess',
   'credentials',
   'targetProfiles',
@@ -305,6 +371,7 @@ const candidateKeys = [
   'auditWarnings',
   'rejections',
   'resources',
+  'runtimeActivationEvidence',
 ] as const
 const scoreDimensionMaximums = {
   nativeCompatibility: 20,
@@ -319,9 +386,40 @@ const scoreDimensionMaximums = {
 const scoreDimensionFields = Object.keys(scoreDimensionMaximums) as Array<keyof CuratedScoreDimensions>
 const rejectionKeys = ['code', 'evidence'] as const
 const candidateConfigKeys = ['entryId', 'values'] as const
+const runtimeActivationEvidenceKeys = [
+  'keylessAssembledSnapshot',
+  'requiredRuntimeBundles',
+  'install',
+  'enable',
+  'restart',
+  'disableOrUninstall',
+] as const
+const runtimeEvidenceFileKeys = ['path', 'sha256'] as const
+const runtimeEvidenceFileFields = [
+  'keylessAssembledSnapshot',
+  'install',
+  'enable',
+  'restart',
+  'disableOrUninstall',
+] as const
+const rejectionsThatPreserveQualification = new Set([
+  'assembled-keyless-snapshot-missing',
+  'required-runtime-dependency-missing',
+])
+const pendingRejections = new Set([
+  'baseline-promotion-evidence-pending',
+  'long-cycle-evidence-pending',
+])
 const capabilityConflictCatalogKeys = ['schemaVersion', 'source', 'rules'] as const
 const capabilityConflictRuleKeys = ['capability', 'defaultProvider', 'fallbacks', 'rule', 'reason'] as const
 const permissionCatalogKeys = ['schemaVersion', 'source', 'order', 'defaults', 'rules'] as const
+const authoritativePermissionOrder = [
+  'core-sandbox',
+  'permission-rules',
+  'high-risk-approval-or-auto-review',
+  'tool-execution',
+  'result-audit',
+] as const
 const permissionDefaultKeys = ['configImportMode', 'otelCaptureBody', 'credentialStorage'] as const
 const permissionRuleKeys = ['id', 'decision', 'appliesTo', 'reason'] as const
 const resourceFields: readonly ResourceField[] = [
@@ -388,6 +486,67 @@ export function classifyAdmission(score: number, hardRejections: readonly string
 }
 
 /**
+ * Derive the current candidate delivery state from machine-readable catalog evidence.
+ * @param candidate - Candidate activation, artifact, and blocker fields.
+ * @returns `active`, `qualified`, `pending`, or `rejected`.
+ */
+export function deriveCandidateStatus(candidate: CuratedCandidate): CuratedCandidateStatus {
+  if (candidate.active) return 'active'
+  if (candidate.rejections.length === 0) return 'pending'
+  if (
+    hasCompleteInstallMetadata(candidate)
+    && candidate.treeSha256 !== undefined
+    && candidate.runtimeDependencyClosureSha256 !== undefined
+    && candidate.rejections.every(rejection =>
+      rejectionsThatPreserveQualification.has(rejection.code))
+  ) {
+    return 'qualified'
+  }
+  if (candidate.rejections.every(rejection => pendingRejections.has(rejection.code))) {
+    return 'pending'
+  }
+  return 'rejected'
+}
+
+/**
+ * Check whether one candidate has complete activation evidence for a profile.
+ * @param candidate - Candidate fields that declare target profiles, required bundles, and activation evidence.
+ * @param profileId - Profile whose evidence must be complete.
+ * @returns whether profile and evidence keys are exact, bundle declarations
+ * match, and every file reference is safe and content-addressed.
+ */
+export function hasCompleteCurrentProfileActivationEvidence(
+  candidate: {
+    readonly requiredRuntimeBundles?: unknown
+    readonly runtimeActivationEvidence?: unknown
+    readonly targetProfiles?: unknown
+  },
+  profileId: string,
+): boolean {
+  if (!isNonEmptyStringArray(candidate.targetProfiles)) return false
+  const declaredBundles = candidate.requiredRuntimeBundles ?? []
+  if (!isNonEmptyStringArray(declaredBundles)) return false
+  const evidence = candidate.runtimeActivationEvidence
+  if (
+    !isRecord(evidence)
+    || !sameStringSets(Object.keys(evidence), candidate.targetProfiles)
+  ) {
+    return false
+  }
+  const evidenceSet = evidence[profileId]
+  if (
+    !isRecord(evidenceSet)
+    || !hasExactKeys(evidenceSet, runtimeActivationEvidenceKeys)
+    || !isNonEmptyStringArray(evidenceSet.requiredRuntimeBundles)
+    || !sameStringSets(evidenceSet.requiredRuntimeBundles, declaredBundles)
+  ) {
+    return false
+  }
+  return runtimeEvidenceFileFields.every(field =>
+    isCompleteRuntimeEvidenceFile(evidenceSet[field]))
+}
+
+/**
  * Validate lock-style candidate facts that must stay deterministic.
  * @param catalog - Catalog to inspect.
  * @returns policy issues; messages and details do not expose secret-like values.
@@ -395,12 +554,12 @@ export function classifyAdmission(score: number, hardRejections: readonly string
 export function validateCandidateLock(catalog: CuratedCatalog): PolicyIssue[] {
   const issues: PolicyIssue[] = []
   const seenIds = new Set<string>()
-  const seenResources = new Map<string, { readonly candidateId: string; readonly field: ResourceField }>()
+  const seenResources = new Map<string, CuratedCandidate[]>()
 
-  if (catalog.schemaVersion !== 1) {
+  if (catalog.schemaVersion !== 2) {
     issues.push(policyIssue({
       code: 'catalog-schema-version',
-      message: 'curated catalog schemaVersion must be 1',
+      message: 'curated catalog schemaVersion must be 2',
     }))
   }
   if (!fullShaPattern.test(catalog.source.awesome.commit)) {
@@ -412,6 +571,12 @@ export function validateCandidateLock(catalog: CuratedCatalog): PolicyIssue[] {
     issues.push(policyIssue({
       code: 'source-commit-placeholder',
       message: 'curated catalog source commit must not be a placeholder digest',
+    }))
+  }
+  if (!isCanonicalGitHubRepository(catalog.source.awesome.repository)) {
+    issues.push(policyIssue({
+      code: 'source-repository-invalid',
+      message: 'curated catalog source repository must be a canonical HTTPS GitHub repository URL',
     }))
   }
   if (containsSecretMaterial(catalog.source)) {
@@ -445,11 +610,11 @@ export function validateCandidateLock(catalog: CuratedCatalog): PolicyIssue[] {
     }
     seenIds.add(candidate.id)
 
-    if (!githubRepositoryPattern.test(candidate.repository)) {
+    if (!isCanonicalGitHubRepository(candidate.repository)) {
       issues.push(policyIssue({
         code: 'candidate-repository-invalid',
         candidateId: candidate.id,
-        message: 'candidate repository must be an HTTPS GitHub repository URL',
+        message: 'candidate repository must be a canonical HTTPS GitHub repository URL',
       }))
     }
     if (!fullShaPattern.test(candidate.commit)) {
@@ -465,20 +630,113 @@ export function validateCandidateLock(catalog: CuratedCatalog): PolicyIssue[] {
         message: 'candidate commit must not be a placeholder digest',
       }))
     }
-    if (candidate.tarballSha256 !== undefined) {
-      if (!sha256Pattern.test(candidate.tarballSha256)) {
+    if (candidate.sourceStatus === 'verified' && candidate.sourceContentSha256 === undefined) {
+      issues.push(policyIssue({
+        code: 'candidate-source-content-sha-missing',
+        candidateId: candidate.id,
+        message: 'verified candidate must declare its normalized source content SHA-256',
+      }))
+    } else if (candidate.sourceContentSha256 !== undefined) {
+      if (!sha256Pattern.test(candidate.sourceContentSha256)) {
         issues.push(policyIssue({
-          code: 'candidate-tarball-sha-invalid',
+          code: 'candidate-source-content-sha-invalid',
           candidateId: candidate.id,
-          message: 'candidate tarball SHA-256 digest must be lowercase hex',
+          message: 'candidate source content SHA-256 digest must be lowercase hex',
         }))
-      } else if (isPlaceholderDigest(candidate.tarballSha256)) {
+      } else if (isPlaceholderDigest(candidate.sourceContentSha256)) {
         issues.push(policyIssue({
-          code: 'candidate-tarball-sha-placeholder',
+          code: 'candidate-source-content-sha-placeholder',
           candidateId: candidate.id,
-          message: 'candidate tarball SHA-256 digest must not be a placeholder digest',
+          message: 'candidate source content SHA-256 digest must not be a placeholder digest',
         }))
       }
+    }
+    if (candidate.sourceStatus === 'unreachable' && candidate.sourceContentSha256 !== undefined) {
+      issues.push(policyIssue({
+        code: 'candidate-source-content-sha-unverified',
+        candidateId: candidate.id,
+        message: 'unreachable candidate must not declare a source content digest',
+      }))
+    }
+    if (candidate.active && candidate.treeSha256 === undefined) {
+      issues.push(policyIssue({
+        code: 'candidate-tree-sha-missing',
+        candidateId: candidate.id,
+        message: 'active candidate must declare its installed tree SHA-256',
+      }))
+    } else if (candidate.treeSha256 !== undefined) {
+      if (!sha256Pattern.test(candidate.treeSha256)) {
+        issues.push(policyIssue({
+          code: 'candidate-tree-sha-invalid',
+          candidateId: candidate.id,
+          message: 'candidate installed tree SHA-256 must be 64 lowercase hexadecimal characters',
+        }))
+      } else if (isPlaceholderDigest(candidate.treeSha256)) {
+        issues.push(policyIssue({
+          code: 'candidate-tree-sha-placeholder',
+          candidateId: candidate.id,
+          message: 'candidate installed tree SHA-256 must not be a placeholder digest',
+        }))
+      }
+    }
+    if (candidate.active && candidate.runtimeDependencyClosureSha256 === undefined) {
+      issues.push(policyIssue({
+        code: 'candidate-runtime-dependency-closure-sha-missing',
+        candidateId: candidate.id,
+        message: 'active candidate must declare its runtime dependency closure SHA-256',
+      }))
+    } else if (candidate.runtimeDependencyClosureSha256 !== undefined) {
+      if (!sha256Pattern.test(candidate.runtimeDependencyClosureSha256)) {
+        issues.push(policyIssue({
+          code: 'candidate-runtime-dependency-closure-sha-invalid',
+          candidateId: candidate.id,
+          message: 'candidate runtime dependency closure SHA-256 must be 64 lowercase hexadecimal characters',
+        }))
+      } else if (isPlaceholderDigest(candidate.runtimeDependencyClosureSha256)) {
+        issues.push(policyIssue({
+          code: 'candidate-runtime-dependency-closure-sha-placeholder',
+          candidateId: candidate.id,
+          message: 'candidate runtime dependency closure SHA-256 must not be a placeholder digest',
+        }))
+      }
+    }
+    if (
+      candidate.npmVersion !== undefined
+      && !isExactNpmVersion(candidate.npmVersion)
+    ) {
+      issues.push(policyIssue({
+        code: 'candidate-npm-version-inexact',
+        candidateId: candidate.id,
+        message: 'candidate npm version must be exact',
+      }))
+    }
+    if (
+      candidate.npmIntegrity !== undefined
+      && !isExactNpmIntegrity(candidate.npmIntegrity)
+    ) {
+      issues.push(policyIssue({
+        code: 'candidate-npm-integrity-invalid',
+        candidateId: candidate.id,
+        message: 'candidate npm integrity must be a SHA-512 SRI value',
+      }))
+    }
+    if ((candidate.npmVersion === undefined) !== (candidate.npmIntegrity === undefined)) {
+      issues.push(policyIssue({
+        code: 'candidate-npm-provenance-incomplete',
+        candidateId: candidate.id,
+        message: 'candidate npm version and integrity must be declared together',
+      }))
+    }
+    if (
+      candidate.active
+      && candidate.npmVersion === undefined
+      && Object.keys(candidate.installScripts).some(isInstallLifecycleScript)
+    ) {
+      issues.push(policyIssue({
+        code: 'candidate-git-lifecycle-build-active',
+        candidateId: candidate.id,
+        message: 'active Git candidates with lifecycle builds require a verified prebuilt npm artifact',
+      }))
     }
     if (candidate.active && candidate.rejections.length > 0) {
       issues.push(policyIssue({
@@ -488,15 +746,39 @@ export function validateCandidateLock(catalog: CuratedCatalog): PolicyIssue[] {
         details: { rejectionCodes: candidate.rejections.map(rejection => rejection.code) },
       }))
     }
-    if (!candidate.active && candidate.rejections.length === 0 && hasIncompleteInstallMetadata(candidate)) {
+    if (candidate.active && hasIncompleteInstallMetadata(candidate)) {
       issues.push(policyIssue({
-        code: 'candidate-inactive-rejection-missing',
+        code: 'candidate-active-install-metadata-missing',
         candidateId: candidate.id,
-        message: 'inactive candidate with incomplete package, manifest, license, or bundle metadata must carry rejection evidence',
+        message: 'active candidate must declare package, manifest, license, and bundle metadata',
+      }))
+    }
+    issues.push(...runtimeActivationEvidenceIssues(candidate))
+    if (!candidate.active && candidate.rejections.length === 0) {
+      issues.push(policyIssue({
+        code: 'candidate-inactive-blocker-missing',
+        candidateId: candidate.id,
+        message: 'inactive candidate must carry explicit blocker evidence',
       }))
     }
     if (!candidate.active) continue
 
+    if (candidate.targetProfiles.length === 0) {
+      issues.push(policyIssue({
+        code: 'candidate-active-target-profile-missing',
+        candidateId: candidate.id,
+        message: 'active candidate must target at least one curated profile',
+      }))
+    }
+    const admission = classifyAdmission(candidate.score)
+    if (admission === 'experimental' || admission === 'rejected') {
+      issues.push(policyIssue({
+        code: 'candidate-active-score-too-low',
+        candidateId: candidate.id,
+        message: 'active candidate admission score must qualify for a default or scenario profile',
+        details: { admission, score: candidate.score },
+      }))
+    }
     if (candidate.sourceStatus !== 'verified') {
       issues.push(policyIssue({
         code: 'candidate-source-unverified',
@@ -528,19 +810,21 @@ export function validateCandidateLock(catalog: CuratedCatalog): PolicyIssue[] {
 
     for (const [field, value] of candidateResourceEntries(candidate)) {
       const resourceKey = `${field}\u0000${value}`
-      const previous = seenResources.get(resourceKey)
+      const previousCandidates = seenResources.get(resourceKey) ?? []
+      const previous = previousCandidates.find(other =>
+        profilesOverlap(other.targetProfiles, candidate.targetProfiles))
       if (previous !== undefined) {
         issues.push(policyIssue({
           code: 'candidate-resource-duplicate',
           candidateId: candidate.id,
           message: 'active candidates claim the same resource',
-          details: { field, candidates: [previous.candidateId, candidate.id], value },
+          details: { field, candidates: [previous.id, candidate.id], value },
         }))
-        continue
       }
-      seenResources.set(resourceKey, { candidateId: candidate.id, field })
+      seenResources.set(resourceKey, [...previousCandidates, candidate])
     }
   }
+  issues.push(...requiredRuntimeBundleProviderIssues(catalog))
 
   return issues
 }
@@ -560,6 +844,36 @@ export function validatePolicySemantics(
   const candidatesById = new Map(catalog.candidates.map(candidate => [candidate.id, candidate]))
   const seenCapabilities = new Set<string>()
   const issues: PolicyIssue[] = []
+  if (conflicts.schemaVersion !== 1) {
+    issues.push(policyIssue({
+      code: 'capability-conflict-schema-version',
+      message: 'curated capability conflict schemaVersion must be 1',
+    }))
+  }
+  if (permissions.schemaVersion !== 1) {
+    issues.push(policyIssue({
+      code: 'permission-schema-version',
+      message: 'curated permission schemaVersion must be 1',
+    }))
+  }
+  if (permissions.defaults.configImportMode !== 'dry-run') {
+    issues.push(policyIssue({
+      code: 'permission-config-import-mode-unsafe',
+      message: 'curated permission defaults must keep configImportMode at dry-run',
+    }))
+  }
+  if (permissions.defaults.otelCaptureBody !== false) {
+    issues.push(policyIssue({
+      code: 'permission-otel-capture-body-unsafe',
+      message: 'curated permission defaults must keep otelCaptureBody false',
+    }))
+  }
+  if (permissions.defaults.credentialStorage !== 'credentials-service-or-env') {
+    issues.push(policyIssue({
+      code: 'permission-credential-storage-unsafe',
+      message: 'curated permission defaults must keep credentials in the credentials service or environment',
+    }))
+  }
   for (const rule of conflicts.rules) {
     if (seenCapabilities.has(rule.capability)) {
       issues.push(policyIssue({
@@ -602,12 +916,10 @@ export function validatePolicySemantics(
     }
     seenPermissionRuleIds.add(rule.id)
   }
-  const permissionIndex = permissions.order.indexOf('permission-rules')
-  const toolExecutionIndex = permissions.order.indexOf('tool-execution')
-  if (permissionIndex < 0 || toolExecutionIndex < 0 || permissionIndex >= toolExecutionIndex) {
+  if (!sameStrings(permissions.order, authoritativePermissionOrder)) {
     issues.push(policyIssue({
       code: 'permission-order-invalid',
-      message: 'permission policy order must place permission-rules before tool-execution',
+      message: `permissions.order must exactly equal ${authoritativePermissionOrder.join(', ')}`,
     }))
   }
   const profiles = new Set(catalog.candidates.flatMap(candidate => candidate.targetProfiles))
@@ -634,8 +946,7 @@ function enterprisePolicyIssues(candidate: CuratedCandidate): PolicyIssue[] {
       message: 'web-enterprise must not egress full IM bodies by default',
     }))
   }
-  if (Object.entries(candidate.installScripts).some(([name, script]) =>
-    isInstallLifecycleScript(name) && unsafeInstallScriptPattern.test(script))) {
+  if (requiresInstallBuild(candidate)) {
     issues.push(policyIssue({
       code: 'enterprise-automatic-install-scripts-active',
       candidateId: candidate.id,
@@ -652,15 +963,208 @@ function enterprisePolicyIssues(candidate: CuratedCandidate): PolicyIssue[] {
   return issues
 }
 
+function requiredRuntimeBundleProviderIssues(catalog: CuratedCatalog): PolicyIssue[] {
+  const issues: PolicyIssue[] = []
+  for (const candidate of catalog.candidates) {
+    if (!candidate.active) continue
+    for (const profileId of candidate.targetProfiles) {
+      for (const bundle of candidate.requiredRuntimeBundles ?? []) {
+        const provider = catalog.candidates.find(current =>
+          current !== candidate
+          && current.active
+          && current.expectedPackage === bundle
+          && current.targetProfiles.includes(profileId)
+          && current.runtimeActivationEvidence?.[profileId] !== undefined)
+        if (provider !== undefined) continue
+        issues.push(policyIssue({
+          code: 'candidate-required-runtime-bundle-provider-missing',
+          candidateId: candidate.id,
+          profileId,
+          message: 'required runtime bundle must be provided by another active candidate in the same profile',
+          details: { bundle },
+        }))
+      }
+    }
+  }
+  return issues
+}
+
 function isInstallLifecycleScript(script: string): boolean {
-  return script === 'preinstall' || script === 'install' || script === 'postinstall' || script === 'prepare'
+  return script === 'preinstall'
+    || script === 'install'
+    || script === 'postinstall'
+    || script === 'prepare'
+    || script === 'prepack'
+}
+
+function requiresInstallBuild(candidate: CuratedCandidate): boolean {
+  return Object.keys(candidate.installScripts).some(script =>
+    script === 'preinstall'
+    || script === 'install'
+    || script === 'postinstall'
+    || (candidate.npmVersion === undefined && isInstallLifecycleScript(script)))
 }
 
 function hasIncompleteInstallMetadata(candidate: CuratedCandidate): boolean {
-  return candidate.expectedPackage === null
-    || candidate.manifestPath === null
-    || candidate.license === null
-    || candidate.bundlePatch === null
+  return !hasCompleteInstallMetadata(candidate)
+}
+
+function hasCompleteInstallMetadata(candidate: CuratedCandidate): boolean {
+  return candidate.expectedPackage !== null
+    && candidate.manifestPath !== null
+    && candidate.license !== null
+    && candidate.bundlePatch !== null
+}
+
+function runtimeActivationEvidenceIssues(candidate: CuratedCandidate): PolicyIssue[] {
+  const evidence = candidate.runtimeActivationEvidence
+  if (evidence === undefined) {
+    return candidate.active
+      ? [policyIssue({
+        code: 'candidate-runtime-activation-evidence-missing',
+        candidateId: candidate.id,
+        message: 'active candidate must declare complete runtime activation evidence',
+      })]
+      : []
+  }
+  const issues: PolicyIssue[] = []
+  const declaredBundles = [...(candidate.requiredRuntimeBundles ?? [])].sort()
+  const evidenceProfiles = Object.keys(evidence)
+  if (
+    candidate.active
+    && !sameStringSets(candidate.targetProfiles, evidenceProfiles)
+  ) {
+    issues.push(policyIssue({
+      code: 'candidate-runtime-activation-evidence-profiles-mismatch',
+      candidateId: candidate.id,
+      message: 'runtime activation evidence profiles must exactly match the active candidate target profiles',
+    }))
+  }
+  for (const bundle of declaredBundles) {
+    if (candidate.externalDependencies.includes(bundle)) continue
+    issues.push(policyIssue({
+      code: 'candidate-required-runtime-bundle-undeclared',
+      candidateId: candidate.id,
+      message: 'required runtime bundle must be present in the audited dependency declaration',
+      details: { bundle },
+    }))
+  }
+  for (const [profileId, evidenceSet] of Object.entries(evidence)) {
+    if (!sameStringSets(declaredBundles, evidenceSet.requiredRuntimeBundles)) {
+      issues.push(policyIssue({
+        code: 'candidate-runtime-activation-required-bundles-mismatch',
+        candidateId: candidate.id,
+        profileId,
+        message: 'runtime activation evidence required bundles must match the candidate declaration',
+      }))
+    }
+    for (const field of runtimeEvidenceFileFields) {
+      const reference = evidenceSet[field]
+      if (!isSafeRelativeEvidencePath(reference.path)) {
+        issues.push(policyIssue({
+          code: 'candidate-runtime-activation-evidence-path-invalid',
+          candidateId: candidate.id,
+          profileId,
+          message: `runtime activation evidence ${field} path must be a safe repository-relative POSIX path`,
+        }))
+      }
+      if (!isSha256(reference.sha256)) {
+        issues.push(policyIssue({
+          code: 'candidate-runtime-activation-evidence-sha-invalid',
+          candidateId: candidate.id,
+          profileId,
+          message: `runtime activation evidence ${field} SHA-256 must be 64 lowercase hexadecimal characters`,
+        }))
+      } else if (!isNonPlaceholderSha256(reference.sha256)) {
+        issues.push(policyIssue({
+          code: 'candidate-runtime-activation-evidence-sha-placeholder',
+          candidateId: candidate.id,
+          profileId,
+          message: `runtime activation evidence ${field} SHA-256 must not be a placeholder digest`,
+        }))
+      }
+    }
+  }
+  return issues
+}
+
+function profilesOverlap(left: readonly string[], right: readonly string[]): boolean {
+  const leftProfiles = new Set(left)
+  return right.some(profile => leftProfiles.has(profile))
+}
+
+function isCanonicalGitHubRepository(value: string): boolean {
+  let url: URL
+  try {
+    url = new URL(value)
+  } catch {
+    return false
+  }
+  if (
+    url.protocol !== 'https:'
+    || url.hostname !== 'github.com'
+    || url.port !== ''
+    || url.username !== ''
+    || url.password !== ''
+    || url.search !== ''
+    || url.hash !== ''
+    || url.pathname.includes('%')
+  ) {
+    return false
+  }
+  const segments = url.pathname.split('/').slice(1)
+  return segments.length === 2
+    && githubOwnerPattern.test(segments[0] as string)
+    && githubRepositoryNamePattern.test(segments[1] as string)
+    && segments[1] !== '.'
+    && segments[1] !== '..'
+    && !/\.git$/iu.test(segments[1] as string)
+    && value === `https://github.com/${segments.join('/')}`
+}
+
+function isSafeRelativeEvidencePath(value: string): boolean {
+  return value.length > 0
+    && !isAbsolute(value)
+    && !windowsAbsolutePathPattern.test(value)
+    && !value.includes('\\')
+    && !value.includes('\0')
+    && posix.normalize(value) === value
+    && value !== '.'
+    && value !== '..'
+    && !value.startsWith('../')
+}
+
+function isCompleteRuntimeEvidenceFile(value: unknown): boolean {
+  if (!isRecord(value) || !hasExactKeys(value, runtimeEvidenceFileKeys)) return false
+  return typeof value.path === 'string'
+    && isSafeRelativeEvidencePath(value.path)
+    && typeof value.sha256 === 'string'
+    && isNonPlaceholderSha256(value.sha256)
+}
+
+function isSha256(value: string): boolean {
+  return sha256Pattern.test(value)
+}
+
+function isNonPlaceholderSha256(value: string): boolean {
+  return isSha256(value) && !isPlaceholderDigest(value)
+}
+
+function isNonEmptyStringArray(value: unknown): value is readonly string[] {
+  return Array.isArray(value)
+    && value.every(item => typeof item === 'string' && item.length > 0)
+}
+
+function hasExactKeys(record: Record<string, unknown>, expected: readonly string[]): boolean {
+  return sameStringSets(Object.keys(record), expected)
+}
+
+function sameStringSets(left: readonly string[], right: readonly string[]): boolean {
+  return sameStrings([...left].sort(), [...right].sort())
+}
+
+function sameStrings(left: readonly string[], right: readonly string[]): boolean {
+  return left.length === right.length && left.every((value, index) => value === right[index])
 }
 
 /**
@@ -747,6 +1251,31 @@ export function redactSecretLikeValues(value: unknown): unknown {
   return output
 }
 
+/**
+ * Format a YAML parse failure with secret-bearing code-frame lines redacted.
+ * @param error - Error thrown by `js-yaml`.
+ * @param fileIdentity - File path or stable file label safe to identify after redaction.
+ * @param yamlSource - Original YAML used to retain a redacted parser code frame.
+ * @returns a parse diagnostic with a value-free reason for secret-marked lines,
+ * or `undefined` for a non-YAML error.
+ */
+export function formatYamlParseError(
+  error: unknown,
+  fileIdentity: string,
+  yamlSource?: string,
+): string | undefined {
+  if (!(error instanceof YAMLException)) return undefined
+  const mark = error.mark
+  const location = ` at line ${String(mark.line + 1)}, column ${String(mark.column + 1)}`
+  const codeFrame = yamlSource === undefined
+    ? ''
+    : `\n\n${redactYamlCodeFrame(mark.snippet, yamlSource)}`
+  const reason = yamlSource !== undefined && yamlSecretLineNumbers(yamlSource).has(mark.line + 1)
+    ? 'invalid YAML near redacted value'
+    : redactSecretText(error.reason)
+  return `${reason} in ${redactSecretText(fileIdentity)}${location}${codeFrame}`
+}
+
 /** Read-only curated policy service exposed as `ctx.curatedPolicy`. */
 export class CuratedPolicy {
   private readonly catalog: CuratedCatalog
@@ -797,7 +1326,7 @@ export class CuratedPolicy {
   /**
    * List active candidates assigned to one profile.
    * @param profileId - Curated profile id.
-   * @returns a stable frozen array with shared candidates before scenario-specific candidates.
+   * @returns a stable frozen array in catalog order.
    */
   getProfileCandidates(profileId: string): readonly CuratedCandidate[] {
     const cached = this.profileCandidates.get(profileId)
@@ -805,8 +1334,7 @@ export class CuratedPolicy {
 
     const candidates = Object.freeze(
       this.catalog.candidates
-        .filter(candidate => candidate.active && candidate.targetProfiles.includes(profileId))
-        .sort((left, right) => right.targetProfiles.length - left.targetProfiles.length),
+        .filter(candidate => candidate.active && candidate.targetProfiles.includes(profileId)),
     )
     this.profileCandidates.set(profileId, candidates)
     return candidates
@@ -852,11 +1380,15 @@ interface PolicyIssueInput {
 }
 
 function loadPolicyYaml(filePath: string, label: string): unknown {
+  let source: string | undefined
   try {
-    return loadYaml(readFileSync(filePath, 'utf8'))
+    source = readFileSync(filePath, 'utf8')
+    return loadYaml(source, { filename: filePath })
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error)
-    throw new Error(`${label} cannot be loaded: ${redactSecretText(message)}`, { cause: error })
+    throw new Error(
+      `${label} cannot be loaded: ${formatYamlParseError(error, filePath, source) ?? redactSecretText(message)}`,
+    )
   }
 }
 
@@ -945,20 +1477,28 @@ function readCandidate(value: unknown, label: string): CuratedCandidate {
   const record = recordField(value, label)
   assertOnlyKeys(record, candidateKeys, label)
   const declaredScore = optionalNumberField(record, 'score', label)
-  const scoreDimensions = record.scoreDimensions === undefined
-    ? scoreDimensionsFromDeclaredScore(declaredScore, `${label}.scoreDimensions`)
-    : readScoreDimensions(record.scoreDimensions, `${label}.scoreDimensions`)
+  const scoreDimensions = readScoreDimensions(record.scoreDimensions, `${label}.scoreDimensions`)
   const score = scoreDimensionFields.reduce((total, field) => total + scoreDimensions[field], 0)
   if (declaredScore !== undefined && declaredScore !== score) {
     throw new Error(`curated catalog ${label}.score must equal the computed score dimension total`)
   }
   const resources = optionalResources(record.resources, `${label}.resources`)
   const config = optionalCandidateConfig(record.config, `${label}.config`)
-  const tarballSha256 = optionalStringField(record, 'tarballSha256', label)
+  const runtimeActivationEvidence = optionalRuntimeActivationEvidence(
+    record.runtimeActivationEvidence,
+    `${label}.runtimeActivationEvidence`,
+  )
+  const sourceContentSha256 = optionalStringField(record, 'sourceContentSha256', label)
+  const treeSha256 = optionalStringField(record, 'treeSha256', label)
+  const runtimeDependencyClosureSha256 = optionalStringField(
+    record,
+    'runtimeDependencyClosureSha256',
+    label,
+  )
+  const npmVersion = optionalStringField(record, 'npmVersion', label)
+  const npmIntegrity = optionalStringField(record, 'npmIntegrity', label)
   const nodeEngine = nullableStringField(record, 'nodeEngine', label)
-  const nodeEngineEvidence = record.nodeEngineEvidence === undefined
-    ? nodeEngine === null ? null : 'package.json#engines.node'
-    : nullableStringField(record, 'nodeEngineEvidence', label)
+  const nodeEngineEvidence = nullableStringField(record, 'nodeEngineEvidence', label)
   return {
     id: stringField(record, 'id', label),
     priority: priorityField(record, 'priority', label),
@@ -975,11 +1515,18 @@ function readCandidate(value: unknown, label: string): CuratedCandidate {
     requiresCorePatch: nullableBooleanField(record, 'requiresCorePatch', label),
     license: nullableStringField(record, 'license', label),
     bundlePatch: nullableStringField(record, 'bundlePatch', label),
-    ...tarballSha256 === undefined ? {} : { tarballSha256 },
+    ...sourceContentSha256 === undefined ? {} : { sourceContentSha256 },
+    ...treeSha256 === undefined ? {} : { treeSha256 },
+    ...runtimeDependencyClosureSha256 === undefined ? {} : { runtimeDependencyClosureSha256 },
+    ...npmVersion === undefined ? {} : { npmVersion },
+    ...npmIntegrity === undefined ? {} : { npmIntegrity },
     testFiles: numberField(record, 'testFiles', label),
     ciWorkflows: numberField(record, 'ciWorkflows', label),
     installScripts: stringRecordField(record, 'installScripts', label),
     externalDependencies: stringArrayField(record, 'externalDependencies', label),
+    ...record.requiredRuntimeBundles === undefined
+      ? {}
+      : { requiredRuntimeBundles: stringArrayField(record, 'requiredRuntimeBundles', label) },
     networkAccess: stringArrayField(record, 'networkAccess', label),
     credentials: stringArrayField(record, 'credentials', label),
     targetProfiles: stringArrayField(record, 'targetProfiles', label),
@@ -990,6 +1537,7 @@ function readCandidate(value: unknown, label: string): CuratedCandidate {
     score,
     ...resources === undefined ? {} : { resources },
     ...config === undefined ? {} : { config },
+    ...runtimeActivationEvidence === undefined ? {} : { runtimeActivationEvidence },
   }
 }
 
@@ -1024,20 +1572,51 @@ function optionalCandidateConfig(value: unknown, label: string): CuratedCandidat
   }
 }
 
-function scoreDimensionsFromDeclaredScore(score: number | undefined, label: string): CuratedScoreDimensions {
-  if (score === undefined) throw new Error(`curated catalog ${label} must be a map`)
-  if (!Number.isInteger(score) || score < 0 || score > 100) {
-    throw new Error(`curated catalog ${label} fallback score must be an integer between 0 and 100`)
-  }
+function optionalRuntimeActivationEvidence(
+  value: unknown,
+  label: string,
+): CuratedRuntimeActivationEvidence | undefined {
+  if (value === undefined) return undefined
+  const record = recordField(value, label)
+  return Object.fromEntries(Object.entries(record).map(([profile, evidence]) => {
+    if (profile.length === 0) {
+      throw new Error(`curated catalog ${label} profile keys must be non-empty strings`)
+    }
+    return [
+      profile,
+      readRuntimeActivationEvidenceSet(evidence, `${label}.${redactSecretText(profile)}`),
+    ]
+  }))
+}
+
+function readRuntimeActivationEvidenceSet(
+  value: unknown,
+  label: string,
+): CuratedRuntimeActivationEvidenceSet {
+  const record = recordField(value, label)
+  assertOnlyKeys(record, runtimeActivationEvidenceKeys, label)
   return {
-    nativeCompatibility: score,
-    functionalCompleteness: 0,
-    testAndCi: 0,
-    securityAndPrivacy: 0,
-    maintenanceHealth: 0,
-    performanceCost: 0,
-    operability: 0,
-    communitySignal: 0,
+    keylessAssembledSnapshot: readRuntimeEvidenceFile(
+      record.keylessAssembledSnapshot,
+      `${label}.keylessAssembledSnapshot`,
+    ),
+    requiredRuntimeBundles: stringArrayField(record, 'requiredRuntimeBundles', label),
+    install: readRuntimeEvidenceFile(record.install, `${label}.install`),
+    enable: readRuntimeEvidenceFile(record.enable, `${label}.enable`),
+    restart: readRuntimeEvidenceFile(record.restart, `${label}.restart`),
+    disableOrUninstall: readRuntimeEvidenceFile(
+      record.disableOrUninstall,
+      `${label}.disableOrUninstall`,
+    ),
+  }
+}
+
+function readRuntimeEvidenceFile(value: unknown, label: string): CuratedRuntimeEvidenceFile {
+  const record = recordField(value, label)
+  assertOnlyKeys(record, runtimeEvidenceFileKeys, label)
+  return {
+    path: stringField(record, 'path', label),
+    sha256: stringField(record, 'sha256', label),
   }
 }
 
@@ -1217,8 +1796,208 @@ function isPlaceholderDigest(value: string): boolean {
   return /^(.)\1+$/u.test(value) || /^([0-9a-f]{2})\1+$/u.test(value)
 }
 
+/**
+ * Check that an npm version is one complete SemVer 2.0 version.
+ * @param value - Version text to validate without range, tag, or `v` prefix coercion.
+ * @returns whether the complete value is a valid SemVer 2.0 version.
+ */
+export function isExactNpmVersion(value: string): boolean {
+  return exactNpmVersionPattern.test(value)
+}
+
+/**
+ * Check that an npm integrity value is one canonical, non-placeholder SHA-512 digest.
+ * @param value - SRI text to validate.
+ * @returns whether the value decodes canonically to 64 non-placeholder bytes.
+ */
+export function isExactNpmIntegrity(value: string): boolean {
+  const match = npmIntegrityPattern.exec(value)
+  if (match === null) return false
+  const encoded = match[1] as string
+  const digest = Buffer.from(encoded, 'base64')
+  return digest.byteLength === 64
+    && digest.toString('base64') === encoded
+    && !digest.every(byte => byte === digest[0])
+}
+
 function redactSecretText(value: string): string {
-  return secretValuePattern.test(value) ? redacted : value
+  return value
+    .replace(urlUserinfoReplacementPattern, `$1${redacted}@`)
+    .replace(schemelessUrlUserinfoReplacementPattern, `${redacted}@`)
+    .replace(privateKeyBlockReplacementPattern, redacted)
+    .replace(secretAssignmentReplacementPattern, `$1${redacted}`)
+    .replace(secretValueReplacementPattern, redacted)
+}
+
+function redactYamlCodeFrame(snippet: string, source: string): string {
+  const secretLines = yamlSecretLineNumbers(source)
+  const sourceLines = source.split(/\r?\n/u)
+  return redactSecretText(
+    snippet.replace(
+      /^([ \t]*(\d+)[ \t]+\|)[^\r\n]*/gmu,
+      (line, prefix: string, lineNumber: string) => {
+        const sourceLineNumber = Number(lineNumber)
+        if (secretLines.has(sourceLineNumber)) return `${prefix} ${redacted}`
+        return /^[ \t]*\.\.\.[ \t]*$/u.test(line.slice(prefix.length))
+          ? `${prefix} ${sourceLines[sourceLineNumber - 1] as string}`
+          : line
+      },
+    ),
+  )
+}
+
+function yamlSecretLineNumbers(source: string): ReadonlySet<number> {
+  const secretLines = new Set<number>()
+  let secretIndent: number | undefined
+  let explicitSecretValueIndent: number | undefined
+  for (const [index, line] of source.split(/\r?\n/u).entries()) {
+    const indent = line.length - line.trimStart().length
+    if (secretIndent !== undefined) {
+      if (line.trim().length === 0 || line.trimStart().startsWith('#') || indent > secretIndent) {
+        secretLines.add(index + 1)
+        continue
+      }
+      secretIndent = undefined
+    }
+    if (explicitSecretValueIndent !== undefined) {
+      if (line.trim().length === 0) continue
+      if (line.trimStart().startsWith('#')) {
+        secretLines.add(index + 1)
+        continue
+      }
+      if (indent === explicitSecretValueIndent && /^:[ \t]/u.test(line.trimStart())) {
+        secretLines.add(index + 1)
+        secretIndent = indent
+        explicitSecretValueIndent = undefined
+        continue
+      }
+      explicitSecretValueIndent = undefined
+    }
+    const explicitMapping = yamlExplicitMapping(line)
+    if (explicitMapping !== undefined && secretKeyPattern.test(explicitMapping.key)) {
+      secretLines.add(index + 1)
+      if (explicitMapping.hasValue) {
+        secretIndent = explicitMapping.valueIndent
+      } else {
+        explicitSecretValueIndent = explicitMapping.valueIndent
+      }
+      continue
+    }
+    if (!yamlMappingKeys(line).some(key => secretKeyPattern.test(key))) continue
+    secretLines.add(index + 1)
+    secretIndent = indent
+  }
+  return secretLines
+}
+
+function yamlExplicitMapping(
+  line: string,
+): { readonly key: string; readonly valueIndent: number; readonly hasValue: boolean } | undefined {
+  let valueIndent = line.length - line.trimStart().length
+  let trimmed = line.trimStart()
+  const sequenceIndicator = /^-[ \t]+/u.exec(trimmed)?.[0]
+  if (sequenceIndicator !== undefined) {
+    valueIndent += sequenceIndicator.length
+    trimmed = trimmed.slice(sequenceIndicator.length)
+  }
+  if (!/^\?[ \t]+/u.test(trimmed)) return undefined
+  const content = trimmed.slice(1).trimStart()
+  const separator = yamlMappingSeparator(content)
+  return {
+    key: decodeYamlMappingKey(
+      (separator === undefined ? content : content.slice(0, separator)).trim(),
+    ),
+    valueIndent,
+    hasValue: separator !== undefined,
+  }
+}
+
+function yamlMappingKeys(line: string): string[] {
+  const keys: string[] = []
+  let candidateStart = 0
+  let flowDepth = 0
+  let quote: '"' | "'" | undefined
+  let escaped = false
+  for (let index = 0; index < line.length; index += 1) {
+    const character = line.charAt(index)
+    if (quote === '"') {
+      if (escaped) escaped = false
+      else if (character === '\\') escaped = true
+      else if (character === '"') quote = undefined
+      continue
+    }
+    if (quote === "'") {
+      if (character !== "'") continue
+      if (line.charAt(index + 1) === "'") index += 1
+      else quote = undefined
+      continue
+    }
+    if (character === '"' || character === "'") {
+      quote = character
+      continue
+    }
+    if (character === '{' || character === '[') {
+      flowDepth += 1
+      candidateStart = index + 1
+      continue
+    }
+    if (character === '}' || character === ']') {
+      flowDepth = Math.max(0, flowDepth - 1)
+      continue
+    }
+    if (character === ',') {
+      candidateStart = index + 1
+      continue
+    }
+    if (
+      character !== ':'
+      || (flowDepth === 0 && !/^[ \t]*$/u.test(line.slice(index + 1, index + 2)))
+    ) {
+      continue
+    }
+    const encodedKey = line.slice(candidateStart, index)
+      .trim()
+      .replace(/^(?:-[ \t]+)+/u, '')
+    keys.push(decodeYamlMappingKey(encodedKey))
+  }
+  return keys
+}
+
+function yamlMappingSeparator(value: string): number | undefined {
+  let quote: '"' | "'" | undefined
+  let escaped = false
+  for (let index = 0; index < value.length; index += 1) {
+    const character = value.charAt(index)
+    if (quote === '"') {
+      if (escaped) escaped = false
+      else if (character === '\\') escaped = true
+      else if (character === '"') quote = undefined
+      continue
+    }
+    if (quote === "'") {
+      if (character !== "'") continue
+      if (value.charAt(index + 1) === "'") index += 1
+      else quote = undefined
+      continue
+    }
+    if (character === '"' || character === "'") {
+      quote = character
+      continue
+    }
+    if (character === ':' && /^[ \t]*$/u.test(value.slice(index + 1, index + 2))) return index
+  }
+  return undefined
+}
+
+function decodeYamlMappingKey(encodedKey: string): string {
+  try {
+    const parsed = loadYaml(`${encodedKey}: null`, { schema: FAILSAFE_SCHEMA })
+    /* v8 ignore next -- a successful synthetic key mapping parse always returns a map. */
+    if (!isRecord(parsed)) return encodedKey
+    return Object.keys(parsed)[0] as string
+  } catch {
+    return encodedKey
+  }
 }
 
 function containsSecretMaterial(value: unknown): boolean {
@@ -1227,9 +2006,15 @@ function containsSecretMaterial(value: unknown): boolean {
   if (!isRecord(value)) return false
 
   return Object.entries(value).some(([key, item]) => {
-    if (typeof item === 'string' && secretKeyPattern.test(key) && item.length > 0) return true
+    if (key !== 'credentials' && secretKeyPattern.test(key) && hasMaterialValue(item)) return true
     return containsSecretMaterial(item)
   })
+}
+
+function hasMaterialValue(value: unknown): boolean {
+  if (typeof value === 'string') return value.length > 0
+  if (Array.isArray(value)) return value.length > 0
+  return isRecord(value) && Object.keys(value).length > 0
 }
 
 function copyCatalog(catalog: CuratedCatalog): CuratedCatalog {
@@ -1293,11 +2078,22 @@ function copyCandidate(candidate: CuratedCandidate): CuratedCandidate {
     requiresCorePatch: candidate.requiresCorePatch,
     license: candidate.license,
     bundlePatch: candidate.bundlePatch,
-    ...candidate.tarballSha256 === undefined ? {} : { tarballSha256: candidate.tarballSha256 },
+    ...candidate.sourceContentSha256 === undefined
+      ? {}
+      : { sourceContentSha256: candidate.sourceContentSha256 },
+    ...candidate.treeSha256 === undefined ? {} : { treeSha256: candidate.treeSha256 },
+    ...candidate.runtimeDependencyClosureSha256 === undefined
+      ? {}
+      : { runtimeDependencyClosureSha256: candidate.runtimeDependencyClosureSha256 },
+    ...candidate.npmVersion === undefined ? {} : { npmVersion: candidate.npmVersion },
+    ...candidate.npmIntegrity === undefined ? {} : { npmIntegrity: candidate.npmIntegrity },
     testFiles: candidate.testFiles,
     ciWorkflows: candidate.ciWorkflows,
     installScripts: { ...candidate.installScripts },
     externalDependencies: [...candidate.externalDependencies],
+    ...candidate.requiredRuntimeBundles === undefined
+      ? {}
+      : { requiredRuntimeBundles: [...candidate.requiredRuntimeBundles] },
     networkAccess: [...candidate.networkAccess],
     credentials: [...candidate.credentials],
     targetProfiles: [...candidate.targetProfiles],
@@ -1314,6 +2110,23 @@ function copyCandidate(candidate: CuratedCandidate): CuratedCandidate {
           entryId: candidate.config.entryId,
           values: structuredClone(candidate.config.values),
         },
+      },
+    ...candidate.runtimeActivationEvidence === undefined
+      ? {}
+      : {
+        runtimeActivationEvidence: Object.fromEntries(
+          Object.entries(candidate.runtimeActivationEvidence).map(([profile, evidence]) => [
+            profile,
+            {
+              keylessAssembledSnapshot: { ...evidence.keylessAssembledSnapshot },
+              requiredRuntimeBundles: [...evidence.requiredRuntimeBundles],
+              install: { ...evidence.install },
+              enable: { ...evidence.enable },
+              restart: { ...evidence.restart },
+              disableOrUninstall: { ...evidence.disableOrUninstall },
+            },
+          ]),
+        ),
       },
   }
 }

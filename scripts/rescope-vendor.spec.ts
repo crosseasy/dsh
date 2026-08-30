@@ -5,7 +5,7 @@
  */
 
 import { describe, expect, it } from 'vitest'
-import { exactEditState, existingTrackedFiles } from './rescope-vendor.ts'
+import { EXACT_EDITS, exactEditState, existingTrackedFiles } from './rescope-vendor.ts'
 
 const ANCHOR = '\n## Sync procedure'
 const INSERTED = `\n15. **rescope**: one log entry.\n${ANCHOR}`
@@ -37,6 +37,25 @@ describe('exactEditState', () => {
     // A moved or partially applied site: neither state is complete.
     expect(exactEditState('a = 1\nb = 2\n', 'a = 1', 'b = 2', 1)).toBe('invalid')
     expect(exactEditState('x\n', 'a = 1', 'b = 2', 1)).toBe('invalid')
+  })
+
+  it('migrates the upstream root package rule to the current publication rule idempotently', () => {
+    const upstream = 'Every npm package is `@deepseek-ai/dsh-<name>`; vendored packages keep upstream names and are `private: true`. `cor'
+      + 'dis` is a peerDependency (+ dev) of every harness package.'
+    const current = 'Publishable dsh packages set `publishConfig.access: public`; experimental/private packages remain private. Vendored packages are rescoped ([mapping](docs/rescope.md)) and follow their publication policy. `@deepseek-ai/cordis` is a peerDependency (+ dev) of every harness package.'
+    const edit = EXACT_EDITS.find(candidate => candidate.id === 'root-agents-vendored-name-contract')
+
+    expect(edit).toEqual({
+      id: 'root-agents-vendored-name-contract',
+      file: 'AGENTS.md',
+      find: upstream,
+      replace: current,
+      expect: 1,
+    })
+    expect(exactEditState(upstream, edit!.find, edit!.replace, edit!.expect)).toBe('pending')
+    expect(exactEditState(current, edit!.find, edit!.replace, edit!.expect)).toBe('applied')
+    expect(upstream.split(edit!.find).join(edit!.replace)).toBe(current)
+    expect(current.split(edit!.find).join(edit!.replace)).toBe(current)
   })
 
   it('ignores tracked files that are absent from the working tree', () => {

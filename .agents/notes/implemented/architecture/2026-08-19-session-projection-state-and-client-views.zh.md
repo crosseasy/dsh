@@ -12,7 +12,7 @@
 
 `SessionProjectionStateMap` 是 host 折叠状态的 merge-extensible 类型表。每个 `ProjectionDefinition` key 都属于此表并提供 `stateSchema`；缓存行只有通过校验后才能为折叠提供初始状态。`SessionProjectionMap` 保留原有名称和语义，继续作为唯一的客户端可见全量值类型表，因此 `title: string | null` 等既有客户端数据结构保持不变。
 
-如果一个单元的 key 也存在于 `SessionProjectionMap`，该单元就提供 `wire.viewSchema` 与 `wire.view`。领域包可以从不依赖 Cordis 的模块暴露 event-to-state fold；生产投影定义与客户端 fixture 调用这些模块，而不是携带平行 reducer。每个单元的状态都会写入检查点——client-visible 与 host-only 一视同仁；`persist` 选择项已移除，任何单元都不能悄悄跳过持久化缓存。快照 API 只返回 `SessionProjectionMap`，因此内部状态不会进入 API 载荷。host 代码通过 `stateOf(session, key)` 读取一份当前状态；返回的是借用引用，不得修改。
+如果一个单元的 key 也存在于 `SessionProjectionMap`，该单元就提供 `wire.viewSchema` 与 `wire.view`。plan mode、[session stats](../bug-fix/2026-08-12-full-session-turn-step-counts.zh.md) 和 token meter 会通过各自领域拥有的 `./client` 子路径导出不依赖 Cordis 的 `init`、`apply`、`view` 函数；生产投影定义组合这些函数，开发 fixture（测试前置数据）则调用它们的全日志 helper。这样每个领域仅保留一个 reducer，且无需在浏览器中挂载 Host registry。每个单元的状态都会写入检查点——client-visible 与 host-only 一视同仁；`persist` 选择项已移除，任何单元都不能悄悄跳过持久化缓存。快照 API 只返回 `SessionProjectionMap`，因此内部状态不会进入 API 载荷。host 代码通过 `stateOf(session, key)` 读取一份当前状态；返回的是借用引用，不得修改。
 
 ## 结果
 

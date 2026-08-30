@@ -21,6 +21,15 @@ import type {} from '@deepseek-ai/cordis-plugin-hmr'
 // Side-effect type import: resolves `ctx.get('systemPrompt')` to the service.
 import type {} from '@deepseek-ai/dsh-system-prompt'
 
+const INTERNAL_DISABLE_DOTENV_ENV = 'DSH_INTERNAL_DISABLE_DOTENV'
+
+/**
+ * Optional UTF-8 reader for callers that already bound file bytes to validated storage.
+ * @param path - Absolute file path requested by the parser.
+ * @returns file text, or `undefined` when an optional file is absent.
+ */
+export type TextFileReader = (path: string) => string | undefined
+
 declare module '@deepseek-ai/cordis' {
   interface Context {
     /** Harness-home path resolver available to Loader `!!js` config expressions. */
@@ -168,6 +177,8 @@ function readEnvLayer(
  * `.env` snapshot. The Harness home resolves before either file; both files
  * are checked before either is applied, and accepted values are materialized
  * without replacing inherited ones. The snapshot preserves which layer supplied each value.
+ * An internal smoke launch consumes `DSH_INTERNAL_DISABLE_DOTENV=1` and returns
+ * an inherited-only snapshot without reading either file.
  * @param binName - the diagnostic prefix on the diagnostics.
  * @param cwd - the invoking directory whose `.env` is the project layer.
  * @param warn - sink for the one-line misconfiguration diagnostics.
@@ -178,8 +189,13 @@ export function loadLayeredEnv(
   binName: string, cwd: string = process.cwd(),
   warn: (line: string) => void = line => void process.stderr.write(line),
 ): LaunchEnvironmentSnapshot {
+  const dotenvDisabled = process.env[INTERNAL_DISABLE_DOTENV_ENV] === '1'
+  Reflect.deleteProperty(process.env, INTERNAL_DISABLE_DOTENV_ENV)
   const home = resolveDshHome()
   const inherited = { ...process.env } as Record<string, string>
+  if (dotenvDisabled) {
+    return createLaunchEnvironmentSnapshot([{ source: 'process', values: inherited }])
+  }
   // Parse both layers first: a rejection must not leave one file applied.
   const project = readEnvLayer(binName, cwd, warn)
   const user = home === resolve(cwd) ? undefined : readEnvLayer(binName, home, warn)
@@ -206,21 +222,32 @@ const bootstrapIncludes = new WeakMap<Context, Entry>()
 // reference `process.env`.
 const userPatchesSchema = entryListSchema
 
-/** Options for live user patch-layer reconciliation. */
-export interface UserPatchWatchOptions {
+interface UserPatchWatchBase {
   /** Diagnostic prefix used by {@link loadOptionalPatches}. */
   binName: string
   /** Absolute path of the watched patch file (a profile's `cordis.patch.yml`). */
   filename: string
+}
+
+/**
+ * Options for live user patch-layer reconciliation. The default `watcher-read`
+ * mode loads `filename` and passes its patches to `compose`; `compose-read`
+ * delegates every file read to `compose`.
+ */
+export type UserPatchWatchOptions = UserPatchWatchBase & ({
+  /** Read `filename` in the watcher before composition. */
+  mode?: 'watcher-read'
   /**
-   * Compose the full patch list for a fresh user-layer generation —
-   * the same composition the app booted with, so a reload can interleave the
-   * new user patches between app-owned layers (bundle layers below,
-   * overlays above). Identity when omitted: the user layer
-   * is the whole patch list.
+   * Compose the full patch list for a fresh user-layer generation.
+   * Identity when omitted: the watched user layer is the whole patch list.
    */
   compose?: (userPatches: PatchOptions[]) => PatchOptions[]
-}
+} | {
+  /** Let `compose` own all reads needed for a fresh generation. */
+  mode: 'compose-read'
+  /** Read and compose the full patch list for a fresh user-layer generation. */
+  compose: () => PatchOptions[]
+})
 
 /**
  * Watch the user patch layer through Cordis HMR and transactionally reapply it to the boot include.
@@ -233,7 +260,7 @@ export async function watchUserPatches(
   ctx: Context,
   options: UserPatchWatchOptions,
 ): Promise<() => Promise<void>> {
-  const { binName, filename, compose = (patches: PatchOptions[]) => patches } = options
+  const { binName, filename } = options
   const hmr = ctx.get('hmr')
   if (hmr === undefined) throw new Error(`${binName}: user patch-layer watching requires the Cordis HMR service`)
   const entry = bootstrapIncludes.get(ctx)
@@ -243,8 +270,11 @@ export async function watchUserPatches(
     // updates the root Include's other options between refreshes (none exists
     // today) must not have them silently reverted by a user-layer reload.
     const { patches: _previousPatches, ...includeConfig } = entry.options.config as Include.Config
-    const userPatches = loadOptionalPatches(binName, filename) ?? []
-    const patches = compose(userPatches)
+    const patches = options.mode === 'compose-read'
+      ? options.compose()
+      : (options.compose ?? ((userPatches: PatchOptions[]) => userPatches))(
+        loadOptionalPatches(binName, filename) ?? [],
+      )
     await entry.update({
       config: {
         ...includeConfig,
@@ -273,12 +303,19 @@ export async function watchUserPatches(
  * loud at boot, never be silently skipped.
  * @param binName - the diagnostic prefix on the thrown error.
  * @param file - absolute path of the patch file.
+ * @param reader - optional source for already validated file bytes.
  * @returns the parsed patches, or `undefined` when the file does not exist.
  */
-export function loadOptionalPatches(binName: string, file: string): PatchOptions[] | undefined {
+export function loadOptionalPatches(
+  binName: string,
+  file: string,
+  reader?: TextFileReader,
+): PatchOptions[] | undefined {
   let content: string
   try {
-    content = readFileSync(file, 'utf8')
+    const loaded = reader === undefined ? readFileSync(file, 'utf8') : reader(file)
+    if (loaded === undefined) return undefined
+    content = loaded
   } catch (error) {
     if ((error as NodeJS.ErrnoException | null)?.code === 'ENOENT') return undefined
     throw new Error(`${binName}: failed to read patches ${file}: ${String(error)}`)
@@ -293,12 +330,19 @@ export function loadOptionalPatches(binName: string, file: string): PatchOptions
  * is a misconfiguration, not "no overlay".
  * @param binName - the diagnostic prefix on the thrown error.
  * @param file - absolute path of the overlay file.
+ * @param reader - optional source for already validated file bytes.
  * @returns the parsed patch list.
  */
-export function loadOverlayPatches(binName: string, file: string): PatchOptions[] {
+export function loadOverlayPatches(
+  binName: string,
+  file: string,
+  reader?: TextFileReader,
+): PatchOptions[] {
   let content: string
   try {
-    content = readFileSync(file, 'utf8')
+    const loaded = reader === undefined ? readFileSync(file, 'utf8') : reader(file)
+    if (loaded === undefined) throw new Error('file does not exist')
+    content = loaded
   } catch (error) {
     throw new Error(`${binName}: failed to read overlay ${file}: ${String(error)}`)
   }

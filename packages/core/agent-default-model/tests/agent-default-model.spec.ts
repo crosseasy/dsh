@@ -19,7 +19,12 @@ class MemorySettings extends SettingsProvider {
     return Promise.resolve(structuredClone(this.doc))
   }
 
-  protected persist(ns: SettingsNamespace, section: Record<string, unknown>): Promise<void> {
+  protected persist(
+    ns: SettingsNamespace,
+    section: Record<string, unknown>,
+    assertRevision: () => void,
+  ): Promise<void> {
+    assertRevision()
     this.doc = { ...this.doc, [ns]: structuredClone(section) }
     return Promise.resolve()
   }

@@ -3904,6 +3904,13 @@ importers:
         version: link:../../runtime-diagnostics/invariants
 
   packages/curated/curated-bench:
+    dependencies:
+      '@deepseek-ai/dsh-curated-policy':
+        specifier: workspace:^
+        version: link:../curated-policy
+      '@deepseek-ai/dsh-curated-profiles':
+        specifier: workspace:^
+        version: link:../curated-profiles
     devDependencies:
       '@deepseek-ai/cordis':
         specifier: workspace:^
@@ -3952,6 +3959,9 @@ importers:
       '@deepseek-ai/cordis-plugin-include':
         specifier: workspace:^
         version: link:../../../vendor/include
+      '@deepseek-ai/dsh':
+        specifier: workspace:^
+        version: link:../../../apps/cli
       '@deepseek-ai/dsh-app-boot':
         specifier: workspace:^
         version: link:../../boot/app-boot

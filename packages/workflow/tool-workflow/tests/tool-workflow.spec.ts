@@ -3,7 +3,7 @@ import { Context } from '@deepseek-ai/cordis'
 import Loader from '@deepseek-ai/cordis-plugin-loader'
 import SystemPrompt from '@deepseek-ai/dsh-system-prompt'
 import ToolRuntime, { TOOL_ABORTED_BEFORE_DISPATCH } from '@deepseek-ai/dsh-tools'
-import type { ToolExecutionResult, ToolExecutionToken } from '@deepseek-ai/dsh-tools'
+import type { ToolExecutionResult, ToolExecutionToken, ToolRunContext } from '@deepseek-ai/dsh-tools'
 import type { Agent } from '@deepseek-ai/dsh-agent'
 import { WorkflowRunId, WorkflowEngine } from '@deepseek-ai/dsh-workflow'
 import type {
@@ -102,6 +102,25 @@ function execute(ctx: Context, args: unknown, extra?: {
     ...extra?.signal ? { signal: extra.signal } : {},
     ...extra?.parent ? { parent: extra.parent } : {},
   })
+}
+
+function directExecution(
+  args: unknown,
+  parent: Agent,
+  signal: AbortSignal,
+): ToolRunContext {
+  const callId = CallId('workflow-direct')
+  return {
+    callId,
+    rootCallId: callId,
+    name: 'workflow',
+    arguments: args,
+    agent: parent,
+    signal,
+    token: Symbol('workflow-direct') as ToolExecutionToken,
+    deferContext() {},
+    concludeTurn() {},
+  }
 }
 
 describe('dsh-tool-workflow', () => {
@@ -352,6 +371,20 @@ describe('dsh-tool-workflow', () => {
     expect(engine.disposed).toBe(0)
   })
 
+  it('rejects a pre-aborted signal in the consumer before workflow start', async () => {
+    const { ctx, engine, parent } = await setup()
+    const controller = new AbortController()
+    controller.abort()
+    const args = { script: SCRIPT, meta: META }
+    const tool = ctx.tools.get('workflow')!
+
+    await expect(tool.execute(args, directExecution(args, parent, controller.signal)))
+      .rejects.toThrow('workflow parent step already aborted')
+    expect(engine.requests).toHaveLength(0)
+    expect(engine.cancels).toHaveLength(0)
+    expect(engine.disposed).toBe(0)
+  })
+
   it('cancels the run when exec.signal aborts during synchronous start', async () => {
     const { ctx, engine, parent } = await setup()
     const controller = new AbortController()
@@ -363,6 +396,24 @@ describe('dsh-tool-workflow', () => {
     expect(engine.cancels).toEqual(['parent step aborted'])
     const result = await pending
     expect(result.isError).toBe(true)
+    expect(engine.disposed).toBe(1)
+  })
+
+  it('forwards a reentrant abort during listener installation to run.cancel() at most once', async () => {
+    const { ctx, engine, parent } = await setup()
+    const controller = new AbortController()
+    const signal = controller.signal
+    const addEventListener = signal.addEventListener.bind(signal)
+    vi.spyOn(signal, 'addEventListener').mockImplementation((type, listener, options) => {
+      addEventListener(type, listener, options)
+      if (type === 'abort') controller.abort()
+    })
+    const args = { script: SCRIPT, meta: META }
+    const tool = ctx.tools.get('workflow')!
+
+    await expect(tool.execute(args, directExecution(args, parent, signal)))
+      .rejects.toThrow('workflow run was cancelled')
+    expect(engine.cancels).toEqual(['parent step aborted'])
     expect(engine.disposed).toBe(1)
   })
 

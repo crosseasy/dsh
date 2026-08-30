@@ -24,13 +24,21 @@
 
 import { createRequire } from 'node:module'
 import {
-  existsSync, lstatSync, mkdirSync, readFileSync, readlinkSync, symlinkSync, unlinkSync, writeFileSync,
+  existsSync,
+  lstatSync,
+  mkdirSync,
+  readFileSync,
+  readlinkSync,
+  symlinkSync,
+  unlinkSync,
+  writeFileSync,
 } from 'node:fs'
 import { basename, dirname, join } from 'node:path'
 import type { EntryOptions } from '@deepseek-ai/cordis-plugin-loader'
 import { applyEntryPatches, type PatchOptions } from '@deepseek-ai/cordis-plugin-include'
 import { resolveDshHome } from '@deepseek-ai/dsh-home-paths'
 import { loadOverlayPatches } from './index.ts'
+import type { TextFileReader } from './index.ts'
 
 /** Directory under the Harness home holding every profile. */
 export const PROFILES_DIR = 'profiles'
@@ -168,7 +176,7 @@ export function initProfile(dir: string, bundles: readonly string[]): void {
 }
 
 /** Ensure `link` is a symlink to `target`, replacing a wrong or dangling link; a real directory throws. */
-function ensureSymlink(link: string, target: string): void {
+function ensureSymlink(link: string, target: string, assertCurrent: () => void): void {
   let stat
   try {
     stat = lstatSync(link)
@@ -184,8 +192,11 @@ function ensureSymlink(link: string, target: string): void {
     if (readlinkSync(link) === target) return
     // unlink deletes the reparse point itself on Windows too; rmSync treats a
     // junction as a directory and throws EISDIR unless recursive.
+    assertCurrent()
     unlinkSync(link)
+    assertCurrent()
   }
+  assertCurrent()
   try {
     symlinkSync(target, link, 'junction')
   } catch (error) {
@@ -199,6 +210,7 @@ function ensureSymlink(link: string, target: string): void {
       throw error
     }
   }
+  assertCurrent()
 }
 
 /**
@@ -219,11 +231,20 @@ function ensureSymlink(link: string, target: string): void {
  * reused (dangling links are invisible to resolution).
  * @param installAnchor - absolute path of the dsh app's package.json.
  * @param home - the Harness home; defaults to {@link resolveDshHome}.
+ * @param assertCurrent - optional caller-owned identity check run immediately
+ * before and after every filesystem mutation. It detects replacement but
+ * cannot make Node's path-based mutations descriptor-relative.
  */
-export function healProfilesModuleFallback(installAnchor: string, home: string = resolveDshHome()): void {
+export function healProfilesModuleFallback(
+  installAnchor: string,
+  home: string = resolveDshHome(),
+  assertCurrent: () => void = () => {},
+): void {
   const profilesDir = join(home, PROFILES_DIR)
   const modulesDir = join(profilesDir, 'node_modules')
+  assertCurrent()
   mkdirSync(modulesDir, { recursive: true })
+  assertCurrent()
   const appManifest = JSON.parse(readFileSync(installAnchor, 'utf8')) as ProfileManifest
   const links = new Map<string, string>()
   /* v8 ignore next -- a real app manifest always declares its name */
@@ -249,8 +270,10 @@ export function healProfilesModuleFallback(installAnchor: string, home: string =
   }
   for (const [packageName, target] of links) {
     const link = join(modulesDir, packageName)
+    assertCurrent()
     mkdirSync(dirname(link), { recursive: true })
-    ensureSymlink(link, target)
+    assertCurrent()
+    ensureSymlink(link, target, assertCurrent)
   }
 }
 
@@ -258,13 +281,20 @@ export function healProfilesModuleFallback(installAnchor: string, home: string =
  * Read a profile's manifest.
  * @param binName - the diagnostic prefix on the thrown error.
  * @param dir - the profile directory.
+ * @param reader - optional source for already validated profile bytes.
  * @returns the parsed manifest.
  */
-export function readProfileManifest(binName: string, dir: string): ProfileManifest {
+export function readProfileManifest(
+  binName: string,
+  dir: string,
+  reader?: TextFileReader,
+): ProfileManifest {
   const path = join(dir, 'package.json')
   let raw: string
   try {
-    raw = readFileSync(path, 'utf8')
+    const loaded = reader === undefined ? readFileSync(path, 'utf8') : reader(path)
+    if (loaded === undefined) throw new Error('file does not exist')
+    raw = loaded
   } catch (error) {
     throw new Error(`${binName}: failed to read profile manifest ${path}: ${String(error)}`)
   }
@@ -365,12 +395,14 @@ export function resolveBundleDir(
  * @param home - the Harness home; defaults to {@link resolveDshHome}.
  * @param options - `userLayer: false` skips reading `cordis.patch.yml`, so a
  * bundles-only consumer (`--dump-default-config`, a recovery diagnostic)
- * cannot fail on a broken user layer.
+ * cannot fail on a broken user layer. `profileFileReader` supplies bytes
+ * already bound to validated profile files; bundle files still use ordinary
+ * installation-first path reads.
  * @returns the loaded profile (empty `patches` when the user layer is skipped).
  */
 export function loadProfile(
   binName: string, name: string, installAnchor: string, home: string = resolveDshHome(),
-  options: { userLayer?: boolean } = {},
+  options: { userLayer?: boolean; profileFileReader?: TextFileReader } = {},
 ): Profile {
   const dir = resolveProfileDir(name, home)
   if (!existsSync(join(dir, 'package.json'))) {
@@ -382,7 +414,11 @@ export function loadProfile(
     }
     initProfile(dir, template)
   }
-  const manifest = normalizeShippedProfile(name, dir, readProfileManifest(binName, dir))
+  const manifest = normalizeShippedProfile(
+    name,
+    dir,
+    readProfileManifest(binName, dir, options.profileFileReader),
+  )
   // A hand-written profile manifest may omit the dsh section entirely.
   const bundles = manifest.dsh?.profile?.bundles ?? []
   const layers = bundles.map((packageName): ProfileLayer => {
@@ -396,8 +432,9 @@ export function loadProfile(
     return { packageName, packageDir, patchPath, patches: loadOverlayPatches(binName, patchPath) }
   })
   const patchPath = join(dir, PROFILE_PATCH_FILENAME)
-  const patches = options.userLayer !== false && existsSync(patchPath)
-    ? loadOverlayPatches(binName, patchPath)
+  const patches = options.userLayer !== false
+    && (options.profileFileReader !== undefined || existsSync(patchPath))
+    ? loadOverlayPatches(binName, patchPath, options.profileFileReader)
     : []
   return { name, dir, layers, patchPath, patches }
 }

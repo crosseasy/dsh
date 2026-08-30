@@ -17,6 +17,8 @@
     "website"
   ],
   "scripts": {
+    "audit-curated-candidates": "tsx scripts/audit-curated-candidates.ts",
+    "verify-curated-activation-evidence": "tsx scripts/verify-curated-activation-evidence.ts",
     "build": "tsx scripts/build.ts",
     "build:official": "tsx scripts/build.ts --profile official",
     "build:lib": "npm run build:lib:host && npm run build:lib:client",

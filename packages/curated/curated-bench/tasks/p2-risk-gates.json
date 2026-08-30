@@ -36,20 +36,56 @@
     }
   },
   "failureInjection": [
-    { "id": "search-timeout", "capability": "web-search", "expected": "fail-closed-or-smoke-success" },
-    { "id": "model-429", "capability": "llm-fallbacks", "expected": "fail-closed-or-smoke-success" },
-    { "id": "browser-crash", "capability": "browser-computer-use", "expected": "fail-closed-or-smoke-success" },
-    { "id": "sqlite-lock", "capability": "memory", "expected": "fail-closed-or-smoke-success" },
-    { "id": "permission-denied-file", "capability": "permission-policy", "expected": "fail-closed-or-smoke-success" },
-    { "id": "illegal-patch", "capability": "profile-composition", "expected": "fail-closed" },
-    { "id": "network-offline", "capability": "supply-chain-monitoring", "expected": "fail-closed-or-smoke-success" },
-    { "id": "plugin-init-exception", "capability": "multi-agent-orchestration", "expected": "fail-closed-or-smoke-success" }
+    { "id": "search-timeout", "capability": "web-search", "acceptableRuntimeOutcomes": ["fail-closed", "recovered"], "status": "pending", "runtimeOutcome": null },
+    { "id": "model-429", "capability": "llm-fallbacks", "acceptableRuntimeOutcomes": ["fail-closed", "recovered"], "status": "pending", "runtimeOutcome": null },
+    { "id": "browser-crash", "capability": "browser-computer-use", "acceptableRuntimeOutcomes": ["fail-closed", "recovered"], "status": "pending", "runtimeOutcome": null },
+    { "id": "sqlite-lock", "capability": "memory", "acceptableRuntimeOutcomes": ["fail-closed", "recovered"], "status": "pending", "runtimeOutcome": null },
+    { "id": "permission-denied-file", "capability": "permission-policy", "acceptableRuntimeOutcomes": ["fail-closed", "recovered"], "status": "pending", "runtimeOutcome": null },
+    { "id": "illegal-patch", "capability": "profile-composition", "acceptableRuntimeOutcomes": ["fail-closed"], "status": "pending", "runtimeOutcome": null },
+    { "id": "network-offline", "capability": "supply-chain-monitoring", "acceptableRuntimeOutcomes": ["fail-closed", "recovered"], "status": "pending", "runtimeOutcome": null },
+    { "id": "plugin-init-exception", "capability": "multi-agent-orchestration", "acceptableRuntimeOutcomes": ["fail-closed", "recovered"], "status": "pending", "runtimeOutcome": null }
   ],
   "abComparisons": [
-    { "capability": "memory", "primary": "dsh-memento", "alternative": "dsh-mneme", "scale": { "days": 7, "facts": 200, "conflictUpdates": 20, "deletes": 20 } },
-    { "capability": "browser-computer-use", "primary": "dsh-computer-use", "alternative": "dsh-tabbit", "scale": { "webTasks": 50 } },
-    { "capability": "mcp-management", "primary": "dsh-mcp-panel", "alternative": "dsh-mcp-manager", "scale": { "scenarios": ["oauth", "static-token", "service-error", "profile-write", "rollback"] } },
-    { "capability": "cost-metering", "primary": "dsh-cost-meter", "alternative": "TokenLedger", "scale": { "input": "fixed-request-log" } }
+    {
+      "id": "memento-vs-mneme",
+      "status": "pending",
+      "capability": "memory",
+      "primary": "dsh-memento",
+      "alternative": "dsh-mneme",
+      "scale": { "days": 7, "facts": 200, "conflictUpdates": 20, "deleteRequests": 20, "repetitionsPerTask": 5 },
+      "statistics": { "mean": true, "p50": true, "p95": true, "failureDistribution": true },
+      "nonCompensableThresholds": ["security-correctness-below-95", "data-loss-detected", "rollback-impossible", "startup-failure-rate-above-1", "critical-success-rate-drop"]
+    },
+    {
+      "id": "computer-use-vs-tabbit",
+      "status": "pending",
+      "capability": "browser-computer-use",
+      "primary": "dsh-computer-use",
+      "alternative": "dsh-tabbit",
+      "scale": { "webTasks": 50, "repetitionsPerTask": 5 },
+      "statistics": { "mean": true, "p50": true, "p95": true, "failureDistribution": true },
+      "nonCompensableThresholds": ["security-correctness-below-95", "data-loss-detected", "rollback-impossible", "startup-failure-rate-above-1", "critical-success-rate-drop"]
+    },
+    {
+      "id": "mcp-panel-vs-mcp-manager",
+      "status": "pending",
+      "capability": "mcp-management",
+      "primary": "dsh-mcp-panel",
+      "alternative": "dsh-mcp-manager",
+      "scale": { "scenarios": ["oauth", "static-token", "service-error", "profile-write", "rollback"], "repetitionsPerTask": 5 },
+      "statistics": { "mean": true, "p50": true, "p95": true, "failureDistribution": true },
+      "nonCompensableThresholds": ["security-correctness-below-95", "data-loss-detected", "rollback-impossible", "startup-failure-rate-above-1", "critical-success-rate-drop"]
+    },
+    {
+      "id": "cost-meter-vs-tokenledger",
+      "status": "pending",
+      "capability": "cost-metering",
+      "primary": "dsh-cost-meter",
+      "alternative": "TokenLedger",
+      "scale": { "input": "fixed-request-log", "repetitionsPerTask": 5, "subsets": ["pricing", "cache-tokens", "timezone", "quota"] },
+      "statistics": { "mean": true, "p50": true, "p95": true, "failureDistribution": true },
+      "nonCompensableThresholds": ["security-correctness-below-95", "data-loss-detected", "rollback-impossible", "startup-failure-rate-above-1", "critical-success-rate-drop"]
+    }
   ],
   "canary": {
     "status": "pending",
@@ -57,11 +93,14 @@
     "minimumTasks": 100,
     "rolloutPercentages": [10, 30, 100],
     "rollbackLines": [
+      "security-correctness-below-95",
+      "data-loss-detected",
+      "rollback-impossible",
       "startup-failure-rate-above-1",
+      "critical-success-rate-drop",
       "first-token-p95-regression",
       "prompt-schema-token-regression",
-      "cost-regression-without-success-gain",
-      "security-or-data-boundary-violation"
+      "cost-regression-without-success-gain"
     ]
   }
 }

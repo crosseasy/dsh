@@ -1,23 +1,56 @@
 {
-  "schemaVersion": 1,
+  "schemaVersion": 2,
   "source": "packages/curated/curated-policy/policy/plugin-allowlist.yaml",
-  "generatedAt": "2026-08-25",
+  "generatedAt": "2026-08-27",
   "summary": {
     "candidateCount": 37,
-    "activeCount": 13,
-    "rejectedCount": 23,
+    "activeCount": 0,
+    "rejectedCount": 37,
     "priorities": {
       "P0": 10,
       "P1": 16,
       "P2": 11
     },
     "admissionTiers": {
-      "default": 13,
-      "scenario": 1,
+      "default": 0,
+      "scenario": 0,
       "experimental": 0,
-      "rejected": 23
+      "rejected": 37
     },
+    "sourceContentSha256ByCandidate": {
+      "dsh-agent-team-gui": "1fa83ba2e1b638089f82ffb52527bba630127c1bd4f0076dd9c7cabbb20d999d",
+      "dsh-background-agents": "c5910d771b2a1eea8faf14ed5e88719da91f54f3ff4fc54dad1b477c95be9f07",
+      "dsh-better-sidebar": "16530eca80d7a25fce018da18d3ab2e1f3a2a44120fb89f39da2ee9383f0fcd2",
+      "dsh-checkpoint-rewind": "03c437ce36f67762d0f00b5df9243aa2e4a363e523c0c743953d5cf45a3abd27",
+      "dsh-computer-use": "95a18b85e4c5b5097d2095096373bd99705bc26d63eb664c14b0e91ce3dc3f3e",
+      "dsh-config-manager": "b01aecfe0782bbcecd2d5cd60e897d162b79dde0cfe50d8ff6003e6568cdd06b",
+      "dsh-context": "06fa51a9c04a462d7455debd18ba2bcd8e9cbc6dd32753cba1e687ed58722360",
+      "dsh-feishu": "ff0f3da84d88036fbef2f80a936c93e28d4326b9f068b31cce19735e8661fae8",
+      "dsh-llm-fallbacks": "61fd65893d6917c73c366ae5fc2c2480159b2ce56e2ebb9d5ce7a1995a65eacf",
+      "dsh-lsp-actions": "3fa924a6b928633f472f9321fe3b01af4c5f68e5ef452b7098e5471efe61ee58",
+      "dsh-mcp-panel": "8ff0d62a3eddb3857fc324d2c3bb5250048d04d4dca064864b3565fbea6a16eb",
+      "dsh-memento": "5e44a5e6e68c6364b2ebe91bd5ff13df27e71bf45e7f31a718850374ab5b6884",
+      "dsh-permission-rules": "ac562528675cdbaf364856c1adb2785f3b0738a101ccfc578b93007fa4d14652",
+      "dsh-plugin-check": "d0bb42f6664076960df363569f217da833082a9c3412edcbceebaf8deb145295",
+      "dsh-plugin-hub": "dc5ce2b08737a2e1941bcbe581fda063ab63cf3d89d5355cfc98a2b6f40efc87",
+      "dsh-smooth-stream": "1a0322713fafeaccbb77e92fa2673da363676516cde88512b4949b43299573c8",
+      "dsh-toolkit": "4674b31fa798d66629f4fcac7edad917c10e1b68b37a86103178a645747da14b",
+      "dsh-univer-office": "6e1af85f2ba357fbeb6fa4f5adcfba7cc71efa056ef3b1ab2f33ce552f8fc8e6",
+      "dsh-vision-router": "7e6a3492d703fc2ca2adc81f376485b23e8c018e5a227c2522e7bf70db909356",
+      "dsh-web-search-pro": "10f5c774c9eae23337db8e4ecf5a5805243693a057b1074ef8ba639d74d1cd2f",
+      "loongsuite-dsh-plugin": "6bf862e166fc1a3547d8764db2759381b4ee99f4ca9856c4b1ad7c74ed37e893",
+      "plugin-session-export": "da7f8e55285057328909c0db840d617aa8cf7e90a647d0bc7f5e79e15d985480",
+      "upstream-radar": "211f62a59d2d28bef03e76728412a341b5c35890a6e58ce8f143d59fd18fc0b6"
+    },
+    "treeSha256ByCandidate": {},
+    "runtimeDependencyClosureSha256ByCandidate": {},
     "defaultProfile": "web-curated",
-    "snapshotCommitSource": "docs/plugin/superpowers/00-背景与目标.md"
+    "snapshotCommitSource": "docs/plugin/superpowers/00-背景与目标.md",
+    "deliveryStatuses": {
+      "active": 0,
+      "qualified": 6,
+      "pending": 6,
+      "rejected": 25
+    }
   }
 }

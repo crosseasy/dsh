@@ -24,7 +24,7 @@ Node 24 消费方任务采用单个包含 10 道门禁的模式，而非由 shel
 
 ## 验证
 
-[scripts/run-gates.spec.ts](../../../../scripts/run-gates.spec.ts) 在执行器运行前拒绝无效图，锁定必须通过与只等结算两种顺序，锁定 hygiene、消费方与原生 Windows 清单及其失败语义，要求独立运行的 hygiene 产物消费方依赖其构建，通过真实子进程验证信号终止，并证明流式输出会立即显示且不被缓冲。[scripts/publint-all.spec.ts](../../../../scripts/publint-all.spec.ts) 在下游产物消费方运行前拒绝缺失的公开导出。
+[scripts/run-gates.spec.ts](../../../../scripts/run-gates.spec.ts) 在执行器运行前拒绝无效图，锁定必须通过与只等结算两种顺序，锁定 hygiene、消费方与原生 Windows 清单及其失败语义，并通过真实子进程验证信号终止。其进程冒烟测试会在无构建产物与已有构建产物时运行完整 hygiene 图，要求每个产物消费方都观察到构建，并保留未知 package 目录失败。该测试集还证明流式输出会立即显示且不被缓冲。[scripts/publint-all.spec.ts](../../../../scripts/publint-all.spec.ts) 在下游产物消费方运行前拒绝缺失的公开导出。
 
 ## 曾考虑的替代方案
 

@@ -168,10 +168,8 @@ const packageFileExtras: Readonly<Record<string, readonly string[]>> = {
     'policy/permission-rules.yaml',
   ],
   '@deepseek-ai/dsh-curated-scripts': [
-    'preflight.mjs',
-    'verify-lock.mjs',
-    'smoke-profile.mjs',
-    'compare-benchmark.mjs',
+    'lib/bin.js',
+    'lib/staging-worker.js',
   ],
   '@deepseek-ai/dsh-curated-bench': [
     'manifests/**/*.json',
@@ -196,7 +194,11 @@ function expectedDshPackageFiles(manifest: PackageManifest): readonly string[] {
     // Every package publishes its invariant ownership companion as a separate
     // bundle; the package-invariant gate validates the companion itself.
     'lib/invariant.js',
-    ...manifest.bin ? ['lib/bin.js'] : [],
+    ...typeof manifest.bin === 'string'
+      ? [manifest.bin.replace(/^\.\//u, '')]
+      : manifest.bin
+        ? [...new Set(Object.values(manifest.bin).map(path => path.replace(/^\.\//u, '')))]
+        : [],
     ...manifest.exports?.['./worker'] ? ['lib/worker.cjs'] : [],
     // UI plugin packages ship their browser bundle beside the node lib
     // (single-artifact ruling: dist/ retired, ./client resolves lib/client.js).
@@ -296,11 +298,10 @@ function checkWorkspace({ dir, manifest }: WorkspaceManifest): string[] {
     // package, and the repository field is how a consumer finds the source of
     // the package it installed.
     //
-    // Access is per release sequence, not per scope: the vendored framework and
-    // the Landlock packages publish publicly because outside consumers install
-    // them, while the dsh family stays restricted until its own sequence goes
-    // public. A mixed scope is why no publish path passes `--access` — one flag
-    // cannot serve both, so each packed manifest decides
+    // Access belongs to each manifest, not the scope or release family. Every
+    // current release member is public so its complete install closure remains
+    // available without scope credentials. No publish path passes `--access`,
+    // because that would override the packed manifest
     // ([rationale](../.agents/notes/implemented/process/2026-08-13-public-vendor-and-native-sequences.md)).
     if (manifest.private === true) {
       errors.push(`${label}: release member must not set "private": true`)

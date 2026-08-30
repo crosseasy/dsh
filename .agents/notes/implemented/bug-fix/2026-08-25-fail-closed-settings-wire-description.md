@@ -10,7 +10,7 @@ Settings RPC served every registered namespace, but its redactor traversed only 
 
 ## Decision
 
-`SettingsProvider.describeForWire(ns?)` is the only path from a registered namespace to an RPC descriptor. It inspects the complete live Schemastery graph before serialization, redacts resolved, `base`, and `user` values, sanitizes defaults in the serialized schema through the same traversal, and emits the `{ path, set }` secret sidecar. `describe()` remains the verbatim same-process API.
+`SettingsProvider.describeForWire(ns?)` is the only path from a registered namespace to an RPC descriptor. It inspects the complete live Schemastery graph before serialization, redacts resolved, `base`, and `user` values, sanitizes defaults in the serialized schema through the same traversal, and emits the `{ path, set }` secret sidecar. An absent secret and an empty secret dict report `set: false`; every other present secret reports `set: true`. `describe()` remains the verbatim same-process API.
 
 Direct secret leaves under `object`, `dict`, and `array` are supported. A secret under `union` or `intersect`, any `transform`, malformed relation metadata, and every unsupported node reject with fixed text that contains no node metadata or value. Union and intersection nodes without secret descendants remain available for ordinary enum and composition schemas.
 

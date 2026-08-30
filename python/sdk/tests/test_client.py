@@ -692,6 +692,61 @@ for line in sys.stdin:
         assert not hasattr(client, "respond_error")
 
 
+def test_client_keeps_request_pending_after_id_only_frame(tmp_path: Path) -> None:
+    script = tmp_path / "fake_bridge.py"
+    script.write_text(
+        """
+import json
+import sys
+
+for line in sys.stdin:
+    msg = json.loads(line)
+    if msg.get("method") == "initialize":
+        print(json.dumps({"jsonrpc": "2.0", "id": msg["id"]}), flush=True)
+        print(json.dumps({"jsonrpc": "2.0", "id": msg["id"], "result": {"serverInfo": {"name": "fake-dsh"}}}), flush=True)
+    elif msg.get("method") == "shutdown":
+        print(json.dumps({"jsonrpc": "2.0", "id": msg["id"], "result": {}}), flush=True)
+        break
+""".strip()
+    )
+
+    with HarnessClient(
+        HarnessConfig(launch_args_override=(sys.executable, str(script)))
+    ) as client:
+        response = client.initialize(provider="deepseek-official", cwd="/workspace", model="dsagent")
+
+    assert response.serverInfo.name == "fake-dsh"
+
+
+def test_client_ignores_boolean_id_request_before_valid_response(tmp_path: Path) -> None:
+    script = tmp_path / "fake_bridge.py"
+    script.write_text(
+        """
+import json
+import sys
+
+for line in sys.stdin:
+    msg = json.loads(line)
+    if msg.get("method") == "initialize":
+        print(json.dumps({"jsonrpc": "2.0", "id": msg["id"], "result": {"serverInfo": {"name": "fake-dsh"}}}), flush=True)
+    elif msg.get("method") == "session/prompt":
+        print(json.dumps({"jsonrpc": "2.0", "id": True, "method": "session.status", "params": {"sessionId": "injected", "status": "idle"}}), flush=True)
+        print(json.dumps({"jsonrpc": "2.0", "id": msg["id"], "result": {"messageId": "message-1"}}), flush=True)
+    elif msg.get("method") == "shutdown":
+        print(json.dumps({"jsonrpc": "2.0", "id": msg["id"], "result": {}}), flush=True)
+        break
+""".strip()
+    )
+
+    with HarnessClient(
+        HarnessConfig(launch_args_override=(sys.executable, str(script)))
+    ) as client:
+        message_id = client.session_prompt("main", [{"type": "text", "text": "hello"}])
+        assert client._notifications.qsize() == 0
+
+    assert message_id == "message-1"
+
+
 def test_client_ignores_non_json_stdout_lines(tmp_path: Path) -> None:
     script = tmp_path / "fake_bridge.py"
     script.write_text(

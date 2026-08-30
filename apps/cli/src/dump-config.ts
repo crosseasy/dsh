@@ -28,7 +28,21 @@ const NAME = 'dsh'
  * @param patches - `--patch` overlay paths, in argv order.
  */
 export function runDumpConfig(profile: string, defaultOnly: boolean, patches: readonly string[]): void {
-  const loaded = prepareProfile(profile, !defaultOnly)
+  const homePatchFile = homePatchPath()
+  const homePatches = defaultOnly ? undefined : loadOptionalPatches(NAME, homePatchFile)
+  const overlayLayers = defaultOnly
+    ? []
+    : patches.map((file) => {
+      const absolute = resolve(file)
+      return { absolute, patches: loadOverlayPatches(NAME, absolute) }
+    })
+  const loaded = prepareProfile(profile, {
+    userLayer: !defaultOnly,
+    additionalUserLayers: [
+      ...homePatches === undefined ? [] : [homePatches],
+      ...overlayLayers.map(layer => layer.patches),
+    ],
+  })
   const layers: ConfigDumpLayer[] = loaded.layers.map(layer => ({
     label: layer.packageName,
     patches: layer.patches,
@@ -37,14 +51,11 @@ export function runDumpConfig(profile: string, defaultOnly: boolean, patches: re
     if (existsSync(loaded.patchPath)) {
       layers.push({ label: loaded.patchPath, patches: loaded.patches })
     }
-    const homePatchFile = homePatchPath()
-    const homePatches = loadOptionalPatches(NAME, homePatchFile)
     if (homePatches !== undefined) {
       layers.push({ label: homePatchFile, patches: homePatches })
     }
-    for (const file of patches) {
-      const absolute = resolve(file)
-      layers.push({ label: absolute, patches: loadOverlayPatches(NAME, absolute) })
+    for (const layer of overlayLayers) {
+      layers.push({ label: layer.absolute, patches: layer.patches })
     }
   }
   // The dump anchors on the same empty root file the boot includes.

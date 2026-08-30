@@ -11,6 +11,12 @@
     },
     {
       "path": "../../runtime-diagnostics/invariants"
+    },
+    {
+      "path": "../curated-policy"
+    },
+    {
+      "path": "../curated-profiles"
     }
   ]
 }

@@ -23,9 +23,9 @@
 // (the plugin-row path discards the ReplayHandle; the direct install keeps
 // assertConsumed for the teardown fixture-consumption check).
 import { existsSync, readFileSync } from 'node:fs'
-import { mkdir, mkdtemp, readFile, readdir, realpath, rm, writeFile } from 'node:fs/promises'
+import { cp, mkdir, mkdtemp, readFile, readdir, realpath, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
-import { join } from 'node:path'
+import { dirname, join } from 'node:path'
 import { pathToFileURL } from 'node:url'
 import type { Page } from 'playwright'
 import { expect } from 'vitest'
@@ -200,6 +200,12 @@ export interface LaunchOptions {
    */
   extraOverlayPath?: string
   /**
+   * Test-only packages copied into the isolated profile module fallback before
+   * Loader boot. Each package may contribute both a Host half and `dsh.client`
+   * bundle without entering the shipped workspace dependency graph.
+   */
+  fixturePackages?: readonly { name: string; sourceDir: string }[]
+  /**
    * Replay fixture (session.jsonl) served by the inserted dsh-llm-replay row
    * in replay/refresh modes; ignored in record mode (the real adapter
    * answers). Omit for scenarios issuing no model calls — a stray stream then
@@ -317,6 +323,9 @@ async function cleanupScaffoldWorld(ctx: Context, workspaceCwd: string, persiste
  * @returns the running scaffold.
  */
 export async function launchWebScaffold(options: LaunchOptions = {}): Promise<WebScaffold> {
+  if (options.harnessHome !== undefined && (options.fixturePackages?.length ?? 0) > 0) {
+    throw new Error('web e2e scaffold: fixturePackages require a scaffold-owned harnessHome')
+  }
   requireDist()
   const mode = webSnapshotMode()
   const browserHost = options.remoteAuthority ?? '127.0.0.1'
@@ -528,6 +537,11 @@ export async function launchWebScaffold(options: LaunchOptions = {}): Promise<We
     // harness home, with bare plugin names resolving through the flat module
     // fallback the launcher heals under <home>/profiles.
     healProfilesModuleFallback(INSTALL_ANCHOR, harnessHome)
+    for (const fixture of options.fixturePackages ?? []) {
+      const destination = join(harnessHome, 'profiles', 'node_modules', ...fixture.name.split('/'))
+      await mkdir(dirname(destination), { recursive: true })
+      await cp(fixture.sourceDir, destination, { recursive: true, errorOnExist: true, force: false })
+    }
     const profileDir = join(harnessHome, 'profiles', 'scaffold')
     await mkdir(profileDir, { recursive: true })
     const rootConfig = join(profileDir, 'cordis.yml')

@@ -6,9 +6,11 @@ The curated plugin layer is a governance layer for audited third-party bundle ca
 
 `ctx.curatedPolicy` exposes read-only catalog queries for plugins and commands that need candidate facts, conflict rules, or permission seeds. The service does not install packages, run third-party lifecycle scripts, register model-facing tools, write prompt text, or append session events; profile materialization and CLI reporting are owned by the sibling curated packages.
 
-Policy loading computes admission from eight bounded dimensions, requires active candidates to have verified Node evidence and no core patch, treats the checked-in provider/fallback table as authoritative, and rejects secret-like metadata. Permission rules are policy data: the curated commands validate the resolved permission plugin's fail-closed configuration, while that plugin remains responsible for tool authorization.
+Policy loading computes admission from eight bounded dimensions, requires canonical GitHub repository URLs and normalized source-content digests for reachable commits, requires active candidates to have verified Node evidence, no core patch, and complete runtime activation evidence keyed by exactly their target profiles, treats the checked-in provider/fallback table as authoritative, and rejects secret-like metadata. The [curated benchmark evidence directory](../../packages/curated/curated-bench/evidence/README.md) owns activation records and result artifacts. The documentation gate accepts only repository-owned tracked stage-zero regular blobs there, traverses each profile value, requires all five records to name that map key, parses each record against the operation schema, verifies its candidate and operation identities plus successful observed result, rejects secret-bearing record or artifact argv including URL userinfo without echoing arguments, and checks the separately referenced artifact path and SHA-256 against the repository. Package-authored, ignored, and untracked files cannot authorize activation. Permission rules are policy data: the curated commands validate the resolved permission plugin's fail-closed configuration, while that plugin remains responsible for tool authorization.
 
-The intended `web-curated` baseline contains 12 candidates; its current admissible active baseline contains ten. `dsh-context` lacks Node compatibility evidence, and `dsh-config-manager` lacks profile-level dry-run or execution-confirmation control. `web-research` materializes the ten-candidate baseline plus `plugin-session-export`. Benchmark inputs preserve comparable task/attempt and environment requirements plus digest-verified embedded rollback snapshots; the checked-in search, memory, browser, MCP, fault, and canary campaigns remain pending.
+The intended `web-curated` baseline contains 12 candidates. Six have static/install qualification evidence, but none has a keyless assembled runnable snapshot of its pinned artifact, so the runtime-active count is zero; web search also lacks its required `@anweat/dsh-browser` bundle/runtime dependency. All five curated templates contain only installation-owned foundation bundles. Activation requires the real pinned artifact, a keyless assembled snapshot, every required dependency bundle, and retained install, enable, restart, disable or uninstall evidence. E3/E4, A/B, fault, and canary evidence remains pending.
+
+Every curated profile disables dependency lifecycle scripts. Normal `dsh` startup and config dump require exact template and catalog composition, safe package-manager state, and static user overrides that introduce no plugin or group rows. Curated plugin help and listing are generated read-only from the checked-in template. Installation is cross-process serialized, runs offline in a private staging home, validates generated files, both pnpm lockfiles, bundle resolution, and admission, and activates by directory rename only after validation; failure preserves or restores the previous live profile. Managed observed admission additionally rejects dependency transformations and requires each root and installed lock closure to match the candidate's catalog digest.
 
 Source: [`packages/curated/curated-policy/src/index.ts`](../../packages/curated/curated-policy/src/index.ts)
 
@@ -48,6 +50,48 @@ interface PermissionRule {
 }
 ```
 
+`CuratedRuntimeEvidenceFile`, `CuratedRuntimeActivationEvidenceSet`, and `CuratedRuntimeActivationEvidence` bind each target profile's activation to checked-in files.
+
+```ts type-equiv
+/** One repository-owned tracked regular blob that establishes runtime activation evidence. */
+interface CuratedRuntimeEvidenceFile {
+  /** Safe repository-relative POSIX path below the curated benchmark evidence directory. */
+  readonly path: string
+  /** SHA-256 of the checked-in file bytes. */
+  readonly sha256: string
+}
+```
+
+```ts type-equiv
+/** Complete secret-free operation evidence for one candidate target profile. */
+interface CuratedRuntimeActivationEvidenceSet {
+  /** Keyless assembled snapshot produced from the pinned candidate artifact. */
+  readonly keylessAssembledSnapshot: CuratedRuntimeEvidenceFile
+  /** Runtime bundles exercised by the assembled snapshot. */
+  readonly requiredRuntimeBundles: readonly string[]
+  /** Installation evidence. */
+  readonly install: CuratedRuntimeEvidenceFile
+  /** Enablement evidence. */
+  readonly enable: CuratedRuntimeEvidenceFile
+  /** Restart evidence. */
+  readonly restart: CuratedRuntimeEvidenceFile
+  /** Disable or uninstall evidence. */
+  readonly disableOrUninstall: CuratedRuntimeEvidenceFile
+}
+```
+
+```ts type-equiv
+/** Complete runtime activation evidence keyed by candidate target profile. */
+type CuratedRuntimeActivationEvidence = Readonly<Record<string, CuratedRuntimeActivationEvidenceSet>>
+```
+
+`CuratedCandidateStatus` is the current delivery state derived from activation, artifact evidence, and blockers.
+
+```ts type-equiv
+/** Current delivery state derived from activation, artifact evidence, and blockers. */
+type CuratedCandidateStatus = 'active' | 'qualified' | 'pending' | 'rejected'
+```
+
 `CuratedCandidate` is the audited plugin record returned by profile queries.
 
 ```ts type-equiv
@@ -83,8 +127,16 @@ interface CuratedCandidate {
   readonly license: string | null
   /** Bundle patch path, or null when missing. */
   readonly bundlePatch: string | null
-  /** Optional SHA-256 digest for the resolved package tarball. */
-  readonly tarballSha256?: string
+  /** SHA-256 of the audited commit's domain-separated, path-sorted Git mode, type, path, and blob records. */
+  readonly sourceContentSha256?: string
+  /** SHA-256 digest of sorted installed relative paths and file bytes. */
+  readonly treeSha256?: string
+  /** SHA-256 digest of the complete sorted runtime dependency lock identities. */
+  readonly runtimeDependencyClosureSha256?: string
+  /** Exact npm version used for installation instead of the audited Git source. */
+  readonly npmVersion?: string
+  /** Exact npm registry integrity for `npmVersion`. */
+  readonly npmIntegrity?: string
   /** Count of discovered test files. */
   readonly testFiles: number
   /** Count of discovered CI workflows. */
@@ -93,11 +145,13 @@ interface CuratedCandidate {
   readonly installScripts: Readonly<Record<string, string>>
   /** External runtime or build dependencies named by the candidate. */
   readonly externalDependencies: readonly string[]
+  /** Additional bundle packages required when this candidate runs. */
+  readonly requiredRuntimeBundles?: readonly string[]
   /** Network destinations or classes used by the candidate. */
   readonly networkAccess: readonly string[]
   /** Credential references required or optionally accepted by the candidate. */
   readonly credentials: readonly string[]
-  /** Curated profiles this candidate may appear in. */
+  /** Profiles this candidate may enter when each has complete activation evidence. */
   readonly targetProfiles: readonly string[]
   /** Whether this candidate is eligible for profile activation. */
   readonly active: boolean
@@ -113,6 +167,56 @@ interface CuratedCandidate {
   readonly resources?: CuratedCandidateResources
   /** Optional complete profile override required for safe activation. */
   readonly config?: CuratedCandidateConfig
+  /** Checked-in activation evidence keyed by target profile. */
+  readonly runtimeActivationEvidence?: CuratedRuntimeActivationEvidence
+}
+```
+
+`BenchmarkSnapshotReference`, `BenchmarkBuildIdentity`, and `BenchmarkMeasurementIdentity` bind completed comparisons to immutable inputs and matching execution implementations.
+
+```ts type-equiv
+/** Content-addressed reference to one benchmark lock or profile snapshot. */
+interface BenchmarkSnapshotReference {
+  /** Safe relative POSIX path resolved from the benchmark fixture directory. */
+  readonly path: string
+  /** SHA-256 of the referenced snapshot's canonical JSON. */
+  readonly sha256: string
+}
+```
+
+```ts type-equiv
+/** DSH executable and source identity that produced benchmark records. */
+interface BenchmarkBuildIdentity {
+  /** Exact `@deepseek-ai/dsh` package version. */
+  readonly dshVersion: string
+  /** Full lowercase Git revision for the source tree. */
+  readonly sourceRevision: string
+  /** Canonical SHA-256 of the complete source tree used by the build. */
+  readonly sourceTreeSha256: string
+  /** Whether uncommitted source changes contributed to the build. */
+  readonly sourceDirty: boolean
+  /** SHA-256 of the executed DSH artifact. */
+  readonly artifactSha256: string
+  /** Exact Node.js version used for execution. */
+  readonly nodeVersion: string
+}
+```
+
+```ts type-equiv
+/** Measurement implementations whose identities must match across a comparison. */
+interface BenchmarkMeasurementIdentity {
+  /** Benchmark producer implementation and version. */
+  readonly producer: string
+  /** Tokenizer implementation, model vocabulary, and version. */
+  readonly tokenizer: string
+  /** Prompt and tool-schema serialization implementation and version. */
+  readonly serialization: string
+  /** Monotonic timing implementation and version. */
+  readonly timing: string
+  /** Provider usage and pricing table identity. */
+  readonly pricing: string
+  /** Scoring rubric implementation and version. */
+  readonly scoring: string
 }
 ```
 
@@ -211,7 +315,7 @@ listPermissionRules(): readonly PermissionRule[]
 /**
  * List active candidates assigned to one profile.
  * @param profileId - Curated profile id.
- * @returns a stable frozen array with shared candidates before scenario-specific candidates.
+ * @returns a stable frozen array in catalog order.
  */
 getProfileCandidates(profileId: string): readonly CuratedCandidate[]
 ```

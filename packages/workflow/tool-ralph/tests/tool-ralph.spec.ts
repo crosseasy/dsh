@@ -8,7 +8,9 @@ import SubagentRuntime from '@deepseek-ai/dsh-subagent'
 import type { SubagentCapabilities, SubagentProvider, SubagentRun, SubagentStartRequest } from '@deepseek-ai/dsh-subagent'
 import SystemPrompt from '@deepseek-ai/dsh-system-prompt'
 import ToolRuntime, { TOOL_ABORTED_BEFORE_DISPATCH } from '@deepseek-ai/dsh-tools'
-import type { ToolExecutionResult } from '@deepseek-ai/dsh-tools'
+import type {
+  ToolExecutionResult, ToolExecutionToken, ToolRunContext,
+} from '@deepseek-ai/dsh-tools'
 import { WorkflowRunId, WorkflowEngine } from '@deepseek-ai/dsh-workflow'
 import type { WorkflowResult, WorkflowRun, WorkflowStartRequest } from '@deepseek-ai/dsh-workflow'
 import * as toolRalph from '../src/index.ts'
@@ -105,6 +107,25 @@ function execute(
     arguments: args,
     ...extra?.agent === undefined ? {} : { agent: extra.agent },
   })
+}
+
+function directExecution(
+  args: unknown,
+  parent: Agent,
+  signal: AbortSignal,
+): ToolRunContext {
+  const callId = CallId('ralph-direct')
+  return {
+    callId,
+    rootCallId: callId,
+    name: 'ralph',
+    arguments: args,
+    agent: parent,
+    signal,
+    token: Symbol('ralph-direct') as ToolExecutionToken,
+    deferContext() {},
+    concludeTurn() {},
+  }
 }
 
 const CONTINUE = {
@@ -297,6 +318,59 @@ describe('dsh-tool-ralph', () => {
     expect('signal' in engine.requests[0]!).toBe(false)
     expect(engine.cancels).toEqual(['parent step aborted'])
     expect(engine.disposed).toBe(1)
+  })
+
+  it('rejects a pre-aborted signal in the consumer before workflow start', async () => {
+    const { ctx, engine, parent } = await setup()
+    const controller = new AbortController()
+    controller.abort()
+    const args = { objective: 'Work.' }
+    const tool = ctx.tools.get('ralph')!
+
+    await expect(tool.execute(args, directExecution(args, parent, controller.signal)))
+      .rejects.toThrow('Ralph parent step already aborted')
+    expect(engine.requests).toHaveLength(0)
+    expect(engine.cancels).toHaveLength(0)
+    expect(engine.disposed).toBe(0)
+  })
+
+  it('forwards a reentrant abort during listener installation to run.cancel() at most once', async () => {
+    const { ctx, engine, parent } = await setup()
+    const controller = new AbortController()
+    const signal = controller.signal
+    const addEventListener = signal.addEventListener.bind(signal)
+    vi.spyOn(signal, 'addEventListener').mockImplementation((type, listener, options) => {
+      addEventListener(type, listener, options)
+      if (type === 'abort') controller.abort()
+    })
+    const args = { objective: 'Work.' }
+    const tool = ctx.tools.get('ralph')!
+
+    await expect(tool.execute(args, directExecution(args, parent, signal)))
+      .rejects.toThrow('Ralph workflow was cancelled')
+    expect(engine.cancels).toEqual(['parent step aborted'])
+    expect(engine.disposed).toBe(1)
+  })
+
+  it('does not return until run disposal reaches quiescence', async () => {
+    const { ctx, engine, parent } = await setup()
+    const barrier = Promise.withResolvers<undefined>()
+    engine.disposeBarrier = barrier.promise
+    const pending = execute(ctx, { objective: 'Work.' }, { agent: parent })
+    await vi.waitFor(() => { expect(engine.requests).toHaveLength(1) })
+    engine.settle({
+      value: { status: 'complete', roundsStarted: 1, report: COMPLETE },
+      stopReason: 'completed',
+      agentsStarted: 1,
+    })
+    let returned = false
+    void pending.then(() => { returned = true })
+    await vi.waitFor(() => { expect(engine.disposed).toBe(1) })
+    expect(returned).toBe(false)
+
+    barrier.resolve(undefined)
+    expect((await pending).isError).toBe(false)
+    expect(returned).toBe(true)
   })
 
   it('does not cancel the run when exec.signal aborts after settlement', async () => {

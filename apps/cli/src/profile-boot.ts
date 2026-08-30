@@ -37,7 +37,7 @@ const SHIPPED_PRESET_ROOT = fileURLToPath(new URL('../config/agent-presets/', im
 import { DSH_LAUNCH_ENVIRONMENT_KEY, type LaunchEnvironmentSnapshot } from '@deepseek-ai/dsh-launch-environment'
 import { provideCmdline } from '@deepseek-ai/dsh-cmdline'
 import { createProcessShutdown, type ProcessShutdown } from './process-shutdown.ts'
-import { ensureCuratedProfile } from './curated-profile.ts'
+import { admitCuratedProfile, isCuratedProfileName, prepareCuratedProfileFiles } from './curated-profile.ts'
 
 const NAME = 'dsh'
 
@@ -83,26 +83,53 @@ export function resolveTelemetryPatch(disabledEnv: string | undefined, hasRow: b
   return { id: TELEMETRY_ROW_ID, disabled: true }
 }
 
+/** Options for loading and admitting one profile before composition. */
+export interface PrepareProfileOptions {
+  /** `false` excludes the profile patch for bundles-only recovery diagnostics. */
+  userLayer?: boolean
+  /** Home and command-line layers above the profile patch. */
+  additionalUserLayers?: readonly (readonly PatchOptions[])[]
+}
+
 /**
- * Load a resolved profile for `name`: heal the shared module fallback,
- * materialize built-in curated profiles when requested, then (re)write the
+ * Load a resolved profile for `name`: materialize and contain built-in
+ * curated profiles before any shared fallback write, heal that fallback, then (re)write the
  * empty root config. The root is always rewritten: the whole
  * composition is patch layers, and the vendored Loader's tree write-back (a
  * plugin self-disposing persists the current tree) can bake composed rows
  * into this file — which would duplicate every bundle insert on the next
  * boot. The file exists on disk only because the Loader needs a real include
  * root to anchor `baseUrl` at the profile directory (the config dump anchors
- * on the same file, so both compose over the identical base).
+ * on the same file, so both compose over the identical base). Curated
+ * preparation guards every fallback mutation with its retained profile
+ * identity and publishes this root from a checked sibling temporary file;
+ * ordinary profiles retain the unguarded legacy behavior.
  * @param name - the profile name.
- * @param userLayer - `false` skips parsing `cordis.patch.yml` (the default dump).
+ * @param options - User-layer loading and curated admission options.
  * @returns the loaded profile.
  */
-export function prepareProfile(name: string, userLayer = true): Profile {
-  healProfilesModuleFallback(INSTALL_ANCHOR)
-  ensureCuratedProfile(name)
-  const profile = loadProfile(NAME, name, INSTALL_ANCHOR, undefined, { userLayer })
-  writeFileSync(join(profile.dir, PROFILE_ROOT_FILENAME), PROFILE_ROOT_CONFIG)
-  return profile
+export function prepareProfile(
+  name: string,
+  options: PrepareProfileOptions = {},
+): Profile {
+  const { userLayer = true, additionalUserLayers = [] } = options
+  const profileFiles = prepareCuratedProfileFiles(name, { userLayer })
+  try {
+    healProfilesModuleFallback(INSTALL_ANCHOR, undefined, profileFiles?.assertCurrent)
+    const profile = loadProfile(NAME, name, INSTALL_ANCHOR, undefined, {
+      userLayer,
+      ...profileFiles === undefined ? {} : { profileFileReader: profileFiles.readFile },
+    })
+    admitCuratedProfile(name, profile, additionalUserLayers, { userLayer }, profileFiles)
+    if (profileFiles === undefined) {
+      writeFileSync(join(profile.dir, PROFILE_ROOT_FILENAME), PROFILE_ROOT_CONFIG)
+    } else {
+      profileFiles.writeRootConfig(PROFILE_ROOT_CONFIG)
+    }
+    return profile
+  } finally {
+    profileFiles?.close()
+  }
 }
 
 /** One profile's patch layers (application order) and the row index of its pre-flag composition. */
@@ -146,9 +173,9 @@ function composeProfile(
   name: string,
   patchFiles: readonly string[],
 ): ComposedProfile {
-  const profile = prepareProfile(name)
   const homePatches = loadOptionalPatches(NAME, homePatchPath()) ?? []
   const overlays = patchFiles.flatMap(file => loadOverlayPatches(NAME, resolve(file)))
+  const profile = prepareProfile(name, { additionalUserLayers: [homePatches, overlays] })
   const bundlePatches = profile.layers.flatMap(layer => layer.patches)
   const rows = new Map<string, EntryOptions>()
   for (const row of composeEntries([bundlePatches, profile.patches, homePatches, overlays])) {
@@ -186,19 +213,15 @@ export interface RunProfileOptions {
 }
 
 /**
- * Re-throw a watcher-setup failure unless a shutdown already owns the tree:
- * a signal aborted this invocation, or an app requested exit (`ctx.appExit`
- * from a fast one-shot) and the root's disposal rejected the in-flight setup
- * await. Either way the failure describes a tree that is exiting as asked,
- * not a broken watch.
+ * Test whether signal shutdown or app-requested root disposal already owns teardown.
  * @param ctx - the booted root context.
  * @param signal - this invocation's signal-shutdown fact.
- * @param error - the setup failure.
+ * @returns whether watcher setup failure belongs to an exiting tree.
  */
-function suppressShutdownError(ctx: Context, signal: AbortSignal, error: unknown): void {
-  if (signal.aborted) return
-  if (ctx.fiber.state !== FiberState.ACTIVE || ctx.get('loader') === undefined) return
-  throw error
+function shutdownOwnsTree(ctx: Context, signal: AbortSignal): boolean {
+  return signal.aborted
+    || ctx.fiber.state !== FiberState.ACTIVE
+    || ctx.get('loader') === undefined
 }
 
 /**
@@ -232,20 +255,39 @@ export async function runProfile(options: RunProfileOptions): Promise<{ ctx: Con
   // above, so a user edit can never displace them. Parsed app arguments are
   // not in here at all — they live in app-provided services that survive a
   // recomposition. BOTH
-  // user files are re-read per generation (the HMR watcher hands us only the
-  // changed file's patches, which one of the reads duplicates — fresh reads
-  // keep the two watchers from stitching in each other's stale copy).
+  // user files are re-read per generation. The home watcher and ordinary
+  // profile watcher also pre-read the changed file; the curated profile
+  // watcher delegates every read here so descriptor validation happens first.
+  // Fresh reads keep the two watchers from stitching in each other's stale copy.
   // Fresh clones per generation: the include pushes `insert` rows into the
   // mounted tree BY REFERENCE and later id-targeted patches mutate those
   // objects in place. Reusing one parsed patch object across applications
   // would bake a user override into the bundle's in-memory insert row, so
   // removing the override could never revert the row to the bundle default.
-  const composeLive = (): PatchOptions[] => structuredClone([
-    ...composed.bundlePatches,
-    ...loadOptionalPatches(NAME, composed.profile.patchPath) ?? [],
-    ...loadOptionalPatches(NAME, homePatchPath()) ?? [],
-    ...composed.overlays,
-  ])
+  const composeLive = (): PatchOptions[] => {
+    const profileFiles = prepareCuratedProfileFiles(options.profile)
+    try {
+      const profilePatches = loadOptionalPatches(
+        NAME,
+        composed.profile.patchPath,
+        profileFiles?.readFile,
+      ) ?? []
+      const homePatches = loadOptionalPatches(NAME, homePatchPath()) ?? []
+      admitCuratedProfile(options.profile, { ...composed.profile, patches: profilePatches }, [
+        homePatches,
+        composed.overlays,
+      ], {}, profileFiles)
+      profileFiles?.assertCurrent()
+      return structuredClone([
+        ...composed.bundlePatches,
+        ...profilePatches,
+        ...homePatches,
+        ...composed.overlays,
+      ])
+    } finally {
+      profileFiles?.close()
+    }
+  }
   // Cloned for the same insert-aliasing reason as composeLive: the boot
   // application must not mutate the objects later reloads recompose from.
   const ctx = await boot(NAME, rootConfig, structuredClone(allPatches(composed)), (hostCtx) => {
@@ -268,35 +310,58 @@ export async function runProfile(options: RunProfileOptions): Promise<{ ctx: Con
   // landed mid-setup. Watching is unconditional: a one-shot surface exits
   // through its bounded shutdown, which disposes the watchers before the
   // loop drains.
-  if (!signalShutdown.signal.aborted
-    && ctx.fiber.state === FiberState.ACTIVE
-    && ctx.get('loader') !== undefined) {
+  if (!shutdownOwnsTree(ctx, signalShutdown.signal)) {
+    // Config-only HMR for the live profile patch layer: the web bundle
+    // disables the shared module-reload `hmr` row (its reload lifecycle is
+    // untested), so when the composition leaves no HMR service, mount a
+    // watch-only instance with no module roots — cordis.patch.yml edits stay
+    // live on every long-lived surface. A silent skip would break the
+    // documented hot-reload contract. HMR injects the timer service, which a
+    // bare custom profile may not mount either.
+    const disposers: Array<() => void | Promise<void>> = []
     try {
-      // Config-only HMR for the live profile patch layer: the web bundle
-      // disables the shared module-reload `hmr` row (its reload lifecycle is
-      // untested), so when the composition leaves no HMR service, mount a
-      // watch-only instance with no module roots — cordis.patch.yml edits stay
-      // live on every long-lived surface. A silent skip would break the
-      // documented hot-reload contract. HMR injects the timer service, which a
-      // bare custom profile may not mount either.
       if (ctx.get('hmr') === undefined) {
         if (ctx.get('timer') === undefined) {
-          await ctx.loader.create({ name: '@deepseek-ai/cordis-plugin-timer' })
+          const timerId = await ctx.loader.create({ name: '@deepseek-ai/cordis-plugin-timer' })
+          disposers.push(() => ctx.loader.remove(timerId))
         }
-        await ctx.loader.create({ name: '@deepseek-ai/cordis-plugin-hmr', config: { root: [] } })
+        const hmrId = await ctx.loader.create({ name: '@deepseek-ai/cordis-plugin-hmr', config: { root: [] } })
+        disposers.push(() => ctx.loader.remove(hmrId))
       }
-      await watchUserPatches(ctx, {
+      disposers.push(await watchUserPatches(ctx, {
         binName: NAME,
         filename: composed.profile.patchPath,
+        ...isCuratedProfileName(options.profile) ? { mode: 'compose-read' as const } : {},
         compose: composeLive,
-      })
-      await watchUserPatches(ctx, {
+      }))
+      disposers.push(await watchUserPatches(ctx, {
         binName: NAME,
         filename: homePatchPath(),
         compose: composeLive,
-      })
+      }))
     } catch (error) {
-      suppressShutdownError(ctx, signalShutdown.signal, error)
+      const exiting = shutdownOwnsTree(ctx, signalShutdown.signal)
+      const rollbackErrors: unknown[] = []
+      for (const dispose of disposers.reverse()) {
+        try {
+          await dispose()
+        } catch (rollbackError) {
+          rollbackErrors.push(rollbackError)
+        }
+      }
+      try {
+        await ctx.fiber.dispose()
+      } catch (rollbackError) {
+        rollbackErrors.push(rollbackError)
+      }
+      if (rollbackErrors.length > 0) {
+        throw new AggregateError(
+          [error, ...rollbackErrors],
+          `${NAME}: post-boot setup rollback failed`,
+          { cause: error },
+        )
+      }
+      if (!exiting) throw error
     }
   }
   return { ctx, shutdown }

@@ -169,7 +169,7 @@ const POSTCONDITIONS: readonly PostCondition[] = [
  * PRE-rename text because these run before the generic pass, so no `find` may
  * quote a neighbouring line the generic pass would rewrite.
  */
-const EXACT_EDITS: readonly ExactEdit[] = [
+export const EXACT_EDITS: readonly ExactEdit[] = [
   {
     id: 'cordis-walk-merge-head',
     file: 'scripts/cordis-walk.ts',
@@ -289,8 +289,8 @@ const EXACT_EDITS: readonly ExactEdit[] = [
     // The root contract claimed vendored packages keep their upstream names.
     id: 'root-agents-vendored-name-contract',
     file: 'AGENTS.md',
-    find: 'vendored packages keep upstream names and are `private: true`. `cordis` is a peerDependency (+ dev) of every harness package.',
-    replace: 'vendored packages are rescoped ([mapping](docs/rescope.md)) and `private: true`. `@deepseek-ai/cordis` is a peerDependency (+ dev) of every harness package.',
+    find: 'Every npm package is `@deepseek-ai/dsh-<name>`; vendored packages keep upstream names and are `private: true`. `cordis` is a peerDependency (+ dev) of every harness package.',
+    replace: 'Publishable dsh packages set `publishConfig.access: public`; experimental/private packages remain private. Vendored packages are rescoped ([mapping](docs/rescope.md)) and follow their publication policy. `@deepseek-ai/cordis` is a peerDependency (+ dev) of every harness package.',
     expect: 1,
   },
   {

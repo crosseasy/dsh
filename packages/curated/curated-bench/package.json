@@ -26,7 +26,6 @@
       "types": "./lib/types/snapshot.d.ts",
       "default": "./lib/types/snapshot.js"
     },
-    "./src/*": "./src/*",
     "./package.json": "./package.json"
   },
   "files": [
@@ -42,6 +41,10 @@
     "typecheck": "tsc -b --pretty false"
   },
   "license": "MIT",
+  "dependencies": {
+    "@deepseek-ai/dsh-curated-policy": "workspace:^",
+    "@deepseek-ai/dsh-curated-profiles": "workspace:^"
+  },
   "peerDependencies": {
     "@deepseek-ai/dsh-invariants": "workspace:^",
     "@deepseek-ai/cordis": "workspace:^"

@@ -13,4 +13,6 @@ This family runs model-authored orchestration workflows over subagents and expos
 
 Worker threads isolate workflow execution from the host event loop but are not a security boundary. See the [dynamic-workflow](../../.agents/notes/implemented/feature/2026-07-05-dynamic-workflows.md) and [Ralph tool](../../.agents/notes/implemented/feature/2026-07-19-fresh-agent-ralph-workflow-tool.md) decisions.
 
+`WorkflowStartRequest` contains startup data only. A consumer owns its caller signal, and the returned `WorkflowRun.cancel()` is the single runtime cancellation entry; see the [single-owner cancellation decision](../../.agents/notes/implemented/simplification/2026-08-26-workflow-single-cancellation-owner.md).
+
 The subsystem reference — start requests, `WorkflowMeta`, results, live runs, `workflow/*` events — is [docs/subsystems/workflow.md](../../docs/subsystems/workflow.md); decisions in the [dynamic-workflows](../../.agents/notes/implemented/feature/2026-07-05-dynamic-workflows.md) and [Ralph consumer](../../.agents/notes/implemented/feature/2026-07-19-fresh-agent-ralph-workflow-tool.md) Agent Notes.

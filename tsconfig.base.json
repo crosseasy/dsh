@@ -77,6 +77,7 @@
       "@deepseek-ai/dsh-goal/client": ["./packages/goal/goal/src/client.ts"],
       "@deepseek-ai/dsh-llm/types": ["./packages/llm/llm/src/types.ts"],
       "@deepseek-ai/dsh-llm/brand": ["./packages/llm/llm/src/brand.ts"],
+      "@deepseek-ai/dsh-llm/call-config": ["./packages/llm/llm/src/call-config.ts"],
       "@deepseek-ai/dsh-llm-retry/types": ["./packages/llm/llm-retry/src/types.ts"],
       "@deepseek-ai/dsh-llm-retry/testing": ["./packages/llm/llm-retry/src/testing.ts"],
       "@deepseek-ai/dsh-token-meter/client": ["./packages/llm/token-meter/src/client.ts"],

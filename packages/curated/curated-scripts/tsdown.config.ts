@@ -15,4 +15,9 @@ export default defineConfig([
   { ...shared, entry: ['lib/types/index.js'] },
   { ...shared, entry: ['lib/types/invariant.js'] },
   { ...shared, entry: ['lib/types/bin.js'] },
+  { ...shared, entry: ['lib/types/verify-lock.js'] },
+  { ...shared, entry: ['lib/types/preflight.js'] },
+  { ...shared, entry: ['lib/types/smoke-profile.js'] },
+  { ...shared, entry: ['lib/types/compare-benchmark.js'] },
+  { ...shared, entry: ['lib/types/staging-worker.js'] },
 ])

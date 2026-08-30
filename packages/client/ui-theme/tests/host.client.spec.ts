@@ -9,7 +9,12 @@ import {
 class MemorySettings extends SettingsProvider {
   readonly writable = true
   protected load(): Promise<Record<string, unknown>> { return Promise.resolve({}) }
-  protected persist(_ns: SettingsNamespace, _section: Record<string, unknown>): Promise<void> {
+  protected persist(
+    _ns: SettingsNamespace,
+    _section: Record<string, unknown>,
+    assertRevision: () => void,
+  ): Promise<void> {
+    assertRevision()
     return Promise.resolve()
   }
 }

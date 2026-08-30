@@ -160,9 +160,8 @@ export class JsonRpcLineServerTransport extends JsonRpcLineEndpoint implements J
   }
 
   protected async handleFrame(frame: JsonRpcFrame): Promise<void> {
-    const id = frame.id
-    const method = frame.method
-    if (!isJsonRpcId(id) || typeof method !== 'string') return
+    if (!isJsonRpcRequest(frame)) return
+    const { id, method } = frame
     const handler = this.requestHandler
     if (!handler) {
       this.writeError(id, -32601, `method not found: ${method}`)
@@ -180,11 +179,9 @@ export class JsonRpcLineServerTransport extends JsonRpcLineEndpoint implements J
 
 /**
  * Client endpoint for outbound requests or notifications and inbound responses
- * or notifications. Request frames received from the server are ignored until
- * a handler is installed.
+ * or notifications. Request frames received from the server are ignored.
  */
 export class JsonRpcLineClientTransport extends JsonRpcLineEndpoint {
-  private requestHandler: RequestHandler | undefined
   private notificationHandler: NotificationHandler | undefined
   private readonly pending = new Map<JsonRpcId, PendingRequest>()
 
@@ -200,15 +197,6 @@ export class JsonRpcLineClientTransport extends JsonRpcLineEndpoint {
    */
   onNotification(handler: NotificationHandler): void {
     this.notificationHandler = handler
-  }
-
-  /**
-   * Install a server-to-client request handler, replacing any prior handler.
-   * @param handler - resolves to the response `result`; a rejection becomes a
-   * `-32603` error response carrying the message.
-   */
-  onRequest(handler: RequestHandler): void {
-    this.requestHandler = handler
   }
 
   /**
@@ -269,34 +257,13 @@ export class JsonRpcLineClientTransport extends JsonRpcLineEndpoint {
   }
 
   protected handleFrame(frame: JsonRpcFrame): void {
-    const id = frame.id
-    const method = frame.method
-    if (isJsonRpcId(id) && typeof method === 'string') {
-      const handler = this.requestHandler
-      if (handler === undefined) return
-      void this.handleRequest(handler, id, method, objectParams(frame.params))
+    if (isJsonRpcRequest(frame)) return
+    if (isJsonRpcResponse(frame)) {
+      this.handleResponse(frame.id, frame)
       return
     }
-    if (isJsonRpcId(id)) {
-      this.handleResponse(id, frame)
-      return
-    }
-    if (typeof method === 'string') {
-      this.notificationHandler?.(method, objectParams(frame.params))
-    }
-  }
-
-  private async handleRequest(
-    handler: RequestHandler,
-    id: JsonRpcId,
-    method: string,
-    params: Record<string, unknown>,
-  ): Promise<void> {
-    try {
-      const result = await handler(method, params)
-      this.write({ jsonrpc: '2.0', id, result })
-    } catch (error) {
-      this.writeError(id, -32603, error instanceof Error ? error.message : String(error))
+    if (isJsonRpcNotification(frame)) {
+      this.notificationHandler?.(frame.method, objectParams(frame.params))
     }
   }
 
@@ -325,6 +292,40 @@ export class JsonRpcLineClientTransport extends JsonRpcLineEndpoint {
 
 function isJsonRpcId(value: unknown): value is JsonRpcId {
   return typeof value === 'string' || typeof value === 'number'
+}
+
+function isJsonRpcRequest(
+  frame: JsonRpcFrame,
+): frame is JsonRpcFrame & { id: JsonRpcId; method: string } {
+  return isJsonRpcId(frame.id)
+    && typeof frame.method === 'string'
+    && !Object.hasOwn(frame, 'result')
+    && !Object.hasOwn(frame, 'error')
+}
+
+function isJsonRpcResponse(
+  frame: JsonRpcFrame,
+): frame is JsonRpcFrame & { id: JsonRpcId } {
+  if (!isJsonRpcId(frame.id) || Object.hasOwn(frame, 'method')) {
+    return false
+  }
+  const hasResult = Object.hasOwn(frame, 'result')
+  const hasError = Object.hasOwn(frame, 'error')
+  return hasResult !== hasError
+    && (!hasError || (
+      frame.error !== null
+      && typeof frame.error === 'object'
+      && !Array.isArray(frame.error)
+    ))
+}
+
+function isJsonRpcNotification(
+  frame: JsonRpcFrame,
+): frame is JsonRpcFrame & { method: string } {
+  return !Object.hasOwn(frame, 'id')
+    && typeof frame.method === 'string'
+    && !Object.hasOwn(frame, 'result')
+    && !Object.hasOwn(frame, 'error')
 }
 
 function objectParams(params: unknown): Record<string, unknown> {

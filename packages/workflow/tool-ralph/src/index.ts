@@ -457,7 +457,12 @@ export function apply(ctx: Context, config: Config): void {
         maxTotalAgents: maxRounds,
         parent,
       })
-      const onAbort = (): void => { run.cancel('parent step aborted') }
+      let cancellationForwarded = false
+      const onAbort = (): void => {
+        if (cancellationForwarded) return
+        cancellationForwarded = true
+        run.cancel('parent step aborted')
+      }
       exec.signal.addEventListener('abort', onAbort, { once: true })
       if (isAborted(exec.signal)) onAbort()
 

@@ -27,7 +27,7 @@ interface SchemaNode {
 export interface RedactedSecret {
   /** Path from the section root to the removed field (concrete dict keys and array indexes included). */
   path: string[]
-  /** Whether the field held a value before redaction. */
+  /** Whether the field is configured; an empty secret dict is unset. */
   set: boolean
 }
 
@@ -129,7 +129,13 @@ function inspectSchema(
 
 function walk(node: SchemaNode, value: unknown, path: string[], secrets: RedactedSecret[]): unknown {
   if (node.meta?.role === 'secret') {
-    secrets.push({ path, set: value !== undefined })
+    let emptyPlainDict = false
+    if (node.type === 'dict' && isRecord(value)) {
+      const prototype: unknown = Object.getPrototypeOf(value)
+      emptyPlainDict = (prototype === Object.prototype || prototype === null)
+        && Object.keys(value).length === 0
+    }
+    secrets.push({ path, set: value !== undefined && !emptyPlainDict })
     return undefined
   }
   switch (node.type) {

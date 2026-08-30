@@ -41,9 +41,10 @@ export interface Config {
   /** vm timeout for the script's initial synchronous slice, inside the worker (default 5000 ms). */
   syncTimeoutMs?: number
   /**
-   * How long after a cancellation an unsettled script may keep running before
-   * the run force-settles `cancelled` and its worker is TERMINATED (default
-   * 5000 ms); also bounds `dispose()`.
+   * How long after cancellation an unsettled run may remain open before the
+   * host force-settles it as `cancelled` and terminates its worker (default
+   * 5000 ms). Public `dispose()` then still waits for host-side provider
+   * starts and child disposal to quiesce.
    */
   disposeGraceMs?: number
 }

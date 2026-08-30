@@ -13,4 +13,6 @@
 
 worker thread 将工作流执行与宿主事件循环隔离，但不构成安全边界。参见[动态工作流](../../.agents/notes/implemented/feature/2026-07-05-dynamic-workflows.zh.md)和 [Ralph 工具](../../.agents/notes/implemented/feature/2026-07-19-fresh-agent-ralph-workflow-tool.zh.md)决策。
 
+`WorkflowStartRequest` 只包含启动数据。消费方负责其调用方信号，返回的 `WorkflowRun.cancel()` 是唯一的运行时取消入口；见[单一所有者取消决策](../../.agents/notes/implemented/simplification/2026-08-26-workflow-single-cancellation-owner.zh.md)。
+
 子系统参考——启动请求、`WorkflowMeta`、结果、实时运行、`workflow/*` 事件——见 [docs/subsystems/workflow.md](../../docs/subsystems/workflow.zh.md)；决策见[动态工作流](../../.agents/notes/implemented/feature/2026-07-05-dynamic-workflows.zh.md)与 [Ralph 消费方](../../.agents/notes/implemented/feature/2026-07-19-fresh-agent-ralph-workflow-tool.zh.md) Agent Note。

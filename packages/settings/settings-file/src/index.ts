@@ -181,12 +181,16 @@ export class FileSettingsProvider extends SettingsProvider {
     return doc
   }
 
-  protected persist(ns: SettingsNamespace, section: Record<string, unknown>): Promise<void> {
+  protected persist(
+    ns: SettingsNamespace,
+    section: Record<string, unknown>,
+    assertRevision: () => void,
+  ): Promise<void> {
     // One document backs every namespace, so writes from different namespace
     // queues serialize with each other and with watcher reloads on the one
     // operation chain: each render must see the text the previous operation
     // committed, or a sibling section silently vanishes from disk.
-    return this.enqueue(() => this.persistSection(ns, section))
+    return this.enqueue(() => this.persistSection(ns, section, assertRevision))
   }
 
   /** Queue one exclusive document operation behind every earlier one. */
@@ -207,7 +211,11 @@ export class FileSettingsProvider extends SettingsProvider {
     })
   }
 
-  private async persistSection(ns: SettingsNamespace, section: Record<string, unknown>): Promise<void> {
+  private async persistSection(
+    ns: SettingsNamespace,
+    section: Record<string, unknown>,
+    assertRevision: () => void,
+  ): Promise<void> {
     // The writer lock's exclusive create needs the parent to exist before
     // writeFileAtomic gets its own chance to create it.
     // 0700: the harness home holds user-private documents.
@@ -220,6 +228,7 @@ export class FileSettingsProvider extends SettingsProvider {
       // on-disk document fails the write loud instead of silently overwriting
       // a user's manual edit.
       await this.reconcileFromDisk()
+      assertRevision()
       const output = this.spec.format === 'yaml'
         ? this.renderYaml(ns, section)
         : this.renderJson(ns, section)

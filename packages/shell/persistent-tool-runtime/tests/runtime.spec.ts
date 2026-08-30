@@ -102,6 +102,8 @@ class FakeSession implements TerminalBackendSession {
   closed: string[] = []
   sends: string[] = []
   pendingRelease: (() => void) | undefined
+  closeGate: Promise<void> | undefined
+  closeError: Error | undefined
 
   constructor(readonly mode: SessionMode) {}
 
@@ -159,6 +161,8 @@ class FakeSession implements TerminalBackendSession {
 
   async close(reason: string) {
     this.closed.push(reason)
+    await this.closeGate
+    if (this.closeError !== undefined) throw this.closeError
     this.statusValue = { kind: 'exited', exitCode: 0, signal: null }
   }
 
@@ -324,6 +328,38 @@ describe('persistent shell tool runtime', () => {
 
     await fiber.dispose()
     expect(stub.sessions[0]?.closed).toEqual(['fake-persistent disposed'])
+  })
+
+  it('waits for every live session to close before propagating one close failure', async () => {
+    const { ctx, stub, fiber } = await setup()
+    const firstOwner = agent(ctx, 'dispose-failure').owner
+    const secondOwner = agent(ctx, 'dispose-slow').owner
+    expect(text(await call(ctx, firstOwner, 'first'))).toBe('done:first')
+    expect(text(await call(ctx, secondOwner, 'second'))).toBe('done:second')
+
+    const closeError = new Error('fake close failed')
+    stub.sessions[0]!.closeError = closeError
+    const slowClose = Promise.withResolvers<undefined>()
+    stub.sessions[1]!.closeGate = slowClose.promise
+    const disposalErrors: unknown[] = []
+    ctx.logger.error = ((error: unknown) => { disposalErrors.push(error) }) as typeof ctx.logger.error
+    let settled = false
+    const disposal = fiber.dispose().finally(() => {
+      settled = true
+    })
+
+    await waitFor(() => stub.sessions[1]!.closed.length === 1 ? true : undefined)
+    await Promise.resolve()
+    const settledBeforeSlowClose = settled
+    slowClose.resolve(undefined)
+    await disposal
+    expect(settledBeforeSlowClose).toBe(false)
+    expect(disposalErrors).toEqual([closeError])
+    expect(stub.sessions.map(session => session.closed)).toEqual([
+      ['fake-persistent disposed'],
+      ['fake-persistent disposed'],
+    ])
+    expect(stub.sessions[1]!.statusValue).toEqual({ kind: 'exited', exitCode: 0, signal: null })
   })
 
   it('invalidates cached sessions when the owner scope disposes', async () => {

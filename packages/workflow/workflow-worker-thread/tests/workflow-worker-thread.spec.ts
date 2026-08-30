@@ -664,6 +664,29 @@ describe('dsh-workflow-worker-thread', () => {
       expect(runEnds).toEqual([{ stopReason: 'cancelled', error: result.error, agentsStarted: result.agentsStarted }])
     })
 
+    it('cancel() keeps the first reason and sends one worker cancel when child abort reenters it', async () => {
+      const { ctx, parent, provider } = await setup({
+        manual: true,
+        onChildSignalAbort: () => { handle.cancel('reentrant reason') },
+      })
+      const handle = ctx.workflowEngine.start({ ...scripted("return await agent('long job')"), parent })
+      await waitFor(() => { expect(provider.runs).toHaveLength(1) })
+      const worker = (handle as unknown as { worker: Worker }).worker
+      const post = vi.spyOn(worker, 'postMessage')
+
+      handle.cancel('first reason')
+      const result = await handle.result
+
+      expect(result.stopReason).toBe('cancelled')
+      expect(result.error).toContain('first reason')
+      expect(post.mock.calls
+        .map(([message]) => message as { type: HostToWorkerType; reason?: string })
+        .filter(message => message.type === HostToWorkerType.Cancel))
+        .toEqual([{ type: HostToWorkerType.Cancel, reason: 'first reason' }])
+      post.mockRestore()
+      await handle.dispose()
+    })
+
     it('cancel() right after start() cancels before the body runs', async () => {
       const { ctx, parent, provider } = await setup({ manual: true })
       const first = ctx.workflowEngine.start({ ...scripted("return await agent('never')"), parent })
@@ -995,6 +1018,30 @@ describe('dsh-workflow-worker-thread', () => {
       expect(provider.runs[0]!.disposed).toBe(true)
       const result = await handle.result
       expect(result.stopReason).toBe('cancelled')
+    }, 15_000)
+
+    it('dispose() awaits child quiescence after the grace terminates a wedged worker', async () => {
+      const { ctx, parent, provider } = await setup({
+        manual: true,
+        disposeDelayMs: 500,
+        config: { provider: 'stub', maxConcurrentAgents: 8, disposeGraceMs: 50 },
+      })
+      const handle = ctx.workflowEngine.start({
+        ...scripted(`
+          agent('slow disposal')
+          for (let i = 0; i < 20; i++) await null
+          const end = Date.now() + 1500
+          while (Date.now() < end) {}
+          return 'unreachable'
+        `),
+        parent,
+      })
+      await waitFor(() => { expect(provider.runs).toHaveLength(1) })
+
+      await handle.dispose()
+
+      expect(provider.runs[0]!.disposed).toBe(true)
+      expect(provider.runs[0]!.disposeCalls).toBe(1)
     }, 15_000)
 
     it('a live child disposed by the dispose() drive is disposed ONCE, and the worker\'s late dispose RPC still gets its ack (the script settles, not the grace)', async () => {

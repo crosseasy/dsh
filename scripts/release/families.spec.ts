@@ -1,12 +1,15 @@
 /** Release family discovery, publish order, tag naming, and the bump judgements. */
 
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
+import { spawnSync } from 'node:child_process'
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { dirname, join, resolve } from 'node:path'
+import { pathToFileURL } from 'node:url'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { officialClientBuildEnvironment, writeClientBuildRecord } from '../client-build-environment.ts'
 import { releaseFamily, type ReleaseMember } from './families.ts'
 import { compareVersions, nextVendorVersion, planShared, reachesPayload } from './bump.ts'
+import { packedConsumerManifest, packedDeclaredClosure } from './verify-packed-install.ts'
 
 /**
  * A release member standing in for a manifest on disk.
@@ -41,11 +44,118 @@ afterEach(() => {
 })
 
 describe('release families', () => {
-  it('excludes private experimental packages from the dsh release', () => {
-    const members = releaseFamily('dsh').members(resolve(import.meta.dirname, '../..'))
+  it('supplies all packed tarballs before pruning to the entry declared closure', () => {
+    const packed = new Map([
+      ['@deepseek-ai/dsh', { url: 'file:///packed/dsh.tgz', version: '1.0.0' }],
+      ['@deepseek-ai/dsh-curated-profiles', { url: 'file:///packed/profiles.tgz', version: '1.0.0' }],
+    ])
+
+    expect(packedConsumerManifest('consumer', '@deepseek-ai/dsh', packed)).toEqual({
+      name: 'consumer',
+      version: '0.0.0',
+      private: true,
+      dependencies: {
+        '@deepseek-ai/dsh': 'file:///packed/dsh.tgz',
+        '@deepseek-ai/dsh-curated-profiles': 'file:///packed/profiles.tgz',
+      },
+    })
+    const consumer = mkdtempSync(join(tmpdir(), 'dsh-packed-closure-'))
+    roots.push(consumer)
+    write(join(consumer, 'node_modules/@deepseek-ai/dsh/package.json'), JSON.stringify({
+      dependencies: { '@deepseek-ai/dsh-curated-profiles': '^1.0.0' },
+    }))
+    write(join(consumer, 'node_modules/@deepseek-ai/dsh-curated-profiles/package.json'), JSON.stringify({
+      optionalDependencies: { '@deepseek-ai/dsh-curated-policy': '^1.0.0' },
+    }))
+    write(join(consumer, 'node_modules/@deepseek-ai/dsh-curated-policy/package.json'), '{}')
+    write(join(consumer, 'node_modules/@deepseek-ai/unrelated/package.json'), '{}')
+    expect([...packedDeclaredClosure(consumer, '@deepseek-ai/dsh', new Set([
+      '@deepseek-ai/dsh',
+      '@deepseek-ai/dsh-curated-profiles',
+      '@deepseek-ai/dsh-curated-policy',
+      '@deepseek-ai/unrelated',
+    ]))]).toEqual([
+      '@deepseek-ai/dsh',
+      '@deepseek-ai/dsh-curated-profiles',
+      '@deepseek-ai/dsh-curated-policy',
+    ])
+
+    expect(() => packedConsumerManifest('consumer', '@deepseek-ai/missing', packed))
+      .toThrow('@deepseek-ai/missing is not among the packed tarballs')
+  })
+
+  it('installs an unpublished packed transitive dependency without registry access', () => {
+    const root = mkdtempSync(join(tmpdir(), 'dsh-packed-unpublished-'))
+    roots.push(root)
+    const packDir = join(root, 'pack')
+    const consumer = join(root, 'consumer')
+    mkdirSync(packDir, { recursive: true })
+    for (const [name, dependencies] of [
+      ['probe-b', {}],
+      ['probe-a', { 'probe-b': '1.0.0' }],
+    ] as const) {
+      const packageDir = join(root, name)
+      write(join(packageDir, 'package.json'), JSON.stringify({
+        name,
+        version: '1.0.0',
+        type: 'module',
+        main: 'index.js',
+        dependencies,
+      }))
+      write(join(packageDir, 'index.js'), name === 'probe-a'
+        ? "import value from 'probe-b'; export default `a:${value}`\n"
+        : "export default 'b'\n")
+      const packed = spawnSync('npm', ['pack', '--pack-destination', packDir], {
+        cwd: packageDir,
+        encoding: 'utf8',
+      })
+      expect(packed.status, packed.stderr).toBe(0)
+    }
+    mkdirSync(consumer, { recursive: true })
+    const packed = new Map([
+      ['probe-a', { url: pathToFileURL(join(packDir, 'probe-a-1.0.0.tgz')).href, version: '1.0.0' }],
+      ['probe-b', { url: pathToFileURL(join(packDir, 'probe-b-1.0.0.tgz')).href, version: '1.0.0' }],
+    ])
+    write(join(consumer, 'package.json'), JSON.stringify(
+      packedConsumerManifest('consumer', 'probe-a', packed),
+    ))
+    const installed = spawnSync('npm', [
+      'install',
+      '--ignore-scripts',
+      '--offline',
+      '--no-audit',
+      '--no-fund',
+      '--package-lock=false',
+    ], { cwd: consumer, encoding: 'utf8' })
+    expect(installed.status, installed.stderr).toBe(0)
+    expect([...packedDeclaredClosure(consumer, 'probe-a', new Set(packed.keys()))])
+      .toEqual(['probe-a', 'probe-b'])
+    expect(readFileSync(join(consumer, 'node_modules/probe-b/package.json'), 'utf8')).toContain('probe-b')
+  })
+
+  it('includes the publishable curated dependency closure and excludes experimental packages', () => {
+    const family = releaseFamily('dsh')
+    const members = family.members(resolve(import.meta.dirname, '../..'))
+    const order = family.publishOrder(members).order.map(member => member.name)
+    const position = (name: string): number => order.indexOf(name)
+    const curated = [
+      '@deepseek-ai/dsh-curated-base',
+      '@deepseek-ai/dsh-curated-bench',
+      '@deepseek-ai/dsh-curated-policy',
+      '@deepseek-ai/dsh-curated-profiles',
+      '@deepseek-ai/dsh-curated-scripts',
+    ]
 
     expect(members.some(member => member.directory.startsWith('packages/experimental/'))).toBe(false)
     expect(members.map(member => member.name)).not.toContain('@deepseek-ai/dsh-experimental-agent-team')
+    expect(members.filter(member => member.directory.startsWith('packages/curated/')).map(member => member.name))
+      .toEqual(curated)
+    expect(position('@deepseek-ai/dsh-curated-bench')).toBeLessThan(position('@deepseek-ai/dsh-curated-base'))
+    expect(position('@deepseek-ai/dsh-curated-policy')).toBeLessThan(position('@deepseek-ai/dsh-curated-base'))
+    expect(position('@deepseek-ai/dsh-curated-policy')).toBeLessThan(position('@deepseek-ai/dsh-curated-profiles'))
+    expect(position('@deepseek-ai/dsh-curated-base')).toBeLessThan(position('@deepseek-ai/dsh'))
+    expect(position('@deepseek-ai/dsh-curated-profiles')).toBeLessThan(position('@deepseek-ai/dsh'))
+    expect(position('@deepseek-ai/dsh')).toBeLessThan(position('@deepseek-ai/dsh-curated-scripts'))
   })
 
   it('bumps private dsh packages without adding release tags', () => {

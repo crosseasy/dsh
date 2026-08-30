@@ -328,15 +328,6 @@ interface SettingsRegistration {
   /** Owner-supplied check for constraints the schema cannot express. */
   validate?: (value: unknown) => void
   resolved: unknown
-  /**
-   * Monotonic counter over this namespace's RAW user section — bumped by any
-   * change to what is stored, including one whose resolved value is
-   * unchanged (adding an override equal to the composition base). Editors
-   * carry it as `expectedRevision` to detect a concurrent write, and the
-   * document event carries it so another tab learns a field went from
-   * inherited to overridden.
-   */
-  revision: number
   watchers: Set<SettingsWatcher>
   /** Watcher invocations that have started and must settle before owner disposal resolves. */
   pendingTails: Set<Promise<void>>
@@ -350,6 +341,11 @@ interface SettingsRegistration {
  */
 export abstract class SettingsProvider extends Service {
   private readonly registrations = new Map<SettingsNamespace, SettingsRegistration>()
+  /**
+   * Monotonic RAW-section counters for namespaces registered during this
+   * provider lifetime. Ownership changes and gaps do not reset a counter.
+   */
+  private readonly revisions = new Map<SettingsNamespace, number>()
   /** Latest published raw document; empty until the provider's first publish. */
   private document: Record<string, unknown> = {}
   /** Per-namespace write chains; settled tails, so a failure never poisons the queue. */
@@ -420,8 +416,14 @@ export abstract class SettingsProvider extends Service {
    * Durably store one namespace's merged user section.
    * @param ns - the namespace being written.
    * @param section - the complete merged user section to store.
+   * @param assertRevision - call after provider-side reconciliation and
+   * immediately before changing storage; it rejects a stale expected revision.
    */
-  protected abstract persist(ns: SettingsNamespace, section: Record<string, unknown>): Promise<void>
+  protected abstract persist(
+    ns: SettingsNamespace,
+    section: Record<string, unknown>,
+    assertRevision: () => void,
+  ): Promise<void>
 
   /**
    * Register a namespace schema and receive its owner scope. The registration
@@ -440,6 +442,8 @@ export abstract class SettingsProvider extends Service {
     if (this.registrations.has(ns)) {
       throw new Error(`settings namespace "${ns}" is already registered`)
     }
+    const resolved = deepFreeze(this.resolve(schema, options?.base, this.section(ns), options?.validate))
+    if (!this.revisions.has(ns)) this.revisions.set(ns, 0)
     const registration: SettingsRegistration = {
       ns,
       schema: schema as z<unknown>,
@@ -449,8 +453,7 @@ export abstract class SettingsProvider extends Service {
       ...options?.validate === undefined
         ? {}
         : { validate: options.validate as (value: unknown) => void },
-      resolved: deepFreeze(this.resolve(schema, options?.base, this.section(ns), options?.validate)),
-      revision: 0,
+      resolved,
       watchers: new Set(),
       pendingTails: new Set(),
     }
@@ -517,7 +520,7 @@ export abstract class SettingsProvider extends Service {
         ns: registration.ns,
         schema: registration.schema.toJSON(),
         value: registration.resolved,
-        revision: registration.revision,
+        revision: this.revisionOf(registration.ns),
         ...this.descriptorLayers(registration),
         applies: registration.applies,
       }
@@ -553,7 +556,7 @@ export abstract class SettingsProvider extends Service {
       return {
         ns: registration.ns,
         ...described,
-        revision: registration.revision,
+        revision: this.revisionOf(registration.ns),
         applies: registration.applies,
       }
     })
@@ -686,25 +689,31 @@ export abstract class SettingsProvider extends Service {
       // The revision check belongs HERE, not at call time: the queue orders
       // writes but cannot tell a fresh writer from one holding a snapshot
       // that a predecessor already superseded.
-      if (expectedRevision !== undefined && expectedRevision !== registration.revision) {
-        throw new SettingsConflictError(ns, expectedRevision, registration.revision)
+      const assertRevision = () => {
+        if (expectedRevision === undefined) return
+        const currentRevision = this.revisionOf(ns)
+        if (expectedRevision !== currentRevision) {
+          throw new SettingsConflictError(ns, expectedRevision, currentRevision)
+        }
       }
+      assertRevision()
       const section = mode === 'merge'
         ? mergeLayers(current, snapshot) as Record<string, unknown>
         : mode === 'replace'
           ? snapshot
           : (snapshot['ops'] as SettingsPathOp[]).reduce(applyPathOp, current)
       const next = deepFreeze(this.resolve(registration.schema, registration.base, section, registration.validate))
-      await this.persist(ns, section)
+      await this.persist(ns, section, assertRevision)
       // The write reached storage either way; the cache must say so. Commit
       // only when this registration is still the namespace owner — a fiber
       // disposed (or replaced) mid-persist must not receive the notification.
+      const beforeCommit = this.document[ns]
       this.document[ns] = section
       if (this.isStopped()) return
+      this.bumpRevision(ns, beforeCommit, section)
       const owner = this.registrations.get(ns)
       if (owner === undefined) return
       if (owner === registration) {
-        this.bumpRevision(registration, current, section)
         this.commit(registration, next, 'update')
         return
       }
@@ -717,7 +726,6 @@ export abstract class SettingsProvider extends Service {
         this.ctx.logger.warn(error)
         return
       }
-      this.bumpRevision(owner, current, section)
       this.commit(owner, replacementNext, 'update')
     })
     this.writeQueues.set(ns, run)
@@ -726,36 +734,39 @@ export abstract class SettingsProvider extends Service {
 
   /**
    * Provider hook: commit a complete raw document observed in storage. Each
-   * registered namespace re-resolves; an invalid section keeps that
+   * tracked namespace advances its RAW revision, including during an ownership
+   * gap. Each registered namespace re-resolves; an invalid section keeps that
    * namespace's last good value and warns, other namespaces still commit.
    * @param doc - the detached raw document (unregistered sections preserved).
    * @param source - change origin; defaults to `provider`.
    */
   protected publish(doc: Record<string, unknown>, source: SettingsUpdateSource = 'provider'): void {
-    // Read every raw section BEFORE swapping the document, so the revision
-    // bump below compares what was stored with what now is — an external edit
-    // moves the revision exactly like an in-process write.
+    // Capture every tracked raw section before swapping the document.
     const before = new Map<SettingsNamespace, unknown>()
-    for (const registration of this.registrations.values()) {
-      try {
-        before.set(registration.ns, this.section(registration.ns))
-      } catch {
-        // A malformed stored section is not a readable "before"; treating it
-        // as absent still bumps against any well-formed replacement.
-        before.set(registration.ns, undefined)
-      }
+    for (const ns of this.revisions.keys()) {
+      before.set(ns, this.document[ns])
     }
     this.document = doc
+    for (const [ns, section] of before) {
+      this.bumpRevision(ns, section, this.document[ns])
+    }
     for (const registration of this.registrations.values()) {
-      let next: unknown
+      let section: Record<string, unknown> | undefined
       try {
-        next = deepFreeze(this.resolve(registration.schema, registration.base, this.section(registration.ns), registration.validate))
+        section = this.section(registration.ns)
       } catch (error) {
         this.ctx.logger.warn('settings: keeping last good "%s" after invalid stored section', registration.ns)
         this.ctx.logger.warn(error)
         continue
       }
-      this.bumpRevision(registration, before.get(registration.ns), this.section(registration.ns))
+      let next: unknown
+      try {
+        next = deepFreeze(this.resolve(registration.schema, registration.base, section, registration.validate))
+      } catch (error) {
+        this.ctx.logger.warn('settings: keeping last good "%s" after invalid stored section', registration.ns)
+        this.ctx.logger.warn(error)
+        continue
+      }
       this.commit(registration, next, source)
     }
   }
@@ -786,17 +797,23 @@ export abstract class SettingsProvider extends Service {
     return value
   }
 
+  /** Read one tracked namespace's provider-owned RAW revision. */
+  private revisionOf(ns: SettingsNamespace): number {
+    return this.revisions.get(ns) ?? 0
+  }
+
   /**
    * Advance a namespace's revision when its RAW section changed, and announce
-   * it. Deliberately independent of {@link commit}'s resolved-value equality:
-   * storing an override equal to the composition base leaves the resolved
-   * value alone but changes what the document says, which is exactly what a
-   * configuration surface must re-read.
+   * it while the namespace has an owner. Deliberately independent of
+   * {@link commit}'s resolved-value equality: storing an override equal to the
+   * composition base leaves the resolved value alone but changes what the
+   * document says, which is exactly what a configuration surface must re-read.
    */
-  private bumpRevision(registration: SettingsRegistration, before: unknown, after: unknown): void {
+  private bumpRevision(ns: SettingsNamespace, before: unknown, after: unknown): void {
     if (deepEqualJson(before, after)) return
-    registration.revision += 1
-    this.emitDocumentUpdated(registration.ns, registration.revision)
+    const revision = this.revisionOf(ns) + 1
+    this.revisions.set(ns, revision)
+    if (this.registrations.has(ns)) this.emitDocumentUpdated(ns, revision)
   }
 
   /** Contained fan-out of `settings/document-updated`, mirroring {@link commit}'s. */

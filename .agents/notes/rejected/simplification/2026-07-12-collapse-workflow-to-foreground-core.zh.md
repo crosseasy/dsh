@@ -14,6 +14,8 @@ Status: rejected — 工作流进度是有意设计的观测接口；应通过�
 
 取消机制也为一个同步启动提供了两条公开通道。`WorkflowStartRequest.signal` 被传递给 worker host，而唯一的生产调用方另外将同一个 signal 桥接到 `WorkflowRun.cancel()`。因为 `start()` 在控制权让出之前就返回了 run，不存在需要请求时取消的就绪窗口；重复的 signal 增加了 host 的 listener/disarm 状态却没有封堵任何竞态。
 
+仅取消相关的发现已由[工作流单一所有者取消决策](../../implemented/simplification/2026-08-26-workflow-single-cancellation-owner.zh.md)实现。本提案的其余部分仍被拒绝：工作流元数据、进度事件、运行身份和配对账本都有生产消费方，继续作为该能力的一部分。
+
 `WorkflowError.fatal` 是同一种推测性分支的微缩版：生产代码中的构造全都采用 fatal 模式，`fatal: false` 仅存在于测试中，组合子已经通过 `instanceof` 区分工作流失败。
 
 ## 提案

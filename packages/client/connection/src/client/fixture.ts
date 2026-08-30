@@ -746,17 +746,6 @@ function viewFor(event: SessionEvent, log: readonly SessionEvent[]): ToolEventVi
   return undefined
 }
 
-/** Product plan projection state plus the wire view used by fixture command boundaries. */
-function foldPlan(log: readonly SessionEvent[]): ReturnType<typeof foldPlanProjectionState> & { pending: boolean } {
-  const state = foldPlanProjectionState(log)
-  return { ...state, pending: foldPlanProjection(log).pending }
-}
-
-/** The plan projection's wire view over the full log. */
-function planViewOf(log: readonly SessionEvent[]): ReturnType<typeof foldPlanProjection> {
-  return foldPlanProjection(log)
-}
-
 /** Fixture preset table (the host PermissionPresetService defaults). */
 const PERMISSION_PRESETS: Record<string, { sandbox: string; approval: string; description: string }> = {
   'workspace-write': { sandbox: 'workspace-write', approval: 'ask', description: 'Write inside the workspace and permitted temporary directories; wider retries require approval.' },
@@ -795,11 +784,6 @@ function permissionSelectOf(
   }
 }
 
-const tokenUsageOf = foldTokenUsageProjection
-const sessionStatsOf = foldSessionStatsProjection
-const contextBreakdownOf = foldContextBreakdownProjection
-const contextPressureOf = foldContextPressureProjection
-
 interface FixtureRequestContext {
   provider: string
   model: string
@@ -828,12 +812,12 @@ function projectionValuesOf(log: readonly SessionEvent[]): Record<string, unknow
   }
   values['todos'] = backscanTodos(log) ?? null
   values['permissions'] = permissionSelectOf(log)
-  values['plan'] = planViewOf(log)
+  values['plan'] = foldPlanProjection(log)
   values['goal'] = backscanGoal(log)
-  values['tokenUsage'] = tokenUsageOf(log)
-  values['contextPressure'] = contextPressureOf(log)
-  values['contextBreakdown'] = contextBreakdownOf(log)
-  values['sessionStats'] = sessionStatsOf(log)
+  values['tokenUsage'] = foldTokenUsageProjection(log)
+  values['contextPressure'] = foldContextPressureProjection(log)
+  values['contextBreakdown'] = foldContextBreakdownProjection(log)
+  values['sessionStats'] = foldSessionStatsProjection(log)
   values['imageLimits'] = {
     maxImageBytes: 5 * 1024 * 1024,
     maxImagesPerMessage: 20,
@@ -850,15 +834,15 @@ type ProductProjectionKey = 'plan' | 'tokenUsage' | 'contextPressure' | 'context
 function productProjectionValueOf(key: ProductProjectionKey, log: readonly SessionEvent[]): unknown {
   switch (key) {
     case 'plan':
-      return planViewOf(log)
+      return foldPlanProjection(log)
     case 'tokenUsage':
-      return tokenUsageOf(log)
+      return foldTokenUsageProjection(log)
     case 'contextPressure':
-      return contextPressureOf(log)
+      return foldContextPressureProjection(log)
     case 'contextBreakdown':
-      return contextBreakdownOf(log)
+      return foldContextBreakdownProjection(log)
     case 'sessionStats':
-      return sessionStatsOf(log)
+      return foldSessionStatsProjection(log)
     default:
       return key satisfies never
   }
@@ -916,7 +900,7 @@ function projectionFramesOf(id: SessionId, log: readonly SessionEvent[], event: 
       type: 'session/projection',
       sessionId: id,
       key: 'plan',
-      value: planViewOf(log),
+      value: foldPlanProjection(log),
       seq: event.seq,
     }]
   }
@@ -1585,7 +1569,7 @@ function createFixtureWorld(options: FixtureOptions): FixtureWorld {
       const commandId = `fx-cmd-${logOf(id).length}` as CommandId
       append(id, { type: 'command/run', data: { commandId, name, args, source: { kind: 'user' } } })
       if (name === 'plan' && !running) {
-        const plan = foldPlan(logOf(id))
+        const plan = foldPlanProjectionState(logOf(id))
         if (plan.wanted !== null && plan.wanted !== plan.active) {
           append(id, { type: 'plan/mode', data: { active: plan.wanted } })
         }
@@ -2273,7 +2257,7 @@ function createFixtureWorld(options: FixtureOptions): FixtureWorld {
         append(id, { type: 'turn/start', data: { turn } })
         // Boundary flush parallel (the host's step/start observer): an outstanding
         // /plan selection commits as plan/mode inside the opened turn.
-        const plan = foldPlan(logOf(id))
+        const plan = foldPlanProjectionState(logOf(id))
         if (plan.wanted !== null && plan.wanted !== plan.active) {
           append(id, { type: 'plan/mode', data: { active: plan.wanted } })
         }

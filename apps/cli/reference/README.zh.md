@@ -38,9 +38,11 @@ dsh --profile web --patch ./extra.yml --dump-config
 
 `--dump-default-config` 只打印组合包各层；`--dump-config` 额外加上 profile 的 `cordis.patch.yml`、home 级的 `$DSH_HOME/cordis.patch.yml` 和 `--patch` overlay。两者都会打印注释，标明每行由哪个文件提供，以及哪些 overlay 修改过它；`!!js` 表达式保持未求值，找不到目标的 patch 会报告到 stderr。dump 操作不会运行应用的命令行参数提供方，因此展示的是解析任何应用参数之前的组合配置树；如果调用中包含应用参数，dump 会拒绝该调用。
 
+对于内置精选 profile，正常启动与 `--dump-config` 会在 Loader 激活前执行强制启动准入。Manifest bundle 列表与依赖必须匹配模板和 catalog 分配，包管理器设置必须保持安全，profile、home 与命令行 patch 层只能对获批行执行静态覆盖；动态表达式以及 plugin/group 插入会被拒绝。Enterprise 限制作用于最终组合和每次用户 patch 热重载。`--dump-default-config` 保持为只检查 bundle 的恢复诊断：它会校验 manifest 和包管理器状态，但不会解析 profile、home 或命令行用户 patch。Observed curated preflight 另行深检已安装包目录与两份 pnpm lockfile。
+
 ## 插件管理
 
-`dsh plugin --profile <name> <args...>` 在 profile 缺失时先初始化它（有随附模板的用模板，其他名称只装 `@deepseek-ai/dsh-base`），然后以 profile 目录为工作目录，把 `<args...>` 转发给 `pnpm`：`add`、`remove`、`why`、`update` 及其他所有 pnpm 子命令都照常可用；pnpm 必须在 PATH 上。相对路径 spec（`.`、`../plugin` 及其 `file:`/`link:` 形式）会先锚定到调用目录，因此在插件 checkout 中执行 `add .` 安装的是该 checkout，而不是 profile。每次成功运行后，系统都会根据当前安装状态更新 `dsh.profile.bundles`：如果某项依赖解析到的包在 manifest 中声明了 `"dsh": { "bundle": { "patch": "./cordis.patch.yml" } }`，该依赖就会加入配置层栈；如果某项依赖在 `update` 后获得该声明，也会随即激活。没有组合包声明的依赖仍作为普通依赖保留，并显示一次性警告；已移除的依赖则从配置层栈中删除。
+`dsh plugin --profile <name> <args...>` 在 profile 缺失时先初始化它（有随附模板的用模板，其他名称只装 `@deepseek-ai/dsh-base`），然后以 profile 目录为工作目录、禁用依赖生命周期脚本，并把 `<args...>` 转发给 `pnpm`；pnpm 必须在 PATH 上。相对路径 spec（`.`、`../plugin` 及其 `file:`/`link:` 形式）会先锚定到调用目录，因此在插件 checkout 中执行 `add .` 安装的是该 checkout，而不是 profile。每次成功运行后，系统都会根据当前安装状态更新 `dsh.profile.bundles`：如果某项依赖解析到的包在 manifest 中声明了 `"dsh": { "bundle": { "patch": "./cordis.patch.yml" } }`，该依赖就会加入配置层栈；如果某项依赖在 `update` 后获得该声明，也会随即激活。没有组合包声明的依赖仍作为普通依赖保留，并显示一次性警告；已移除的依赖则从配置层栈中删除。
 
 Codex 与 Claude Code subagent provider 是两个彼此独立的可选 Bundle。可以只添加一个包、在同一命令中添加两个包，或独立移除任一包：
 
@@ -60,7 +62,7 @@ dsh plugin --profile tui remove turtle-ui
 dsh --profile tui
 ```
 
-随源码发布的 Git 托管插件会在安装期间通过 `prepare` 脚本构建，而 pnpm ≥10 默认会阻止该脚本，直到使用方明确允许。首次运行 `add` 会失败，并显示 pnpm 的 `allowBuilds` 提示；dsh 还会提示应修改该 profile 的 `pnpm-workspace.yaml`。将输出的键复制到该文件后，重新运行命令即可。安装已经构建好的 tarball 或本地 checkout 时，无需加入 `allowBuilds`。
+插件管理绝不运行依赖生命周期脚本，因此不支持依赖 `prepare` 的 Git 源码包；请改为发布预构建 npm 包或 tarball。传入 `ignore-scripts` 覆盖参数会被拒绝。内置精选 profile 的 bundle 成员固定。不带额外参数的 `dsh plugin --profile <curated-name> install` 会持有跨进程 writer lock，回收此前中断的 staging 与激活状态，创建私有 staging home，并只从本地 pnpm store 安装模板依赖。它会保留通过校验的已有 profile patch 与 lockfile，在该 lockfile 存在时追加 `--frozen-lockfile`，移除 ambient npm/pnpm 配置，把 pnpm 的 user/global config 固定到 staged `.npmrc`，并拒绝 package-manager 根目录重定向、包变换或构建授权环境注入，且不接受额外参数。Staged profile 必须先通过生成文件、root/installed lockfile、bundle 解析及精选准入检查，才能激活其目录；失败会保留或恢复旧 live 目录。本地缺少包时安装失败，而不会从网络抓取。`--help` 和 `list` 由签入模板数据生成，不创建 profile 状态也不调用 pnpm；`add`、`remove`、其它会改写 package 状态的命令、包变换与依赖构建授权会在运行 pnpm 前被拒绝。其他 profile 继续保留通用 pnpm 转发能力。
 
 ## Web 别名
 
@@ -78,7 +80,7 @@ dsh web --help
 
 进程关闭时，插件树最多有 5 秒完成 dispose。首次收到 `SIGINT` 或 `SIGTERM` 时会开始优雅排空：`SIGTERM` 是监督进程发出的常规停止请求，在所有运行模式下都以 0 退出；`SIGINT` 则报告 130。第二次收到信号时会立即强制退出。如果一次性运行在正常结束时已经卡在 dispose 阶段，第一次按下 `Ctrl+C` 就会直接升级为强制退出，而不会被忽略。
 
-所有模式都将运行命令时所在的目录作为默认 workspace 根目录，以 65,536 字节渲染预算加载适用的 `AGENTS.md` 或 `CLAUDE.md` 指令，并使用内存 SQLite 会话内容索引。每次启动 profile 时，系统都会监视 profile 与 home 两个 `cordis.patch.yml` 配置层的有效变更，并以事务方式重新应用；一次性运行模式通过有界关闭流程退出，该流程会先 dispose 监视器。
+所有模式都将运行命令时所在的目录作为默认 workspace 根目录，以 65,536 字节渲染预算加载适用的 `AGENTS.md` 或 `CLAUDE.md` 指令，并使用内存 SQLite 会话内容索引。每次启动 profile 时，系统都会监视 profile 与 home 两个 `cordis.patch.yml` 配置层的有效变更，并以事务方式重新应用；watcher setup 同样是事务性的，部分 setup 失败会逆序释放已成功的注册，并在返回错误前等待 root disposal 完成。一次性运行模式通过有界关闭流程退出，该流程会先 dispose 监视器。
 
 新会话默认使用 `workspace-write` 权限预设。Bash 和文件系统修改仅限于会话 workspace 与平台临时根目录；读取和网络访问不受限制，进程可见性则取决于所选沙箱后端——bwrap 在私有 PID 命名空间中运行命令并隐藏宿主进程，Landlock 与 Seatbelt 保持宿主进程可见性不变。`DSH_PERMISSION_MODE` 更改进程后备值。General settings 中存储的权限影响后续 Web 会话，不改变已打开的会话。
 

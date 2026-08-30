@@ -118,6 +118,50 @@ describe('resolveBundleDir', () => {
 })
 
 describe('loadProfile', () => {
+  it('uses an injected reader only for the profile manifest and patch', () => {
+    const anchor = stageInstallation({
+      'bundle-a': { patch: '- insert:\n    - id: a\n      name: pkg-a\n' },
+    })
+    const home = tmp()
+    const dir = resolveProfileDir('demo', home)
+    initProfile(dir, ['bundle-a'])
+    const manifestPath = join(dir, 'package.json')
+    const patchPath = join(dir, PROFILE_PATCH_FILENAME)
+    const contents = new Map([
+      [manifestPath, readFileSync(manifestPath, 'utf8')],
+      [patchPath, '- id: a\n  config:\n    v: injected\n'],
+    ])
+    const requested: string[] = []
+
+    const profile = loadProfile('t', 'demo', anchor, home, {
+      profileFileReader: (path) => {
+        requested.push(path)
+        return contents.get(path)
+      },
+    })
+
+    expect(requested).toEqual([manifestPath, patchPath])
+    expect(profile.patches).toEqual([{ id: 'a', config: { v: 'injected' } }])
+    expect(profile.layers[0]?.patches).toEqual([{
+      insert: [{ id: 'a', name: 'pkg-a' }],
+    }])
+  })
+
+  it('fails loud when an injected reader omits a required profile file', () => {
+    const anchor = stageInstallation({})
+    const home = tmp()
+    const dir = resolveProfileDir('demo', home)
+    initProfile(dir, [])
+
+    expect(() => loadProfile('t', 'demo', anchor, home, {
+      profileFileReader: () => undefined,
+    })).toThrow('failed to read profile manifest')
+    const manifest = readFileSync(join(dir, 'package.json'), 'utf8')
+    expect(() => loadProfile('t', 'demo', anchor, home, {
+      profileFileReader: path => path.endsWith('package.json') ? manifest : undefined,
+    })).toThrow('failed to read overlay')
+  })
+
   it('resolves each dsh.profile.bundles entry to its patch layer in order, plus the user layer', () => {
     const anchor = stageInstallation({
       'bundle-a': { patch: '- insert:\n    - id: a\n      name: pkg-a\n' },

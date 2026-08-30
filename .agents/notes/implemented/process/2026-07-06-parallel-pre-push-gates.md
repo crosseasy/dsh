@@ -24,7 +24,7 @@ The per-gate package scripts remain available for ad hoc local runs. `hygiene` a
 
 ## Verification
 
-[scripts/run-gates.spec.ts](../../../../scripts/run-gates.spec.ts) rejects invalid graphs before the executor runs, pins pass-required and settle-only ordering, pins the hygiene, consumer, and native Windows inventories and their failure semantics, requires standalone hygiene artifact consumers to depend on its build, exercises signal termination through a real child process, and proves that streamed output is immediate and unbuffered. [scripts/publint-all.spec.ts](../../../../scripts/publint-all.spec.ts) rejects a missing public export before downstream artifact consumers run.
+[scripts/run-gates.spec.ts](../../../../scripts/run-gates.spec.ts) rejects invalid graphs before the executor runs, pins pass-required and settle-only ordering, pins the hygiene, consumer, and native Windows inventories and their failure semantics, and exercises signal termination through a real child process. Its process smoke runs the complete hygiene graph against absent and present build artifacts, requires every artifact consumer to observe the build, and preserves an unknown-package-directory failure. The same suite proves that streamed output is immediate and unbuffered. [scripts/publint-all.spec.ts](../../../../scripts/publint-all.spec.ts) rejects a missing public export before downstream artifact consumers run.
 
 ## Alternatives considered
 

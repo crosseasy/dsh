@@ -203,6 +203,46 @@ async function raceAbort<T>(pending: Promise<T>, signal: AbortSignal): Promise<T
   }
 }
 
+class CodexJsonRpcTransport extends JsonRpcLineClientTransport {
+  constructor(
+    input: Readable,
+    output: Writable,
+    private readonly requestHandler: (method: string, params: JsonObject) => Promise<unknown>,
+  ) {
+    super(input, output)
+  }
+
+  protected override handleFrame(frame: JsonObject): void {
+    const id = frame.id
+    const method = frame.method
+    if (
+      (typeof id === 'string' || typeof id === 'number')
+      && typeof method === 'string'
+      && !Object.hasOwn(frame, 'result')
+      && !Object.hasOwn(frame, 'error')
+    ) {
+      const params = frame.params
+      void this.handleServerRequest(
+        id,
+        method,
+        params !== null && typeof params === 'object' && !Array.isArray(params)
+          ? params as JsonObject
+          : {},
+      )
+      return
+    }
+    super.handleFrame(frame)
+  }
+
+  private async handleServerRequest(id: string | number, method: string, params: JsonObject): Promise<void> {
+    try {
+      this.write({ jsonrpc: '2.0', id, result: await this.requestHandler(method, params) })
+    } catch (error) {
+      this.writeError(id, -32603, error instanceof Error ? error.message : String(error))
+    }
+  }
+}
+
 /**
  * One app-server connection and its single ephemeral thread/turn.
  *
@@ -210,7 +250,7 @@ async function raceAbort<T>(pending: Promise<T>, signal: AbortSignal): Promise<T
  * another product method must first become part of the provider contract.
  */
 export class CodexAppServerWire {
-  private readonly transport: JsonRpcLineClientTransport
+  private readonly transport: CodexJsonRpcTransport
   private readonly fatal = Promise.withResolvers<never>()
   private threadId: string | undefined
   private turnId: string | undefined
@@ -246,12 +286,15 @@ export class CodexAppServerWire {
     output: Writable,
     private readonly permissionMode: CodexPermissionMode,
   ) {
-    this.transport = new JsonRpcLineClientTransport(input, output)
+    this.transport = new CodexJsonRpcTransport(
+      input,
+      output,
+      (method, params) => this.handleServerRequest(method, params),
+    )
     // Fatal protocol state can arrive after the current guarded operation has
     // already settled. Keep the shared rejection observed without inserting
     // another promise-adoption hop into active races.
     void this.fatal.promise.catch(() => {})
-    this.transport.onRequest((method, params) => this.handleServerRequest(method, params))
     this.transport.onNotification((method, params) => {
       try {
         this.handleNotification(method, params)

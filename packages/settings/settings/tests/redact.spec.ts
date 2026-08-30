@@ -115,6 +115,33 @@ describe('redactSecrets', () => {
     expect(secrets).toEqual([{ path: ['blob'], set: true }])
   })
 
+  it('treats only an empty secret dict as unset', () => {
+    const SecretKinds = z.object({
+      scalar: z.string().role('secret'),
+      dict: z.dict(z.string()).role('secret'),
+      object: z.object({}).role('secret'),
+      array: z.array(z.string()).role('secret'),
+    })
+    const { secrets } = redactSecrets(SecretKinds as z<never>, {
+      scalar: '',
+      dict: {},
+      object: {},
+      array: [],
+    })
+    expect(secrets).toEqual([
+      { path: ['scalar'], set: true },
+      { path: ['dict'], set: false },
+      { path: ['object'], set: true },
+      { path: ['array'], set: true },
+    ])
+  })
+
+  it('treats a present malformed secret dict as set', () => {
+    const SecretDict = z.object({ dict: z.dict(z.string()).role('secret') })
+    const { secrets } = redactSecrets(SecretDict as z<never>, { dict: new Date(0) })
+    expect(secrets).toEqual([{ path: ['dict'], set: true }])
+  })
+
   it('drops a dict entry whose entire value is the secret', () => {
     const Tokens = z.object({ tokens: z.dict(z.string().role('secret')) })
     const { value, secrets } = redactSecrets(Tokens as z<never>, { tokens: { a: 'x', b: 'y' } })

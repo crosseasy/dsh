@@ -270,6 +270,28 @@ describe('loadLayeredEnv', () => {
       vi.unstubAllEnvs()
     }
   })
+
+  it('skips project and Harness-home dotenv layers for an internal guarded launch', () => {
+    const home = tmp()
+    const project = tmp()
+    writeFileSync(join(home, '.env'), `${NAMES[1]}=home-marker\n`)
+    writeFileSync(join(project, '.env'), `${NAMES[2]}=project-marker\n`)
+    clear()
+    vi.stubEnv('DSH_HOME', home)
+    vi.stubEnv('DSH_INTERNAL_DISABLE_DOTENV', '1')
+    try {
+      const snapshot = loadLayeredEnv(NAME, project, vi.fn())
+
+      expect(snapshot.get(NAMES[1])).toBeUndefined()
+      expect(snapshot.get(NAMES[2])).toBeUndefined()
+      expect(process.env[NAMES[1]]).toBeUndefined()
+      expect(process.env[NAMES[2]]).toBeUndefined()
+      expect(process.env.DSH_INTERNAL_DISABLE_DOTENV).toBeUndefined()
+    } finally {
+      clear()
+      vi.unstubAllEnvs()
+    }
+  })
 })
 
 describe('installFailLoud', () => {

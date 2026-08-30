@@ -8,6 +8,7 @@
  */
 
 import { parseArgs } from 'node:util'
+import { curatedActivationEvidenceIssues } from '../verify-curated-activation-evidence.ts'
 import { isEntry } from './process.ts'
 import { releaseFamily, type PublishPlan, type ReleaseFamily, type ReleaseMember } from './families.ts'
 
@@ -79,6 +80,12 @@ function main(): void {
   if (values.family === undefined) throw new Error('usage: verify.ts --family <dsh|vendor>')
 
   const family = releaseFamily(values.family)
+  if (family.id === 'dsh') {
+    const activationIssues = curatedActivationEvidenceIssues()
+    if (activationIssues.length > 0) {
+      throw new Error(`curated activation evidence is invalid:\n${activationIssues.join('\n')}`)
+    }
+  }
   const members = family.members(process.cwd())
   family.verifyVersions(members)
   // Resolve the publish order here, before the build: an install-edge cycle

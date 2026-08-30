@@ -314,22 +314,22 @@ class HarnessClient:
     def _handle_message(self, message: object) -> None:
         if not isinstance(message, dict):
             return
-        msg_id = message.get("id")
-        method = message.get("method")
-        if isinstance(msg_id, (str, int)) and isinstance(method, str):
+        if _is_json_rpc_request(message):
             return
-        if isinstance(msg_id, (str, int)):
+        if _is_json_rpc_response(message):
+            msg_id = message["id"]
             with self._lock:
                 waiter = self._responses.pop(str(msg_id), None)
             if waiter is None:
                 return
-            if isinstance(message.get("error"), dict):
+            if "error" in message:
                 err = message["error"]
                 waiter.put(JsonRpcError(_int_or_none(err.get("code")), str(err.get("message", "JSON-RPC error")), err.get("data")))
             else:
-                waiter.put(message.get("result"))
+                waiter.put(message["result"])
             return
-        if isinstance(method, str):
+        if _is_json_rpc_notification(message):
+            method = message["method"]
             params = message.get("params")
             notification = Notification(method=method, payload=params if isinstance(params, dict) else {})
             with self._lock:
@@ -520,6 +520,41 @@ class _SessionPromptResponse(BaseModel):
 
 class _ShutdownResponse(BaseModel):
     pass
+
+
+def _is_json_rpc_id(value: object) -> bool:
+    return isinstance(value, (str, int)) and not isinstance(value, bool)
+
+
+def _is_json_rpc_request(message: dict[object, object]) -> bool:
+    return (
+        _is_json_rpc_id(message.get("id"))
+        and isinstance(message.get("method"), str)
+        and "result" not in message
+        and "error" not in message
+    )
+
+
+def _is_json_rpc_response(message: dict[object, object]) -> bool:
+    if (
+        not _is_json_rpc_id(message.get("id"))
+        or "method" in message
+    ):
+        return False
+    has_result = "result" in message
+    has_error = "error" in message
+    return has_result != has_error and (
+        not has_error or isinstance(message["error"], dict)
+    )
+
+
+def _is_json_rpc_notification(message: dict[object, object]) -> bool:
+    return (
+        "id" not in message
+        and isinstance(message.get("method"), str)
+        and "result" not in message
+        and "error" not in message
+    )
 
 
 def _int_or_none(value: object) -> int | None:

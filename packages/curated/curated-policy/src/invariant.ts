@@ -5,16 +5,6 @@
 
 import type { Context } from '@deepseek-ai/cordis'
 import type { InvariantInstaller } from '@deepseek-ai/dsh-invariants'
-import {
-  loadCapabilityConflicts,
-  loadCuratedCatalog,
-  loadPermissionRules,
-  validateCandidateLock,
-  validatePolicySemantics,
-  type CapabilityConflictCatalog,
-  type CuratedCatalog,
-  type PermissionRuleCatalog,
-} from './index.ts'
 
 const PACKAGE_NAME = '@deepseek-ai/dsh-curated-policy'
 
@@ -23,35 +13,9 @@ export const name = 'curated-policy-invariant'
 /** Service required before the companion can reserve package ownership. */
 export const inject = ['invariants']
 
-/**
- * Validate one curated catalog for invariant companion failures.
- * @param catalog - Catalog to validate.
- * @param conflicts - Capability conflict catalog to validate with the candidates.
- * @param permissions - Permission rule catalog to validate with the candidates.
- * @returns stable policy issue codes, empty when the catalog is valid.
- */
-export function validateCuratedPolicyCatalog(
-  catalog: CuratedCatalog,
-  conflicts: CapabilityConflictCatalog = loadCapabilityConflicts(),
-  permissions: PermissionRuleCatalog = loadPermissionRules(),
-): readonly string[] {
-  return [
-    ...validateCandidateLock(catalog),
-    ...validatePolicySemantics(catalog, conflicts, permissions),
-  ].map(issue => issue.code)
-}
-
-/** Verify the checked-in candidate, conflict, and permission catalogs remain coherent. */
-const install: InvariantInstaller = (_ctx, fail) => {
-  const issues = validateCuratedPolicyCatalog(
-    loadCuratedCatalog(),
-    loadCapabilityConflicts(),
-    loadPermissionRules(),
-  )
-  if (issues.length > 0) {
-    fail(`curated catalog has policy issues: ${issues.join(', ')}`)
-  }
-}
+// No runtime invariant: this package owns fixed policy catalogs and no
+// observable event-stream or mutable-data relationship.
+const install: InvariantInstaller = () => {}
 
 /**
  * Register this package's invariant companion.

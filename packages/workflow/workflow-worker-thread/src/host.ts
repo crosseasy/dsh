@@ -190,19 +190,16 @@ export class WorkerRun implements WorkflowRun {
   }
 
   /**
-   * Cancel + bounded settle + termination. Host-drives every registered
+   * Cancel + bounded worker settlement + termination. Host-drives every registered
    * child's disposal IMMEDIATELY — a wedged worker can relay no dispose RPC,
    * and deferring child teardown to the post-terminate reap would spend the
-   * whole grace waiting for a quiescence that cannot start, then return with
-   * the disposals still in flight — so child disposal overlaps the same
+   * whole grace before cleanup can start — so child disposal overlaps the same
    * grace the worker gets to settle (the worker's own dispose RPCs join the
-   * shared per-child disposal). Waits (at most the grace) for the result and
-   * child quiescence, then terminates the worker unconditionally — the
-   * thread never outlives its run — and reaps whatever children remain
-   * (their disposal is contained, not awaited past the grace, the same
-   * abandonment the seam documents for a slow-disposing child). Idempotent;
-   * safe on every path.
-   * @returns resolves when the run's resources are released or abandoned.
+   * shared per-child disposal). Waits up to the grace for the result and child
+   * quiescence, then terminates the worker unconditionally — the thread never
+   * outlives its run — and awaits any remaining host-side provider starts and
+   * child disposals. Idempotent; safe on every path.
+   * @returns resolves when the worker and all host-side child work are quiescent.
    */
   dispose(): Promise<void> {
     if (this.disposed !== undefined) return this.disposed
@@ -228,6 +225,7 @@ export class WorkerRun implements WorkflowRun {
       ])
       await this.worker.terminate()
       this.reapChildren('workflow disposed')
+      await this.childQuiescence()
     })().then(
       () => { claimed.resolve(undefined) },
       /* v8 ignore next -- result/quiescence never reject and Worker.terminate is the only external promise */

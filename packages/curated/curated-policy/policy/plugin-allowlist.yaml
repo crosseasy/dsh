@@ -1,4 +1,4 @@
-schemaVersion: 1
+schemaVersion: 2
 source:
   awesome:
     repository: https://github.com/0xsline/awesome-deepseek-harness
@@ -23,7 +23,7 @@ candidates:
   repositoryPath: null
   commit: 2113d11a4e4510720251aa49a800bab917b14330
   sourceStatus: verified
-  auditedAt: '2026-08-26'
+  auditedAt: '2026-08-27'
   manifestPath: package.json
   expectedPackage: '@deepseek-ai/dsh-toolkit'
   nodeEngine: ^22.19.0 || >=24.0.0
@@ -31,29 +31,32 @@ candidates:
   requiresCorePatch: false
   license: MIT
   bundlePatch: ./cordis.patch.yml
-  tarballSha256: 886d8b222e7569f1adb627bcdb6ec2a82a19ee2310b39528da8a0afbea11cc65
+  sourceContentSha256: 4674b31fa798d66629f4fcac7edad917c10e1b68b37a86103178a645747da14b
   testFiles: 43
   ciWorkflows: 0
-  installScripts: {}
-  externalDependencies: []
+  installScripts:
+    prepack: npm run build:all
+  externalDependencies:
+  - '@deepseek-ai/cordis'
+  - '@deepseek-ai/dsh-invariants'
+  - '@deepseek-ai/dsh-tools'
   networkAccess: []
   credentials: []
-  targetProfiles:
-  - web-curated
-  - web-coding
-  - web-research
-  - web-enterprise
-  active: true
-  auditWarnings: []
+  targetProfiles: []
+  active: false
+  auditWarnings:
+  - the Git source declares prepack and the expected scoped npm package is not published
   resources:
     entryIds:
-    - dsh-toolkit
+    - tool-kit
     toolNames:
     - toolkit_read
     - toolkit_write
     commandNames:
     - toolkit:inspect
-  rejections: []
+  rejections:
+  - code: prebuilt-package-unavailable
+    evidence: npm registry returned 404 for @deepseek-ai/dsh-toolkit, so no exact prebuilt artifact can replace the Git lifecycle build
 - id: dsh-context
   priority: P0
   capability: context-compression
@@ -71,7 +74,7 @@ candidates:
   repositoryPath: null
   commit: 8531298303ff0014bd732802d69a98a1397ebea7
   sourceStatus: verified
-  auditedAt: '2026-08-26'
+  auditedAt: '2026-08-27'
   manifestPath: package.json
   expectedPackage: dsh-context
   nodeEngine: null
@@ -79,11 +82,18 @@ candidates:
   requiresCorePatch: false
   license: Apache-2.0
   bundlePatch: ./cordis.patch.yml
-  tarballSha256: 86d8fa1fa2e58d87d634b3feca8803377de6d23c7b56acc61988186ad3000ca5
+  sourceContentSha256: 06fa51a9c04a462d7455debd18ba2bcd8e9cbc6dd32753cba1e687ed58722360
   testFiles: 19
   ciWorkflows: 2
   installScripts: {}
-  externalDependencies: []
+  externalDependencies:
+  - '@deepseek-ai/cordis'
+  - '@deepseek-ai/dsh-client-ui-primitives'
+  - '@deepseek-ai/dsh-session'
+  - '@deepseek-ai/dsh-settings'
+  - '@deepseek-ai/schemastery'
+  - react
+  - zod
   networkAccess: []
   credentials: []
   targetProfiles: []
@@ -115,7 +125,7 @@ candidates:
   repositoryPath: null
   commit: 4274ab148d926060a4e5e1399ac9e87894ed1a83
   sourceStatus: verified
-  auditedAt: '2026-08-26'
+  auditedAt: '2026-08-27'
   manifestPath: package.json
   expectedPackage: dsh-web-search-pro
   nodeEngine: ^22.19 || >=24
@@ -123,15 +133,32 @@ candidates:
   requiresCorePatch: false
   license: MIT
   bundlePatch: ./cordis.patch.yml
-  tarballSha256: 68324bd86b5fb64b915e671fb0d3b69d9b0e25f2c227d269d4f1d5f3000676c4
+  sourceContentSha256: 10f5c774c9eae23337db8e4ecf5a5805243693a057b1074ef8ba639d74d1cd2f
+  treeSha256: 34173a2605798b51f5001a9d48d31060e419873bfa3244f882c76f8aa2900261
+  runtimeDependencyClosureSha256: bfb35f02d5b6e2f6e0b556ee3e5786f233bd031aa6e7149321f6c799283912b6
+  npmVersion: 0.1.10
+  npmIntegrity: sha512-wmFfSlWDE3ujFuBSY1W8s2gERSotHD4ueelg5BJ5Hd2/ssB5x24xEaQdbMzNhoAaUjpXeIwfOUdn+nLqHjiYGQ==
   testFiles: 5
   ciWorkflows: 1
-  installScripts:
-    prepare: pnpm run build
+  installScripts: {}
   externalDependencies:
+  - '@anweat/dsh-browser'
+  - '@deepseek-ai/cordis'
+  - '@deepseek-ai/dsh-client-connection'
+  - '@deepseek-ai/dsh-client-locale'
+  - '@deepseek-ai/dsh-client-runtime'
+  - '@deepseek-ai/dsh-client-ui-settings'
+  - '@deepseek-ai/dsh-client-ui-settings-plugins'
+  - '@deepseek-ai/dsh-client-ui-slots'
+  - '@deepseek-ai/dsh-credentials'
+  - '@deepseek-ai/dsh-settings'
+  - '@deepseek-ai/dsh-tools'
+  - '@deepseek-ai/schemastery'
   - cross-spawn
   - js-yaml
   - jsdom
+  requiredRuntimeBundles:
+  - '@anweat/dsh-browser'
   networkAccess:
   - web-search-engines
   - rendered-web-fetch
@@ -142,12 +169,12 @@ candidates:
   - web-coding
   - web-research
   - web-enterprise
-  active: true
+  active: false
   auditWarnings:
-  - package declares a prepare script; audit recorded it but did not execute it
+  - the Git source declares prepare; exact npm 0.1.10 is prebuilt, omits install-time scripts, and its v0.1.10 tag points to the pinned commit
   resources:
     entryIds:
-    - dsh-web-search-pro
+    - web-search-pro
     toolNames:
     - web_search
     serviceKeys:
@@ -156,7 +183,11 @@ candidates:
     - cache/web-search-pro
     envVars:
     - DEEPSEEK_SEARCH_API_KEY
-  rejections: []
+  rejections:
+  - code: assembled-keyless-snapshot-missing
+    evidence: no keyless assembled runnable snapshot exercises this pinned artifact through a real profile composition
+  - code: required-runtime-dependency-missing
+    evidence: the required @anweat/dsh-browser bundle is not installed in the runnable profile dependency closure
 - id: dsh-memento
   priority: P0
   capability: memory
@@ -166,7 +197,7 @@ candidates:
   repositoryPath: null
   commit: ee198efd71dc60f5cd1cd2019e20c63028d2d182
   sourceStatus: verified
-  auditedAt: '2026-08-26'
+  auditedAt: '2026-08-27'
   manifestPath: package.json
   expectedPackage: dsh-memento
   nodeEngine: ^22.19.0 || >=24.0.0
@@ -174,11 +205,17 @@ candidates:
   requiresCorePatch: false
   license: Apache-2.0
   bundlePatch: ./cordis.patch.yml
-  tarballSha256: 94459521c229cfe869c675f7fc9e31edfc690200a77e932fd37b8d42d60595e5
+  sourceContentSha256: 5e44a5e6e68c6364b2ebe91bd5ff13df27e71bf45e7f31a718850374ab5b6884
+  treeSha256: 37a7a4643b38f094bc23c10b09aa1760a88a1b1805192b52b0a96451862cf121
+  runtimeDependencyClosureSha256: b532ef816bdd521a9f5bab119dd4375985e4d28ee4fed8122602db18dcfc4e4a
   testFiles: 15
   ciWorkflows: 3
   installScripts: {}
-  externalDependencies: []
+  externalDependencies:
+  - '@deepseek-ai/cordis'
+  - '@deepseek-ai/dsh-session'
+  - '@deepseek-ai/dsh-tools'
+  - '@deepseek-ai/schemastery'
   networkAccess: []
   credentials: []
   targetProfiles:
@@ -186,7 +223,7 @@ candidates:
   - web-coding
   - web-research
   - web-enterprise
-  active: true
+  active: false
   auditWarnings: []
   resources:
     entryIds:
@@ -200,7 +237,9 @@ candidates:
     - cache/memento
     automationBehaviors:
     - auto-memory
-  rejections: []
+  rejections:
+  - code: assembled-keyless-snapshot-missing
+    evidence: no keyless assembled runnable snapshot exercises this pinned artifact through a real profile composition
   config:
     entryId: memento
     values:
@@ -219,7 +258,7 @@ candidates:
   repositoryPath: null
   commit: da7ee900539a0bcb65e0c40b94376f9f4334008d
   sourceStatus: verified
-  auditedAt: '2026-08-26'
+  auditedAt: '2026-08-27'
   manifestPath: package.json
   expectedPackage: dsh-mcp-panel
   nodeEngine: ^22.19.0 || >=24.0.0
@@ -227,12 +266,23 @@ candidates:
   requiresCorePatch: false
   license: Apache-2.0
   bundlePatch: ./cordis.patch.yml
-  tarballSha256: a60ec3ae0827a38e685115542cf478ced6d11aa4b4dbe0517ad2dcb13aa8c557
+  sourceContentSha256: 8ff0d62a3eddb3857fc324d2c3bb5250048d04d4dca064864b3565fbea6a16eb
+  treeSha256: d4e0cec7f9e7c3e2d59cb18d3ccf604edb531c94d9ebdaf51a82d3b504e47a50
+  runtimeDependencyClosureSha256: ab1b9dbc5b61a17da9daa5fd130e92710f7f820a56494a4a7c586e5777f34df5
+  npmVersion: 0.5.1
+  npmIntegrity: sha512-CnCzRD043IP8JV2KvyaVUBVMz26uwRAUHt9+srovyycorZ6RW58EcuURcG4pr4zXJddNSt0+O7iJbNDQ1fgdsg==
   testFiles: 16
   ciWorkflows: 3
-  installScripts:
-    prepare: node scripts/prepare.mjs
+  installScripts: {}
   externalDependencies:
+  - '@deepseek-ai/cordis'
+  - '@deepseek-ai/cordis-plugin-loader'
+  - '@deepseek-ai/dsh-commands'
+  - '@deepseek-ai/dsh-jobs'
+  - '@deepseek-ai/dsh-subprocess'
+  - '@deepseek-ai/dsh-tools'
+  - '@deepseek-ai/dsh-typert-protocol'
+  - '@deepseek-ai/schemastery'
   - tsdown
   - typescript
   - zod
@@ -245,19 +295,21 @@ candidates:
   - web-coding
   - web-research
   - web-enterprise
-  active: true
+  active: false
   auditWarnings:
-  - package declares a prepare script; audit recorded it but did not execute it
+  - the Git source declares prepare; exact npm 0.5.1 is prebuilt and the pinned commit differs from its tag only in documentation
   resources:
     entryIds:
-    - dsh-mcp-panel
+    - mcp-panel
     commandNames:
     - mcp:panel
     uiSlots:
     - settings:mcp-panel
     settingsTabs:
     - mcp-panel
-  rejections: []
+  rejections:
+  - code: assembled-keyless-snapshot-missing
+    evidence: no keyless assembled runnable snapshot exercises this pinned artifact through a real profile composition
 - id: dsh-checkpoint-rewind
   priority: P0
   capability: checkpoint-rollback
@@ -267,7 +319,7 @@ candidates:
   repositoryPath: null
   commit: 377174b99200ea2f004f03f679f39515505c38f3
   sourceStatus: verified
-  auditedAt: '2026-08-26'
+  auditedAt: '2026-08-27'
   manifestPath: package.json
   expectedPackage: dsh-checkpoint-rewind
   nodeEngine: ^22.19.0 || >=24.0.0
@@ -275,11 +327,23 @@ candidates:
   requiresCorePatch: false
   license: Apache-2.0
   bundlePatch: ./cordis.patch.yml
-  tarballSha256: 58e39662b37b03a599ba34caede18f96bf7c474abc290eaa0a9cede76e3dd315
+  sourceContentSha256: 03c437ce36f67762d0f00b5df9243aa2e4a363e523c0c743953d5cf45a3abd27
+  treeSha256: 16ed71a570903e80d93b77f83c7ab0da6dae1e6cb31b2ffb78e7e71e201fc71d
+  runtimeDependencyClosureSha256: 7c73872a939ef4b394d4690e78632df169016b813af3dbd988c523f8df20c4e7
+  npmVersion: 0.5.5
+  npmIntegrity: sha512-dKUMlFfDk+K4rezHcgKMlLCBtS/ShW2A6w9ZBmPqJGeVegXxsUXrfgwNRmptqiSkRWzrP3SrbPwpiKYjDs+J5g==
   testFiles: 17
   ciWorkflows: 3
-  installScripts: {}
+  installScripts:
+    prepack: npm test
   externalDependencies:
+  - '@deepseek-ai/cordis'
+  - '@deepseek-ai/dsh-llm'
+  - '@deepseek-ai/dsh-session'
+  - '@deepseek-ai/dsh-storage-domain'
+  - '@deepseek-ai/dsh-tools'
+  - '@deepseek-ai/dsh-typert-protocol'
+  - '@deepseek-ai/schemastery'
   - zod
   networkAccess: []
   credentials: []
@@ -288,17 +352,20 @@ candidates:
   - web-coding
   - web-research
   - web-enterprise
-  active: true
-  auditWarnings: []
+  active: false
+  auditWarnings:
+  - exact npm 0.5.5 is prebuilt and the pinned commit differs from its tag only in documentation
   resources:
     entryIds:
-    - dsh-checkpoint-rewind
+    - checkpoint-rewind
     toolNames:
     - checkpoint_create
     - checkpoint_restore
     commandNames:
     - checkpoint:rewind
-  rejections: []
+  rejections:
+  - code: assembled-keyless-snapshot-missing
+    evidence: no keyless assembled runnable snapshot exercises this pinned artifact through a real profile composition
 - id: dsh-lsp-actions
   priority: P0
   capability: lsp-actions
@@ -308,7 +375,7 @@ candidates:
   repositoryPath: null
   commit: f86d45c10ce248ae4d0d30118354e3ff07432b0e
   sourceStatus: verified
-  auditedAt: '2026-08-26'
+  auditedAt: '2026-08-27'
   manifestPath: package.json
   expectedPackage: dsh-lsp-actions
   nodeEngine: ^22.19.0 || >=24.0.0
@@ -316,12 +383,23 @@ candidates:
   requiresCorePatch: false
   license: Apache-2.0
   bundlePatch: ./cordis.patch.yml
-  tarballSha256: 98b91db5d7b0c90bcf5043380512fd940dddb30132cc0c98476477abb10da724
+  sourceContentSha256: 3fa924a6b928633f472f9321fe3b01af4c5f68e5ef452b7098e5471efe61ee58
+  treeSha256: ad2539759220b7025486014904e92709c93455decb38ba58c954e269002d2a38
+  runtimeDependencyClosureSha256: 4cbda3bf20c820fe4130f01c83bd0e4a9cad243769ec9310a1db0fde7d3bb9d8
+  npmVersion: 0.3.4
+  npmIntegrity: sha512-JUMLUxtSoFsnzn88XBeyUbFrDSNBrT7V+GnaFWozjfe4rPncFaKGKun6T8E9cyAM1W914qgIj3n5X4CMa/0+rg==
   testFiles: 18
   ciWorkflows: 3
   installScripts:
     prepare: tsc --noEmitOnError && node scripts/fix-dts.mjs
-  externalDependencies: []
+  externalDependencies:
+  - '@deepseek-ai/cordis'
+  - '@deepseek-ai/dsh-fs'
+  - '@deepseek-ai/dsh-llm'
+  - '@deepseek-ai/dsh-sandbox'
+  - '@deepseek-ai/dsh-subprocess'
+  - '@deepseek-ai/dsh-tools'
+  - '@deepseek-ai/schemastery'
   networkAccess: []
   credentials: []
   targetProfiles:
@@ -329,18 +407,20 @@ candidates:
   - web-coding
   - web-research
   - web-enterprise
-  active: true
+  active: false
   auditWarnings:
-  - package declares a prepare script; audit recorded it but did not execute it
+  - exact npm 0.3.4 is prebuilt and the pinned commit differs from its tag only in the pull-request template
   resources:
     entryIds:
-    - dsh-lsp-actions
+    - lsp-actions
     toolNames:
     - lsp_diagnostics
     - lsp_rename
     serviceKeys:
     - lspActions
-  rejections: []
+  rejections:
+  - code: assembled-keyless-snapshot-missing
+    evidence: no keyless assembled runnable snapshot exercises this pinned artifact through a real profile composition
 - id: dsh-permission-rules
   priority: P0
   capability: permission-policy
@@ -350,7 +430,7 @@ candidates:
   repositoryPath: null
   commit: 36984920b1bfad1d542d1e937f7c99df8d1d848c
   sourceStatus: verified
-  auditedAt: '2026-08-26'
+  auditedAt: '2026-08-27'
   manifestPath: package.json
   expectedPackage: dsh-permission-rules
   nodeEngine: ^22.19.0 || >=24.0.0
@@ -358,27 +438,35 @@ candidates:
   requiresCorePatch: false
   license: Apache-2.0
   bundlePatch: ./cordis.patch.yml
-  tarballSha256: e56ce2e687fc502a470162e84a1245c5cf44e420dccec89e81e02024ee80d35b
+  sourceContentSha256: ac562528675cdbaf364856c1adb2785f3b0738a101ccfc578b93007fa4d14652
+  npmVersion: 0.5.5
+  npmIntegrity: sha512-gWGzVycnbVSxbqGCp4AicaMTpo9fejmIxICVPwLk72wAepnrrncSuHUsm5Zzdjg/kBCAnRz7KEx3StQqTbesyg==
   testFiles: 20
   ciWorkflows: 3
   installScripts:
     prepare: node scripts/prepare.mjs
   externalDependencies:
+  - '@deepseek-ai/cordis'
+  - '@deepseek-ai/dsh-agent'
+  - '@deepseek-ai/dsh-commands'
+  - '@deepseek-ai/dsh-llm'
+  - '@deepseek-ai/dsh-session'
+  - '@deepseek-ai/dsh-tools'
+  - '@deepseek-ai/dsh-typert-protocol'
+  - '@deepseek-ai/schemastery'
+  - '@types/react'
   - chokidar
+  - react
   - tsdown
   - typescript
   - yaml
   - zod
   networkAccess: []
   credentials: []
-  targetProfiles:
-  - web-curated
-  - web-coding
-  - web-research
-  - web-enterprise
-  active: true
+  targetProfiles: []
+  active: false
   auditWarnings:
-  - package declares a prepare script; audit recorded it but did not execute it
+  - exact npm 0.5.5 is prebuilt and the pinned commit differs from its tag only in documentation, but its bundle does not enable enforcement
   resources:
     entryIds:
     - permission-rules
@@ -388,7 +476,9 @@ candidates:
     - permissionRules
     waterfallListeners:
     - tools/pre-execute:next
-  rejections: []
+  rejections:
+  - code: artifact-permission-enforcement-disabled
+    evidence: the published bundle patch omits enforce=true, so artifact-level fail-closed verification rejects it before profile overrides
   config:
     entryId: permission-rules
     values:
@@ -407,7 +497,7 @@ candidates:
   repositoryPath: null
   commit: b8c5eefc1584a5a1d69116a0b038acd2abc4adb6
   sourceStatus: verified
-  auditedAt: '2026-08-26'
+  auditedAt: '2026-08-27'
   manifestPath: package.json
   expectedPackage: dsh-smooth-stream
   nodeEngine: ^22.19.0 || >=24.0.0
@@ -415,28 +505,40 @@ candidates:
   requiresCorePatch: false
   license: MIT
   bundlePatch: ./cordis.patch.yml
-  tarballSha256: 38f376c16f868141611040a0bf950e56f44ed3705259deb92e72ca5c833584fa
+  sourceContentSha256: 1a0322713fafeaccbb77e92fa2673da363676516cde88512b4949b43299573c8
   testFiles: 4
   ciWorkflows: 0
   installScripts:
     prepare: tsdown
-  externalDependencies: []
+  externalDependencies:
+  - '@deepseek-ai/cordis'
+  - '@deepseek-ai/dsh-client-connection'
+  - '@deepseek-ai/dsh-client-locale'
+  - '@deepseek-ai/dsh-client-runtime'
+  - '@deepseek-ai/dsh-client-ui-attachment'
+  - '@deepseek-ai/dsh-client-ui-conversation'
+  - '@deepseek-ai/dsh-client-ui-primitives'
+  - '@deepseek-ai/dsh-client-ui-settings'
+  - '@deepseek-ai/dsh-client-ui-settings-plugins'
+  - '@deepseek-ai/dsh-client-ui-slots'
+  - '@deepseek-ai/dsh-host-webserver'
+  - '@deepseek-ai/dsh-settings'
+  - '@deepseek-ai/schemastery'
+  - react
   networkAccess: []
   credentials: []
-  targetProfiles:
-  - web-curated
-  - web-coding
-  - web-research
-  - web-enterprise
-  active: true
+  targetProfiles: []
+  active: false
   auditWarnings:
   - package declares a prepare script; audit recorded it but did not execute it
   resources:
     entryIds:
-    - dsh-smooth-stream
+    - smooth-stream
     uiSlots:
     - message:stream-renderer
-  rejections: []
+  rejections:
+  - code: npm-artifact-source-mismatch
+    evidence: exact npm 0.3.4 is prebuilt, but tag v0.3.4 predates 13 commits that change the pinned runtime and client sources
 - id: upstream-radar
   priority: P1
   capability: supply-chain-monitoring
@@ -446,7 +548,7 @@ candidates:
   repositoryPath: null
   commit: e02ca9568d256a5f19c1282b8c95a9844c84aa82
   sourceStatus: verified
-  auditedAt: '2026-08-26'
+  auditedAt: '2026-08-27'
   manifestPath: package.json
   expectedPackage: upstream-radar
   nodeEngine: '>=22'
@@ -454,7 +556,7 @@ candidates:
   requiresCorePatch: false
   license: Apache-2.0
   bundlePatch: ./cordis.patch.yml
-  tarballSha256: 3a173e976cb23d4e95957169056ca3be327dcedb67641f9d20e7a336ee4df6c3
+  sourceContentSha256: 211f62a59d2d28bef03e76728412a341b5c35890a6e58ce8f143d59fd18fc0b6
   testFiles: 58
   ciWorkflows: 8
   installScripts: {}
@@ -465,13 +567,10 @@ candidates:
   - github-api
   credentials:
   - optional-github-token
-  targetProfiles:
-  - web-curated
-  - web-coding
-  - web-research
-  - web-enterprise
-  active: true
-  auditWarnings: []
+  targetProfiles: []
+  active: false
+  auditWarnings:
+  - exact npm 0.43.5 is prebuilt, but the pinned source contains later runtime changes
   resources:
     entryIds:
     - upstream-radar
@@ -481,7 +580,9 @@ candidates:
     - cache/upstream-radar
     envVars:
     - GITHUB_TOKEN
-  rejections: []
+  rejections:
+  - code: npm-artifact-source-mismatch
+    evidence: tag v0.43.5 predates 32 commits that change the pinned runtime, and the Git artifact does not contain its compiled export
 - id: dsh-plugin-hub
   priority: P1
   capability: plugin-marketplace
@@ -499,7 +600,7 @@ candidates:
   repositoryPath: null
   commit: 28c06d69843df0e1bd08184c5671f2b182a31657
   sourceStatus: verified
-  auditedAt: '2026-08-26'
+  auditedAt: '2026-08-27'
   manifestPath: package.json
   expectedPackage: '@noob-stupid/dsh-plugin-console'
   nodeEngine: null
@@ -507,7 +608,7 @@ candidates:
   requiresCorePatch: false
   license: MIT
   bundlePatch: ./cordis.patch.yml
-  tarballSha256: 1676d6ef437b30792fa268c0e55dac6db6337867a32de8fed3f3c91dc4153844
+  sourceContentSha256: dc5ce2b08737a2e1941bcbe581fda063ab63cf3d89d5355cfc98a2b6f40efc87
   testFiles: 0
   ciWorkflows: 1
   installScripts: {}
@@ -554,7 +655,7 @@ candidates:
   repositoryPath: null
   commit: 593247b49b19e724f38f0f11b904a871bdec06cd
   sourceStatus: unreachable
-  auditedAt: '2026-08-26'
+  auditedAt: '2026-08-27'
   manifestPath: null
   expectedPackage: dsh-plugin-guide
   nodeEngine: null
@@ -570,11 +671,10 @@ candidates:
   credentials: []
   targetProfiles: []
   active: false
-  auditWarnings:
-  - profile install reachability was rechecked on 2026-08-25 and the repository required GitHub authentication
+  auditWarnings: []
   rejections:
   - code: repository-commit-unreachable
-    evidence: the public source repository is reachable but the audited commit and its package metadata are unavailable
+    evidence: the public repository returned 200, but GitHub's commit API returned 422 and codeload returned 404 for the pinned SHA
 - id: dsh-plugin-check
   priority: P1
   capability: plugin-admission-checks
@@ -584,7 +684,7 @@ candidates:
   repositoryPath: null
   commit: 5e51cb7e56f68e54cf50c36e1e0e9e959af696a7
   sourceStatus: verified
-  auditedAt: '2026-08-26'
+  auditedAt: '2026-08-27'
   manifestPath: package.json
   expectedPackage: '@omdsh-dev/dsh-plugin-check'
   nodeEngine: ^22.19.0 || >=24.0.0
@@ -592,11 +692,15 @@ candidates:
   requiresCorePatch: false
   license: MIT
   bundlePatch: ./cordis.patch.yml
-  tarballSha256: ed1b043a5f97c45e422985afc10a00144349f386aa433b66e141d83a3daf1918
+  sourceContentSha256: d0bb42f6664076960df363569f217da833082a9c3412edcbceebaf8deb145295
   testFiles: 8
   ciWorkflows: 0
-  installScripts: {}
-  externalDependencies: []
+  installScripts:
+    prepack: npm run build
+  externalDependencies:
+  - '@deepseek-ai/cordis'
+  - '@deepseek-ai/dsh-invariants'
+  - '@deepseek-ai/dsh-tools'
   networkAccess: []
   credentials: []
   targetProfiles: []
@@ -622,26 +726,28 @@ candidates:
   repositoryPath: packages/plugins/plugin-session-export
   commit: acf9d2d960d2b9ac6ae8569a68836a087c2154ee
   sourceStatus: verified
-  auditedAt: '2026-08-26'
-  manifestPath: packages/plugins/plugin-session-export/package.json
+  auditedAt: '2026-08-27'
+  manifestPath: package.json
   expectedPackage: '@dsh-suite/plugin-session-export'
-  nodeEngine: '>=22'
-  nodeEngineEvidence: package.json#engines.node at repository root
+  nodeEngine: null
+  nodeEngineEvidence: null
   requiresCorePatch: false
   license: MIT
   bundlePatch: ./cordis.patch.yml
-  tarballSha256: 9f2be4352c0c880a820b1baa1c11f506d42769f708b9922e520bf9bf4eb63f28
+  sourceContentSha256: da7f8e55285057328909c0db840d617aa8cf7e90a647d0bc7f5e79e15d985480
   testFiles: 0
   ciWorkflows: 0
   installScripts: {}
-  externalDependencies: []
+  externalDependencies:
+  - '@deepseek-ai/cordis'
+  - '@deepseek-ai/dsh-session'
+  - '@deepseek-ai/dsh-tools'
   networkAccess: []
   credentials: []
-  targetProfiles:
-  - web-research
-  active: true
+  targetProfiles: []
+  active: false
   auditWarnings:
-  - package manifest does not declare engines.node; no incompatible engine was observed in read-only metadata
+  - package manifest does not declare engines.node; repository-root metadata is not package evidence
   - shallow metadata was gathered from a monorepo subpath; CI and test counts are subpath-local
   resources:
     entryIds:
@@ -650,7 +756,9 @@ candidates:
     - session:export
     cacheDirs:
     - exports/session
-  rejections: []
+  rejections:
+  - code: node-compatibility-unverified
+    evidence: the installed package manifest does not declare engines.node; repository-root metadata is not package evidence
 - id: loongsuite-dsh-plugin
   priority: P0
   capability: otel-telemetry
@@ -660,7 +768,7 @@ candidates:
   repositoryPath: null
   commit: 5e893af6172beb703a98b56ccc5e443495287732
   sourceStatus: verified
-  auditedAt: '2026-08-26'
+  auditedAt: '2026-08-27'
   manifestPath: package.json
   expectedPackage: '@loongsuite/dsh-plugin'
   nodeEngine: '>=22.19.0'
@@ -668,11 +776,17 @@ candidates:
   requiresCorePatch: false
   license: Apache-2.0
   bundlePatch: ./cordis.patch.yml
-  tarballSha256: 31ed315e6d0d48254553fdd586a5d8ef084c90616579184eed2d1e6a349f9005
+  sourceContentSha256: 6bf862e166fc1a3547d8764db2759381b4ee99f4ca9856c4b1ad7c74ed37e893
+  treeSha256: d6499dc78765e8abf371b291a65e924c52830293edc5a5ca2df1401b193a469e
+  runtimeDependencyClosureSha256: ce7b387ab122cf5213d77d43a9f8141598cd65d6788faa3ac0122515ecb7d98c
+  npmVersion: 0.1.1
+  npmIntegrity: sha512-wQmSzOzyjp0rd3XKFmcK+vXRETqVr0V7xL5qh8El2RujteV4Gkc1vz1OxTG12lQZrjKVWV5ixRRJU1HDlBafog==
   testFiles: 7
   ciWorkflows: 1
-  installScripts: {}
+  installScripts:
+    prepack: pnpm run build
   externalDependencies:
+  - '@deepseek-ai/schemastery'
   - '@loongsuite/otel-util-genai'
   - '@opentelemetry/api'
   - '@opentelemetry/exporter-metrics-otlp-proto'
@@ -690,8 +804,9 @@ candidates:
   - web-coding
   - web-research
   - web-enterprise
-  active: true
-  auditWarnings: []
+  active: false
+  auditWarnings:
+  - the pinned Git source declares prepack; exact npm 0.1.1 is prebuilt, has no install-time scripts, and its v0.1.1 tag points to the pinned commit
   resources:
     entryIds:
     - loongsuite-observability
@@ -699,7 +814,9 @@ candidates:
     - otelExporter
     envVars:
     - OTEL_EXPORTER_OTLP_ENDPOINT
-  rejections: []
+  rejections:
+  - code: assembled-keyless-snapshot-missing
+    evidence: no keyless assembled runnable snapshot exercises this pinned artifact through a real profile composition
   config:
     entryId: loongsuite-observability
     values:
@@ -713,7 +830,7 @@ candidates:
   repositoryPath: null
   commit: 9461261258eec98f3861737128aae4f75c5c9161
   sourceStatus: verified
-  auditedAt: '2026-08-26'
+  auditedAt: '2026-08-27'
   manifestPath: package.json
   expectedPackage: dsh-config-manager
   nodeEngine: ^22.19.0 || >=24.0.0
@@ -721,12 +838,28 @@ candidates:
   requiresCorePatch: false
   license: MIT
   bundlePatch: ./cordis.patch.yml
-  tarballSha256: b52a8526e6ec76d9f46c4c4f68817bcda09a20f30647a229c44274ab683f3262
+  sourceContentSha256: b01aecfe0782bbcecd2d5cd60e897d162b79dde0cfe50d8ff6003e6568cdd06b
   testFiles: 18
   ciWorkflows: 1
   installScripts: {}
   externalDependencies:
+  - '@deepseek-ai/dsh-agent-presets'
+  - '@deepseek-ai/dsh-client-connection'
+  - '@deepseek-ai/dsh-client-locale'
+  - '@deepseek-ai/dsh-client-runtime'
+  - '@deepseek-ai/dsh-client-ui-settings'
+  - '@deepseek-ai/dsh-client-ui-slots'
+  - '@deepseek-ai/dsh-credentials'
+  - '@deepseek-ai/dsh-home-paths'
+  - '@deepseek-ai/dsh-host-plugin-inventory'
+  - '@deepseek-ai/dsh-host-webserver'
+  - '@deepseek-ai/dsh-llm'
+  - '@deepseek-ai/dsh-settings'
+  - '@deepseek-ai/dsh-system-prompt'
+  - '@deepseek-ai/dsh-tools'
   - js-yaml
+  - react
+  - react-dom
   networkAccess: []
   credentials: []
   targetProfiles: []
@@ -760,7 +893,7 @@ candidates:
   repositoryPath: null
   commit: f9153dfc1ce47cf43445c1b351ee3ae47b4ad9f1
   sourceStatus: verified
-  auditedAt: '2026-08-26'
+  auditedAt: '2026-08-27'
   manifestPath: package.json
   expectedPackage: dsh-better-sidebar
   nodeEngine: '>=20'
@@ -768,21 +901,59 @@ candidates:
   requiresCorePatch: false
   license: MIT
   bundlePatch: ./cordis.patch.yml
-  tarballSha256: 06502b0c3f5a7bc4ea243fd8d90d2a30c820d8317d75d9ba00ade6b4d49136cc
+  sourceContentSha256: 16530eca80d7a25fce018da18d3ab2e1f3a2a44120fb89f39da2ee9383f0fcd2
   testFiles: 99
   ciWorkflows: 2
   installScripts:
     prepare: tsdown
   externalDependencies:
   - '@codemirror/commands'
+  - '@codemirror/lang-cpp'
+  - '@codemirror/lang-css'
+  - '@codemirror/lang-go'
+  - '@codemirror/lang-html'
+  - '@codemirror/lang-java'
+  - '@codemirror/lang-javascript'
+  - '@codemirror/lang-json'
+  - '@codemirror/lang-markdown'
+  - '@codemirror/lang-php'
+  - '@codemirror/lang-python'
+  - '@codemirror/lang-rust'
+  - '@codemirror/lang-sql'
+  - '@codemirror/lang-vue'
+  - '@codemirror/lang-xml'
+  - '@codemirror/lang-yaml'
   - '@codemirror/language'
+  - '@codemirror/legacy-modes'
+  - '@codemirror/search'
+  - '@codemirror/state'
   - '@codemirror/view'
+  - '@deepseek-ai/cordis'
+  - '@deepseek-ai/dsh-agent'
+  - '@deepseek-ai/dsh-client-locale'
+  - '@deepseek-ai/dsh-client-runtime'
+  - '@deepseek-ai/dsh-client-ui-conversation'
+  - '@deepseek-ai/dsh-client-ui-primitives'
+  - '@deepseek-ai/dsh-client-ui-settings'
+  - '@deepseek-ai/dsh-client-ui-slots'
+  - '@deepseek-ai/dsh-host-webserver'
+  - '@deepseek-ai/dsh-invariants'
+  - '@deepseek-ai/dsh-llm'
+  - '@deepseek-ai/dsh-session'
+  - '@deepseek-ai/dsh-settings'
+  - '@deepseek-ai/dsh-subagent'
+  - '@deepseek-ai/dsh-tools'
+  - '@huanlin/dsh-plugin-better-locale'
+  - '@lezer/highlight'
+  - clsx
   - dompurify
   - mermaid
   - node-pty
+  - react
+  - react-dom
   - react-icons
   - rxjs
-  - schemastery
+  - '@deepseek-ai/schemastery'
   - ws
   networkAccess:
   - embedded-terminal
@@ -792,7 +963,6 @@ candidates:
   - web-coding
   active: false
   auditWarnings:
-  - GitHub API tree enumeration hit a rate limit; test and CI counts were taken from the planning matrix
   - package declares a prepare script; audit recorded it but did not execute it
   resources:
     entryIds:
@@ -823,7 +993,7 @@ candidates:
   repositoryPath: null
   commit: e3997ce798e495ad8051b95c4e96920780c96aed
   sourceStatus: verified
-  auditedAt: '2026-08-26'
+  auditedAt: '2026-08-27'
   manifestPath: package.json
   expectedPackage: dsh-agent-team-gui
   nodeEngine: ^22.19.0 || >=24.0.0
@@ -831,12 +1001,32 @@ candidates:
   requiresCorePatch: false
   license: MIT
   bundlePatch: ./cordis.patch.yml
-  tarballSha256: a8976814ecb70566634f36362b197cc3397ebf9d1d2cf8216e060a20af7fe094
+  sourceContentSha256: 1fa83ba2e1b638089f82ffb52527bba630127c1bd4f0076dd9c7cabbb20d999d
   testFiles: 11
   ciWorkflows: 2
   installScripts:
+    prepack: pnpm run build
     prepare: pnpm run build
   externalDependencies:
+  - '@deepseek-ai/cordis'
+  - '@deepseek-ai/dsh-agent'
+  - '@deepseek-ai/dsh-brand'
+  - '@deepseek-ai/dsh-client-connection'
+  - '@deepseek-ai/dsh-client-locale'
+  - '@deepseek-ai/dsh-client-runtime'
+  - '@deepseek-ai/dsh-client-ui-conversation'
+  - '@deepseek-ai/dsh-client-ui-settings'
+  - '@deepseek-ai/dsh-client-ui-slots'
+  - '@deepseek-ai/dsh-host-apiproxy'
+  - '@deepseek-ai/dsh-jobs'
+  - '@deepseek-ai/dsh-llm'
+  - '@deepseek-ai/dsh-session'
+  - '@deepseek-ai/dsh-storage'
+  - '@deepseek-ai/dsh-storage-domain'
+  - '@deepseek-ai/dsh-subagent'
+  - '@deepseek-ai/dsh-system-prompt'
+  - '@deepseek-ai/dsh-tools'
+  - '@deepseek-ai/schemastery'
   - react
   - zod
   networkAccess: []
@@ -867,7 +1057,7 @@ candidates:
   repositoryPath: null
   commit: 1cc6c8e614555901bbaae09d58530df321a7287b
   sourceStatus: verified
-  auditedAt: '2026-08-26'
+  auditedAt: '2026-08-27'
   manifestPath: package.json
   expectedPackage: dsh-background-agents
   nodeEngine: ^22.19.0 || >=24.0.0
@@ -875,11 +1065,21 @@ candidates:
   requiresCorePatch: false
   license: Apache-2.0
   bundlePatch: ./cordis.patch.yml
-  tarballSha256: 857f706372bd94281ef3eefa5c1f15811e4d7284ea319afbed830488c30fdf9b
+  sourceContentSha256: c5910d771b2a1eea8faf14ed5e88719da91f54f3ff4fc54dad1b477c95be9f07
   testFiles: 11
   ciWorkflows: 2
   installScripts: {}
   externalDependencies:
+  - '@deepseek-ai/cordis'
+  - '@deepseek-ai/dsh-commands'
+  - '@deepseek-ai/dsh-llm'
+  - '@deepseek-ai/dsh-session'
+  - '@deepseek-ai/dsh-storage'
+  - '@deepseek-ai/dsh-storage-domain'
+  - '@deepseek-ai/dsh-storage-json'
+  - '@deepseek-ai/dsh-subagent'
+  - '@deepseek-ai/dsh-tools'
+  - '@deepseek-ai/schemastery'
   - zod
   networkAccess: []
   credentials: []
@@ -893,7 +1093,9 @@ candidates:
     - dsh-background-agents
     serviceKeys:
     - backgroundAgents
-  rejections: []
+  rejections:
+  - code: long-cycle-evidence-pending
+    evidence: background-agent lifecycle, bounded delegation, recovery, and canary campaigns remain pending
 - id: dsh-computer-use
   priority: P2
   capability: browser-computer-use
@@ -911,7 +1113,7 @@ candidates:
   repositoryPath: null
   commit: 0b0a0844018b56a6a8e95aefea6529004b8341c4
   sourceStatus: verified
-  auditedAt: '2026-08-26'
+  auditedAt: '2026-08-27'
   manifestPath: package.json
   expectedPackage: dsh-computer-use
   nodeEngine: '>=22'
@@ -919,12 +1121,18 @@ candidates:
   requiresCorePatch: false
   license: Apache-2.0
   bundlePatch: ./cordis.patch.yml
-  tarballSha256: 50cdabec9829538f6eb39d8ee9a286a3753a53ef7b33e13b88cfa361b82b7dab
+  sourceContentSha256: 95a18b85e4c5b5097d2095096373bd99705bc26d63eb664c14b0e91ce3dc3f3e
   testFiles: 22
   ciWorkflows: 3
   installScripts:
     prepare: npm run build:ts
   externalDependencies:
+  - '@deepseek-ai/cordis'
+  - '@deepseek-ai/dsh-agent'
+  - '@deepseek-ai/dsh-subprocess'
+  - '@deepseek-ai/dsh-system-prompt'
+  - '@deepseek-ai/dsh-tools'
+  - '@deepseek-ai/schemastery'
   - playwright-core
   networkAccess:
   - browser-automation
@@ -934,7 +1142,6 @@ candidates:
   - web-coding
   active: false
   auditWarnings:
-  - GitHub API tree enumeration hit a rate limit; test and CI counts were taken from the planning matrix
   - package declares a prepare script; audit recorded it but did not execute it
   resources:
     entryIds:
@@ -955,7 +1162,7 @@ candidates:
   repositoryPath: null
   commit: 7ec4c403a1b41236944258bdf2544f27a47baff6
   sourceStatus: verified
-  auditedAt: '2026-08-26'
+  auditedAt: '2026-08-27'
   manifestPath: package.json
   expectedPackage: dsh-vision-router
   nodeEngine: ^22.19.0 || >=24.0.0
@@ -963,13 +1170,17 @@ candidates:
   requiresCorePatch: false
   license: MIT
   bundlePatch: ./cordis.patch.yml
-  tarballSha256: c28a98f689cd400fa3970882d136a85875fba4a3a84a2619b35446e90c494daf
+  sourceContentSha256: 7e6a3492d703fc2ca2adc81f376485b23e8c018e5a227c2522e7bf70db909356
   testFiles: 93
   ciWorkflows: 5
   installScripts: {}
   externalDependencies:
+  - '@deepseek-ai/dsh-anonymous-user-id'
+  - '@deepseek-ai/dsh-llm-deepseek'
+  - '@deepseek-ai/schemastery'
   - potrace
   - puppeteer-core
+  - sharp
   - undici
   networkAccess:
   - vision-provider-api
@@ -980,7 +1191,6 @@ candidates:
   - web-research
   active: false
   auditWarnings:
-  - GitHub API tree enumeration hit a rate limit; test and CI counts were taken from the planning matrix
   - enterprise profile must disable anonymous vision fallback before activation
   resources:
     entryIds:
@@ -1013,7 +1223,7 @@ candidates:
   repositoryPath: null
   commit: 0de6c180d394ff5c891dc8ef9935a22a3a5909ff
   sourceStatus: verified
-  auditedAt: '2026-08-26'
+  auditedAt: '2026-08-27'
   manifestPath: package.json
   expectedPackage: dsh-llm-fallbacks
   nodeEngine: '>=22'
@@ -1021,12 +1231,32 @@ candidates:
   requiresCorePatch: false
   license: MIT
   bundlePatch: ./bundle/cordis.patch.yml
-  tarballSha256: 4b7fb9289b1a328b099d32ab7cc7ef3389c40e112cd16555558fcd290d194e41
+  sourceContentSha256: 61fd65893d6917c73c366ae5fc2c2480159b2ce56e2ebb9d5ce7a1995a65eacf
   testFiles: 41
   ciWorkflows: 3
   installScripts:
     prepare: pnpm run build
   externalDependencies:
+  - '@deepseek-ai/cordis'
+  - '@deepseek-ai/dsh-agent'
+  - '@deepseek-ai/dsh-api-gateway'
+  - '@deepseek-ai/dsh-api-remotes'
+  - '@deepseek-ai/dsh-client-connection'
+  - '@deepseek-ai/dsh-client-locale'
+  - '@deepseek-ai/dsh-client-runtime'
+  - '@deepseek-ai/dsh-client-ui-conversation'
+  - '@deepseek-ai/dsh-client-ui-primitives'
+  - '@deepseek-ai/dsh-client-ui-settings'
+  - '@deepseek-ai/dsh-client-ui-settings-plugins'
+  - '@deepseek-ai/dsh-client-ui-slots'
+  - '@deepseek-ai/dsh-commands'
+  - '@deepseek-ai/dsh-llm'
+  - '@deepseek-ai/dsh-session'
+  - '@deepseek-ai/dsh-settings'
+  - '@deepseek-ai/dsh-typert-protocol'
+  - '@deepseek-ai/dsh-typert-registry'
+  - '@deepseek-ai/schemastery'
+  - react
   - use-sync-external-store
   networkAccess:
   - configured-llm-providers
@@ -1035,9 +1265,8 @@ candidates:
   targetProfiles: []
   active: false
   auditWarnings:
-  - GitHub API tree enumeration hit a rate limit; test and CI counts were taken from the planning matrix
   - package declares a prepare script; audit recorded it but did not execute it
-  - MIT license file was verified at the pinned commit
+  - package.json omits license metadata; the pinned repository LICENSE file contains the MIT license
   resources:
     entryIds:
     - dsh-llm-fallbacks
@@ -1065,7 +1294,7 @@ candidates:
   repositoryPath: null
   commit: 362056c735ba0b234fe657cf4bb7a34508055574
   sourceStatus: verified
-  auditedAt: '2026-08-26'
+  auditedAt: '2026-08-27'
   manifestPath: package.json
   expectedPackage: dsh-univer-office
   nodeEngine: '>=22.19.0'
@@ -1073,12 +1302,20 @@ candidates:
   requiresCorePatch: false
   license: Apache-2.0
   bundlePatch: ./cordis.patch.yml
-  tarballSha256: 8ad05b7a2128eb72443861bc1142865879144f3d844fd5e32f71a6bf7b9caa64
+  sourceContentSha256: 6e1af85f2ba357fbeb6fa4f5adcfba7cc71efa056ef3b1ab2f33ce552f8fc8e6
   testFiles: 4
   ciWorkflows: 2
   installScripts:
     prepare: simple-git-hooks
   externalDependencies:
+  - '@deepseek-ai/cordis'
+  - '@deepseek-ai/dsh-attachment'
+  - '@deepseek-ai/dsh-host-webserver'
+  - '@deepseek-ai/dsh-llm'
+  - '@deepseek-ai/dsh-session'
+  - '@deepseek-ai/dsh-skill'
+  - '@deepseek-ai/dsh-tools'
+  - '@deepseek-ai/schemastery'
   - '@puppeteer/browsers'
   - '@univerjs-pro/cli-assets'
   - '@univerjs-pro/engine-formula-rust-binding'
@@ -1094,7 +1331,6 @@ candidates:
   - web-research
   active: false
   auditWarnings:
-  - GitHub API tree enumeration hit a rate limit; CI count was taken from the planning matrix
   - package declares a prepare script; audit recorded it but did not execute it
   resources:
     entryIds:
@@ -1126,7 +1362,7 @@ candidates:
   repositoryPath: null
   commit: ff1ebbf646c831639de158a66212f43aceb2b825
   sourceStatus: verified
-  auditedAt: '2026-08-26'
+  auditedAt: '2026-08-27'
   manifestPath: package.json
   expectedPackage: '@dsh-feishu/dsh-feishu'
   nodeEngine: '>=22.13'
@@ -1134,11 +1370,29 @@ candidates:
   requiresCorePatch: false
   license: MIT
   bundlePatch: ./cordis.patch.yml
-  tarballSha256: 2d89b5905c7d6cdfa1f2f96e24cca5b83bd63b71eab522e2ef7c4345bb80b12d
+  sourceContentSha256: ff0f3da84d88036fbef2f80a936c93e28d4326b9f068b31cce19735e8661fae8
   testFiles: 44
   ciWorkflows: 4
   installScripts: {}
   externalDependencies:
+  - '@deepseek-ai/cordis'
+  - '@deepseek-ai/dsh-agent'
+  - '@deepseek-ai/dsh-commands'
+  - '@deepseek-ai/dsh-credentials'
+  - '@deepseek-ai/dsh-invariants'
+  - '@deepseek-ai/dsh-llm'
+  - '@deepseek-ai/dsh-schedule'
+  - '@deepseek-ai/dsh-scope'
+  - '@deepseek-ai/dsh-session'
+  - '@deepseek-ai/dsh-storage'
+  - '@deepseek-ai/dsh-storage-domain'
+  - '@deepseek-ai/dsh-storage-json'
+  - '@deepseek-ai/dsh-timeout'
+  - '@deepseek-ai/dsh-tools'
+  - '@deepseek-ai/dsh-user-approval'
+  - '@deepseek-ai/dsh-user-questions'
+  - '@deepseek-ai/dsh-workspace'
+  - '@deepseek-ai/schemastery'
   - '@larksuiteoapi/node-sdk'
   - axios
   - js-yaml
@@ -1154,7 +1408,6 @@ candidates:
   targetProfiles: []
   active: false
   auditWarnings:
-  - GitHub API tree enumeration hit a rate limit; test and CI counts were taken from the planning matrix
   - full IM content egress requires a separate threat model before activation
   resources:
     entryIds:
@@ -1179,7 +1432,7 @@ candidates:
   repositoryPath: null
   commit: 35b18dc4b06491223d2fa72a400b8ad5e4def390
   sourceStatus: unreachable
-  auditedAt: '2026-08-26'
+  auditedAt: '2026-08-27'
   manifestPath: null
   expectedPackage: dsh-free-web-search
   nodeEngine: null
@@ -1199,7 +1452,7 @@ candidates:
   - retained as an inactive keyless fallback; dynamic A/B evidence must pass before activation
   rejections:
   - code: repository-commit-unreachable
-    evidence: the repository manifest returned 404 at the pinned commit
+    evidence: the public repository returned 200, but GitHub's commit API returned 422 and codeload returned 404 for the pinned SHA
 - id: dsh-mneme
   priority: P2
   capability: memory
@@ -1209,7 +1462,7 @@ candidates:
   repositoryPath: null
   commit: 64f4963c07670a534c6ea3c06aee63a68958869e
   sourceStatus: unreachable
-  auditedAt: '2026-08-26'
+  auditedAt: '2026-08-27'
   manifestPath: null
   expectedPackage: dsh-mneme
   nodeEngine: null
@@ -1229,7 +1482,7 @@ candidates:
   - retained for memory A/B; autoDream and automatic consolidation stay out of active profiles
   rejections:
   - code: repository-commit-unreachable
-    evidence: the repository manifest returned 404 at the pinned commit
+    evidence: the public repository returned 200, but GitHub's commit API returned 422 and codeload returned 404 for the pinned SHA
 - id: dsh-mcp-manager
   priority: P1
   capability: mcp-management
@@ -1247,7 +1500,7 @@ candidates:
   repositoryPath: null
   commit: c43ef393525b34befec46a2d9a63a6d811b4eb5d
   sourceStatus: unreachable
-  auditedAt: '2026-08-26'
+  auditedAt: '2026-08-27'
   manifestPath: null
   expectedPackage: dsh-mcp-manager
   nodeEngine: null
@@ -1267,7 +1520,7 @@ candidates:
   - retained only as a fallback named by capability-conflicts.yaml
   rejections:
   - code: repository-commit-unreachable
-    evidence: the repository manifest returned 404 at the pinned commit
+    evidence: the public repository returned 200, but GitHub's commit API returned 422 and codeload returned 404 for the pinned SHA
 - id: dsh-tabbit
   priority: P2
   capability: browser-computer-use
@@ -1277,7 +1530,7 @@ candidates:
   repositoryPath: null
   commit: 031ff1194e3522657412c23109c51f9341e24168
   sourceStatus: unreachable
-  auditedAt: '2026-08-26'
+  auditedAt: '2026-08-27'
   manifestPath: null
   expectedPackage: dsh-tabbit
   nodeEngine: null
@@ -1297,7 +1550,7 @@ candidates:
   - retained for browser A/B; dedicated browser installation chain needs separate approval
   rejections:
   - code: repository-commit-unreachable
-    evidence: the repository manifest returned 404 at the pinned commit
+    evidence: the public repository returned 200, but GitHub's commit API returned 422 and codeload returned 404 for the pinned SHA
 - id: dsh-context-doctor
   priority: P1
   capability: context-compression
@@ -1307,7 +1560,7 @@ candidates:
   repositoryPath: null
   commit: 1ce26c1a54e01b27d7f3d6e399686ddec2c8b863
   sourceStatus: unreachable
-  auditedAt: '2026-08-26'
+  auditedAt: '2026-08-27'
   manifestPath: null
   expectedPackage: dsh-context-doctor
   nodeEngine: null
@@ -1327,7 +1580,7 @@ candidates:
   - retained as a read-only context diagnostic fallback; not mounted with the default observer
   rejections:
   - code: repository-commit-unreachable
-    evidence: the repository manifest returned 404 at the pinned commit
+    evidence: the public repository returned 200, but GitHub's commit API returned 422 and codeload returned 404 for the pinned SHA
 - id: dsh-cost-meter
   priority: P1
   capability: cost-metering
@@ -1337,7 +1590,7 @@ candidates:
   repositoryPath: null
   commit: 00da13abef2c229482f8f2d753ffb97dd03299db
   sourceStatus: unreachable
-  auditedAt: '2026-08-26'
+  auditedAt: '2026-08-27'
   manifestPath: null
   expectedPackage: dsh-cost-meter
   nodeEngine: null
@@ -1357,7 +1610,7 @@ candidates:
   - retained for cost-metering A/B; price sync and cache-token accounting remain unproven
   rejections:
   - code: repository-commit-unreachable
-    evidence: the repository manifest returned 404 at the pinned commit
+    evidence: the public repository returned 200, but GitHub's commit API returned 422 and codeload returned 404 for the pinned SHA
 - id: tokenledger
   priority: P1
   capability: cost-metering
@@ -1367,7 +1620,7 @@ candidates:
   repositoryPath: null
   commit: 4b810e341a7c5a0f00772009a3cb57a50e7a17f3
   sourceStatus: unreachable
-  auditedAt: '2026-08-26'
+  auditedAt: '2026-08-27'
   manifestPath: null
   expectedPackage: TokenLedger
   nodeEngine: null
@@ -1387,7 +1640,7 @@ candidates:
   - retained for cost-metering A/B; subscription quota and timezone accounting remain unproven
   rejections:
   - code: repository-commit-unreachable
-    evidence: the repository manifest returned 404 at the pinned commit
+    evidence: the public repository returned 200, but GitHub's commit API returned 422 and codeload returned 404 for the pinned SHA
 - id: dsh-chat-import
   priority: P1
   capability: session-import
@@ -1397,7 +1650,7 @@ candidates:
   repositoryPath: null
   commit: f4003bbaa84b70857e5fca3406a2cfc6bb498ce6
   sourceStatus: unreachable
-  auditedAt: '2026-08-26'
+  auditedAt: '2026-08-27'
   manifestPath: null
   expectedPackage: dsh-chat-import
   nodeEngine: null
@@ -1417,7 +1670,7 @@ candidates:
   - retained for temporary migration profiles, not for always-on curated profiles
   rejections:
   - code: repository-commit-unreachable
-    evidence: the repository manifest returned 404 at the pinned commit
+    evidence: the public repository returned 200, but GitHub's commit API returned 422 and codeload returned 404 for the pinned SHA
 - id: dsh-message-edit
   priority: P1
   capability: message-editing
@@ -1427,7 +1680,7 @@ candidates:
   repositoryPath: null
   commit: edeebe8a61cb262cd5d616ef0c6d129abb500e26
   sourceStatus: unreachable
-  auditedAt: '2026-08-26'
+  auditedAt: '2026-08-27'
   manifestPath: null
   expectedPackage: dsh-message-edit
   nodeEngine: null
@@ -1447,7 +1700,7 @@ candidates:
   - retained as an experimental branch-editing candidate
   rejections:
   - code: repository-commit-unreachable
-    evidence: the repository manifest returned 404 at the pinned commit
+    evidence: the public repository returned 200, but GitHub's commit API returned 422 and codeload returned 404 for the pinned SHA
 - id: dsh-auto-review
   priority: P1
   capability: approval-review
@@ -1457,7 +1710,7 @@ candidates:
   repositoryPath: null
   commit: a9c39b8753888f830d2b5b211b435f6428cbe233
   sourceStatus: unreachable
-  auditedAt: '2026-08-26'
+  auditedAt: '2026-08-27'
   manifestPath: null
   expectedPackage: dsh-auto-review
   nodeEngine: null
@@ -1477,7 +1730,7 @@ candidates:
   - retained for high-risk approval review only; deterministic permission rules remain first
   rejections:
   - code: repository-commit-unreachable
-    evidence: the repository manifest returned 404 at the pinned commit
+    evidence: the public repository returned 200, but GitHub's commit API returned 422 and codeload returned 404 for the pinned SHA
 - id: plugin-notify
   priority: P1
   capability: notification
@@ -1487,7 +1740,7 @@ candidates:
   repositoryPath: packages/plugins/plugin-notify
   commit: 50830a06680d3d64fcb66777400cf4946c384096
   sourceStatus: unreachable
-  auditedAt: '2026-08-26'
+  auditedAt: '2026-08-27'
   manifestPath: null
   expectedPackage: plugin-notify
   nodeEngine: null
@@ -1507,7 +1760,7 @@ candidates:
   - retained for personal notification profiles; full body egress must remain disabled by default
   rejections:
   - code: repository-commit-unreachable
-    evidence: the repository manifest returned 404 at the pinned commit
+    evidence: the public repository returned 200, but GitHub's commit API returned 422 and codeload returned 404 for the pinned SHA
 - id: deepseek-harness-desktop
   priority: P2
   capability: desktop-client
@@ -1517,7 +1770,7 @@ candidates:
   repositoryPath: null
   commit: 26769141acf92422a69f732ca672071388f4cde0
   sourceStatus: unreachable
-  auditedAt: '2026-08-26'
+  auditedAt: '2026-08-27'
   manifestPath: null
   expectedPackage: null
   nodeEngine: null
@@ -1537,7 +1790,7 @@ candidates:
   - desktop client is a deployment surface, not an always-on profile bundle
   rejections:
   - code: repository-commit-unreachable
-    evidence: the repository manifest returned 404 at the pinned commit
+    evidence: the public repository returned 200, but GitHub's commit API returned 422 and codeload returned 404 for the pinned SHA
 - id: martty
   priority: P2
   capability: desktop-client
@@ -1547,7 +1800,7 @@ candidates:
   repositoryPath: null
   commit: 622fdd91740e95ac504958ce59f9ffd012154569
   sourceStatus: unreachable
-  auditedAt: '2026-08-26'
+  auditedAt: '2026-08-27'
   manifestPath: null
   expectedPackage: null
   nodeEngine: null
@@ -1567,4 +1820,4 @@ candidates:
   - TUI client is a deployment surface choice and is mutually exclusive with desktop shells
   rejections:
   - code: repository-commit-unreachable
-    evidence: the repository manifest returned 404 at the pinned commit
+    evidence: the public repository returned 200, but GitHub's commit API returned 422 and codeload returned 404 for the pinned SHA

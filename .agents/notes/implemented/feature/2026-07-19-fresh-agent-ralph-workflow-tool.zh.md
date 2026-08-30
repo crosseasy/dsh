@@ -14,7 +14,7 @@ Status: implemented
 
 在 `packages/workflow/` 下新增独立的消费方包 `@deepseek-ai/dsh-tool-ralph`。它注册 `ralph({ objective, maxRounds? })`，拥有固定工作流脚本，并且只依赖 `ctx.tools`、`ctx.systemPrompt`、`ctx.workflowEngine` 和 `ctx.subagents`。Ralph 运行不是会话目标，不会创建目标状态，也不要求在具体 agent loop 中增加分支。
 
-该工具仅以前台方式运行。调用 agent 作为每个子 agent 的父级以提供 cwd 和谱系，父工具调用等待整次运行结束，父步骤的中止信号会取消工作流。每条路径都会等待 `run.dispose()`，因此调用返回前，取消会经过工作线程引擎的有界收敛并使子 agent 完全停稳。
+该工具仅以前台方式运行。调用 agent 作为每个子 agent 的父级以提供 cwd 和谱系，父工具调用等待整次运行结束。消费方拒绝已中止的父步骤；同步 `start()` 返回后，它添加一条最多转发一次的 `run.cancel()` 桥接、立即复查信号，并在每条路径上等待 `run.dispose()` 前移除桥接。因此调用返回前，取消会经过工作线程引擎的有界收敛并使子 agent 完全停稳。该协议由[单一所有者取消决策](../simplification/2026-08-26-workflow-single-cancellation-owner.zh.md)负责记录。
 
 ### 每次运行的工作流提供方路由
 

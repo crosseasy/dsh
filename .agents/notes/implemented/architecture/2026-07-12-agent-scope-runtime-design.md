@@ -298,13 +298,13 @@ The workflow host keeps pending provider-start promises and published child reco
 
 One host-owned AbortController supplies the required signal to pending and live children. Closing workflow admission aborts that signal, so there is no duplicate `ChildCancel` worker RPC or explicit host-side `run.cancel()` fanout. Quiescence waits for both pending starts and published child disposal.
 
-The worker boundary still serializes requests and outcomes. The host retains first-terminal-outcome arbitration, exact child accounting, worker-death handling, grace termination, late/duplicate message rejection, and bounded cleanup because result receipt, worker exit, and child quiescence are genuinely independent facts.
+The worker boundary still serializes requests and outcomes. The host retains first-terminal-outcome arbitration, exact child accounting, worker-death handling, grace-bounded worker termination, late/duplicate message rejection, and quiescent child cleanup because result receipt, worker exit, and child quiescence are genuinely independent facts.
 
 ### Terminal result and physical cleanup remain separate
 
 The workflow result records the first accepted terminal outcome according to the public precedence rules. Cleanup can continue after that result is chosen: live children still need disposal, a worker still needs termination, and a slow external backend may outlive the configured grace bound.
 
-Public disposal claims its memoized promise before invoking callbacks. Worker death closes admission before processing any queued late child request, synthesizes missing lifecycle ends, and starts child/process cleanup without rewriting an outcome already claimed.
+Public disposal claims its memoized promise before invoking callbacks, terminates the worker after result/quiescence or the configured grace, and then awaits host-side provider starts and child disposal to quiescence. Worker death closes admission before processing any queued late child request, synthesizes missing lifecycle ends, and starts child/process cleanup without rewriting an outcome already claimed.
 
 ### ACP prompt settlement does not depend on update delivery
 

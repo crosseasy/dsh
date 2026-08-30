@@ -55,6 +55,7 @@ describe('JsonRpcLineClientTransport', () => {
 
   it('ignores an unexpected server request without settling or answering it', async () => {
     const { input, output, transport } = clientHarness()
+    expect('onRequest' in transport).toBe(false)
     transport.start()
 
     let settled = false
@@ -79,28 +80,51 @@ describe('JsonRpcLineClientTransport', () => {
     transport.close()
   })
 
-  it('answers handled server requests and reports handler errors', async () => {
+  it('keeps a request pending after an id-only frame', async () => {
     const { input, output, transport } = clientHarness()
-    const seen: JsonObject[] = []
-    transport.onRequest(async (method, params) => {
-      seen.push({ method, params })
-      if (method === 'explode') throw new Error('handler boom')
-      return { ok: true }
-    })
     transport.start()
 
-    input.write('{"jsonrpc":"2.0","id":"one","method":"server-call","params":[]}\n')
-    input.write('{"jsonrpc":"2.0","id":"two","method":"explode","params":{"x":1}}\n')
+    let settled = false
+    const pending = transport.request('client-call', {}).then((value) => {
+      settled = true
+      return value
+    })
+    const [request] = readFrames(output)
+    input.write(`${JSON.stringify({ jsonrpc: '2.0', id: request?.id })}\n`)
     await settle()
 
-    expect(seen).toEqual([
-      { method: 'server-call', params: {} },
-      { method: 'explode', params: { x: 1 } },
-    ])
-    expect(readFrames(output)).toEqual([
-      { jsonrpc: '2.0', id: 'one', result: { ok: true } },
-      { jsonrpc: '2.0', id: 'two', error: { code: -32603, message: 'handler boom' } },
-    ])
+    expect(settled).toBe(false)
+
+    input.write(`${JSON.stringify({ jsonrpc: '2.0', id: request?.id, result: 'client-result' })}\n`)
+    await expect(pending).resolves.toBe('client-result')
+    transport.close()
+  })
+
+  it('ignores a Boolean-id request before the valid response', async () => {
+    const { input, output, transport } = clientHarness()
+    const notifications: JsonObject[] = []
+    transport.onNotification((method, params) => { notifications.push({ method, params }) })
+    transport.start()
+
+    let settled = false
+    const pending = transport.request('client-call', {}).then((value) => {
+      settled = true
+      return value
+    })
+    const [request] = readFrames(output)
+    input.write(`${JSON.stringify({
+      jsonrpc: '2.0',
+      id: true,
+      method: 'session.status',
+      params: { sessionId: 'injected', status: 'idle' },
+    })}\n`)
+    await settle()
+
+    expect(settled).toBe(false)
+    expect(notifications).toEqual([])
+
+    input.write(`${JSON.stringify({ jsonrpc: '2.0', id: request?.id, result: 'client-result' })}\n`)
+    await expect(pending).resolves.toBe('client-result')
     transport.close()
   })
 
@@ -249,6 +273,7 @@ describe('JsonRpcLineClientTransport', () => {
 describe('JsonRpcLineServerTransport', () => {
   it('handles inbound requests and normalizes non-object params', async () => {
     const { input, output, transport } = serverHarness()
+    expect('request' in transport).toBe(false)
     const seen: JsonObject[] = []
     transport.onRequest(async (method, params) => {
       seen.push({ method, params })

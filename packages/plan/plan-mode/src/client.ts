@@ -1,12 +1,15 @@
 /**
- * Client-namespace projection of the plan domain: a pure re-export of the package's
- * types outlet. Client code imports ONLY the client namespace (repo
- * discipline), so `./client` projects the same single-source content
- * `./types` serves to host consumers — zero duplication.
+ * Browser-safe plan projection types and Cordis-free fold functions.
  *
  * @module @deepseek-ai/dsh-plan-mode/client
  */
 
 export type * from './types.ts'
-export { foldPlanProjection, foldPlanProjectionState } from './projection-fold.ts'
+export {
+  applyPlanProjectionEvent,
+  foldPlanProjection,
+  foldPlanProjectionState,
+  initialPlanProjectionState,
+  viewPlanProjectionState,
+} from './projection-fold.ts'
 export type { PlanProjectionState } from './projection-fold.ts'
