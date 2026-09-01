@@ -66,6 +66,38 @@ interface ProjectionDefinition<
 }
 ```
 
+`dsh-session-turn-outline` contributes the client-visible `turnOutline` key. Its host state retains the open turn's draft until `turn/end`; the client value contains only completed outline entries, ordered by turn number:
+
+```ts type-equiv
+/** One started turn's outline facts, independent of what a client has paged in. */
+interface TurnOutlineEntry {
+  /** Host-assigned turn number (the `turn/start` payload). */
+  readonly turn: number
+  /** The turn's `turn/start` event seq — paging a window back through this seq loads the whole turn. */
+  readonly seq: number
+  /** Bounded first-human-prompt preview (one rail-card line); `''` until an eligible prompt lands. */
+  readonly prompt: string
+  /** Bounded final-response preview (up to three rail-card lines); `''` until the turn ends with assistant text. */
+  readonly response: string
+}
+```
+
+```ts type-equiv
+/**
+ * Fold state: the served entries plus the open turn's response draft. The
+ * draft buffers the newest text-bearing assistant message until `turn/end`
+ * commits it, and the wire view projects only `turns` — draft-only applies
+ * keep that array's identity, so the change feed stays quiet between turn
+ * boundaries.
+ */
+interface TurnOutlineState {
+  /** Started turns in ascending turn order. */
+  readonly turns: readonly TurnOutlineEntry[]
+  /** Newest text-bearing assistant preview of the open turn; `''` outside one. */
+  readonly draft: string
+}
+```
+
 The whole-value event rule is load-bearing: a state-carrying log event carries the complete post-change state, never a bare delta — it keeps every transition trivially cheap and every served value self-describing (last-wins for consumers).
 
 ## The snapshot and the change feed

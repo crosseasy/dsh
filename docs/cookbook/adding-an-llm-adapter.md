@@ -13,14 +13,17 @@ class MyAdapter extends LlmAdapter {
 
 export const name = 'llm-myprovider'
 export const inject = ['llm']
-export const Config: z<Config> = z.object({ apiKey: z.string(), … })
+export const Config: z<Config> = z.object({
+  apiKeyEnv: z.string().role('credential-ref').default('MY_PROVIDER_API_KEY'),
+  …
+})
 
 export function apply(ctx: Context, config: Config) {
   ctx.llm.registerAdapter(['my-provider'], new MyAdapter(…))
 }
 ```
 
-Registration is effect-based (HMR-safe); one adapter per provider route — duplicates throw, and multi-route registration is all-or-nothing. `options.provider` selects the adapter and `options.model` is the provider model id, so a dynamic catalog adapter can serve new models without lifecycle reconfiguration. Secrets are cordis-native: schemastery Config with env fallbacks, fed from cordis.yml via `!!js process.env.MY_KEY`. Never read ad-hoc key files in code.
+Registration is effect-based (HMR-safe); one adapter per provider route — duplicates throw, and multi-route registration is all-or-nothing. `options.provider` selects the adapter and `options.model` is the provider model id, so a dynamic catalog adapter can serve new models without lifecycle reconfiguration. Config stores only a credential reference, never the secret value. Resolve that reference through the optional `ctx.credentials` service for each request; when no credentials service is mounted, a provider may fall back to the same variable in the trusted launch environment. Report a stable missing-credential error when neither source has a usable value, and never read ad-hoc key files.
 
 ## Protocol obligations (the contract two implementations verified)
 

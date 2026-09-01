@@ -12,8 +12,10 @@ packages/<group>/<pkg>/
   tsconfig.json    # extends ../../../tsconfig.base.json, rootDir src,
                    # outDir lib/types, references: ../../../vendor/cosmokit,
                    # ../../../vendor/cordis (+ ../../../vendor/schemastery if
-                   # you use Config, + ../../<group>/<dep> for each dsh dep)
+                   # you use Config, + ../../<group>/<dep> for each dsh dep,
+                   # + ../../runtime-diagnostics/invariants)
   src/index.ts     # service default export or plugin (name/inject/apply/Config)
+  src/invariant.ts # package-owned invariant installer or explained empty owner
   README.md        # service API, events, extension points, design notes,
                    # + gated Model Experience context blocks or short form
                    # + the gated "Known Limitations and Deferred Work" section
@@ -22,7 +24,7 @@ packages/<group>/<pkg>/
 
 当已有分组与包的角色匹配时，选择该分组（`core`、`llm`、`shell`、`compaction`、`subagent`、`todo`、`session`、`client`/`host`、`util` 或 `test-support`）。允许新建分组，但分组只是纯容器：没有 `package.json`，没有源文件，包仍然恰好位于其下一层。
 
-package.json 不变式（由 `pnpm run constraints` / `scripts/check-workspace-constraints.ts` 强制执行）：每个非 experimental DSH 包都是发布族成员，不设置 `private: true`，声明 `publishConfig.access: "public"` 及其确切仓库目录，并且 `version` 与根 `package.json` 一致；`packages/experimental/` 下的包则保持私有且不声明 `publishConfig`。每个包都使用 `type: module`、`main: "lib/index.js"`、`types: "lib/types/index.d.ts"`、`exports["."].types: "./lib/types/index.d.ts"`、`exports["."].default: "./lib/index.js"`，并让 `@deepseek-ai/cordis` 同时出现在 peerDependencies 和 devDependencies 中（相同范围）。每个 dsh 对等依赖（peer dependency）都要在 devDependencies 中镜像。`@deepseek-ai/schemastery` 放在 `dependencies` 中（它是运行时校验器），与 agent-loop 保持一致。`files` 列表精确包含 `lib/index.js`、`lib/invariant.js`、`lib/types/**/*.d.ts` 以及门禁认可的包专用运行时产物；如果包的运行时 export 指向输出树，还要包含 `lib/types/**/*.js`。不要发布 `src`、声明映射、JS map 或陈旧的根声明文件。带有 `bin` 的 CLI 应用包在 `files` 中将 `lib/bin.js` 紧跟在 `lib/index.js` 之后。
+package.json 不变式（由 `pnpm run constraints` / `scripts/check-workspace-constraints.ts` 强制执行）：每个非 experimental DSH 包都是发布族成员，不设置 `private: true`，声明 `publishConfig.access: "public"` 及其确切仓库目录，并且 `version` 与根 `package.json` 一致；`packages/experimental/` 下的包则保持私有且不声明 `publishConfig`。每个包都使用 `type: module`、`main: "lib/index.js"`、`types: "lib/types/index.d.ts"`，从构建产物同时导出 `.` 与 `./invariant`，并让 `@deepseek-ai/cordis` 同时出现在 peerDependencies 和 devDependencies 中（相同范围）。每个 dsh 对等依赖（peer dependency）都要在 devDependencies 中镜像。`@deepseek-ai/dsh-invariants` 始终是 `workspace:^` devDependency；除非仓库的包依赖策略会扁平化该包的非 Cordis peer，`pnpm run verify-package-invariants` 还要求它成为 peerDependency。包的 `tsconfig.json` 引用 `runtime-diagnostics/invariants`。`@deepseek-ai/schemastery` 放在 `dependencies` 中（它是运行时校验器），与 agent-loop 保持一致。`files` 列表精确包含 `lib/index.js`、`lib/invariant.js`、`lib/types/**/*.d.ts` 以及门禁认可的包专用运行时产物；如果包的运行时 export 指向输出树，还要包含 `lib/types/**/*.js`。不要发布 `src`、声明映射、JS map 或陈旧的根声明文件。带有 `bin` 的 CLI 应用包在 `files` 中将 `lib/bin.js` 紧跟在 `lib/index.js` 之后。
 
 包内的相对导入在源码中使用显式 `.ts` 后缀（例如 `export * from './types.ts'`）。编译器在输出的 JS 中将其重写为 `.js`，在声明文件中保留显式 `.ts` 后缀；标准的 NodeNext/Node16 TypeScript 消费方会将其解析到同目录的 `.d.ts` 文件。
 

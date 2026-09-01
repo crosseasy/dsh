@@ -1948,6 +1948,16 @@
     },
     {
       "doc": "docs/subsystems/session-projection.md",
+      "symbol": "TurnOutlineEntry",
+      "source": "packages/session/session-turn-outline/src/types.ts"
+    },
+    {
+      "doc": "docs/subsystems/session-projection.md",
+      "symbol": "TurnOutlineState",
+      "source": "packages/session/session-turn-outline/src/types.ts"
+    },
+    {
+      "doc": "docs/subsystems/session-projection.md",
       "symbol": "ProjectionSnapshot",
       "source": "packages/session/session-projection/src/index.ts"
     },

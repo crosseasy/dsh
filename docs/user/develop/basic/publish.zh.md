@@ -150,32 +150,19 @@ dsh --profile demo
 
 遇到 `--help` 时，提供方不会发布该服务，所以这些行不会激活。Loader 只挂载一次组合，等待每一行的普通注入，再基于其已注入的上下文求值该行的 `!!js` 配置。
 
-## 从 GitHub 安装：构建脚本这道坎
+## 从 GitHub 安装需要预构建产物
 
 发布到注册表不是必须的——用户可以直接从 git 托管安装：
 
 ```sh
-dsh plugin --profile demo add github:you/hello-plugin
+dsh plugin --profile demo add github:you/hello-plugin#<sha>
 ```
 
-但 git 安装拉取的是**源码，不是构建产物**：没有任何环节运行你的 `build` 脚本，因此 TypeScript 包到手时没有 `lib/` 输出，加载会失败。必须两边各做一件事：
-
-- **作者**提供一个 `prepare` 脚本——pnpm 在 git 安装后运行它——从源码构建出发布入口，且必须自包含：不能假设仅开发环境才有的上下文，例如旁边有一份 monorepo checkout。[turtle-ui](https://github.com/deepseek-harness/turtle-ui) 是一个可用的例子：它的 `prepare` 运行一份专用的 tsdown 配置，直接转译 `src/`，不用项目引用，也不做类型检查。
-- **用户**为构建授权。pnpm ≥10 在得到显式允许之前拒绝运行 git 依赖的 `prepare` 脚本，所以第一次 `add` 会失败；`dsh` 会指出修法——把 pnpm 打印的确切包键复制进该 profile 的 `pnpm-workspace.yaml`：
-
-  ```yaml
-  allowBuilds:
-    dsh-hello-plugin: true
-  ```
-
-  然后重新执行 `add`。
-
-请把这项授权视为**允许该包的代码在安装时于你的机器上执行**，且不在 agent 运行的任何沙箱之内。只对源码可信的包授权，并锁定 commit（`github:you/hello-plugin#<sha>`），让后续推送无法悄悄改变实际运行的内容。
-
-如果不想让用户做这项授权，就改为分发构建产物——以下两种形式都不需要任何构建权限：
+`dsh plugin` 强制关闭依赖生命周期脚本。Git 依赖的 `prepare`、`prepack`、`install` 及相关 hook 永远不会运行，调用方也不能覆盖该策略。因此，锁定的 Git tree 必须已经包含全部发布入口；对于 TypeScript 包，这包括 `lib/`。否则安装可能成功，但 profile 无法加载该包。
 
 - **发布到 npm**，在 `pnpm publish` 时构建好 `lib/`；`dsh plugin add your-package` 安装的就是预构建代码。
 - **交付 tarball**：用 `pnpm pack` 打包；用户执行 `dsh plugin add ./hello-plugin-0.1.0.tgz`。
+- **发布预构建 Git tree**：仅当锁定的 commit 已包含相同运行时产物时使用。请锁定完整 commit SHA，避免后续推送改变 profile 实际加载的内容。
 
 ## 下一步
 

@@ -14,6 +14,8 @@ Canonical Markdown remains in the repository tier that owns it. Product-facing g
 
 `website/docs.ts` is an explicit publication manifest. Each entry maps one canonical source file to a stable public route, sidebar, section, and order. Adding or removing a published page is therefore a reviewable manifest change rather than an implicit directory crawl.
 
+The curated-profile user guide is owned by `docs/user/guide/curated-profiles.md` and projected at `guide/curated-profiles.md`; the website contains no second Markdown copy.
+
 `scripts/project-doc-site.ts` projects the manifest into the ignored `website/.generated/` directory before VitePress starts or builds. The generated tree follows public routes so VitePress navigation, locale detection, and local search share the same route vocabulary. Each page receives an `editSource` frontmatter field pointing to its canonical repository file; the edit-link callback reads only that page data, so public URLs remain independent of the source layout.
 
 Locale home projections retain only the canonical YAML frontmatter. The repository-facing body keeps its H1 and bilingual source links, while the frontmatter implements the [locale-preserving quick-start redirect](../../../../docs/user/index.md) and the site navigation owns locale switching.

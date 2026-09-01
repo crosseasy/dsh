@@ -14,6 +14,8 @@ Status: implemented
 
 `website/docs.ts` 是一份显式的发布 manifest（元数据清单）。每个条目将一个权威源文件映射到稳定的公开路由、侧边栏、分区和顺序。因此，新增或移除已发布页面是一项可评审的 manifest 变更，而不是隐式目录扫描的结果。
 
+精选 profile 用户指南由 `docs/user/guide/curated-profiles.zh.md` 持有，并投影到 `guide/curated-profiles.md`；网站中不存在第二份 Markdown 副本。
+
 在 VitePress 启动或构建之前，`scripts/project-doc-site.ts` 会把 manifest 投影到被忽略的 `website/.generated/` 目录。生成目录树遵循公开路由，使 VitePress 导航、locale 检测和本地搜索使用同一套路由命名。每个页面都会获得一个指向其权威仓库文件的 `editSource` frontmatter 字段；编辑链接回调只读取该页面的数据，因此公开 URL 与源文件布局彼此独立。
 
 各 locale 的首页投影只保留权威 YAML frontmatter。面向仓库的正文保留其 H1 和双语源文件链接；frontmatter 实现[保持 locale 不变的快速开始重定向](../../../../docs/user/index.zh.md)，网站导航负责切换 locale。

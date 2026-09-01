@@ -13,14 +13,17 @@ class MyAdapter extends LlmAdapter {
 
 export const name = 'llm-myprovider'
 export const inject = ['llm']
-export const Config: z<Config> = z.object({ apiKey: z.string(), … })
+export const Config: z<Config> = z.object({
+  apiKeyEnv: z.string().role('credential-ref').default('MY_PROVIDER_API_KEY'),
+  …
+})
 
 export function apply(ctx: Context, config: Config) {
   ctx.llm.registerAdapter(['my-provider'], new MyAdapter(…))
 }
 ```
 
-注册基于副作用，可安全支持 HMR（热模块替换）；每个提供方路由仅对应一个适配器，重复注册会抛出异常，多路由注册要么全部成功，要么全部失败。`options.provider` 用于选择适配器，`options.model` 是提供方模型 ID，因此动态模型目录适配器无需重新配置生命周期即可提供新模型。密钥采用 Cordis 原生方式管理：schemastery Config 带环境变量回退，通过 cordis.yml 的 `!!js process.env.MY_KEY` 注入。切勿在代码中读取自行约定的密钥文件。
+注册基于副作用，可安全支持 HMR（热模块替换）；每个提供方路由仅对应一个适配器，重复注册会抛出异常，多路由注册要么全部成功，要么全部失败。`options.provider` 用于选择适配器，`options.model` 是提供方模型 ID，因此动态模型目录适配器无需重新配置生命周期即可提供新模型。Config 只保存凭据引用，绝不保存密钥值。每次请求都应通过可选的 `ctx.credentials` 服务解析该引用；未挂载凭据服务时，提供方可以回退到可信启动环境中的同名变量。两个来源都没有可用值时，应报告稳定的缺少凭据错误；切勿在代码中读取自行约定的密钥文件。
 
 ## 协议义务（两个实现共同验证的约定）
 

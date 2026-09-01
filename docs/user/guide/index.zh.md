@@ -24,6 +24,7 @@ agent（智能体）可以读取和编辑工作区文件、运行命令、委派
 
 ## 继续使用
 
+- [使用内置精选 profile](./curated-profiles.zh.md)
 - [组装仅含 Pet 的 Fusion Web profile](./fusion-profile.zh.md)
 - [Fusion TUI 交付状态](./fusion-tui-profile.zh.md)
 - [集成桌面壳](./desktop-shell-contract.zh.md)

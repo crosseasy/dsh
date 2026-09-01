@@ -66,6 +66,38 @@ interface ProjectionDefinition<
 }
 ```
 
+`dsh-session-turn-outline` 贡献客户端可见的 `turnOutline` key。其 host state 会保留打开轮次的 draft，直到 `turn/end`；客户端值只包含已完成的 outline entry，并按轮次编号排序：
+
+```ts type-equiv
+/** One started turn's outline facts, independent of what a client has paged in. */
+interface TurnOutlineEntry {
+  /** Host-assigned turn number (the `turn/start` payload). */
+  readonly turn: number
+  /** The turn's `turn/start` event seq — paging a window back through this seq loads the whole turn. */
+  readonly seq: number
+  /** Bounded first-human-prompt preview (one rail-card line); `''` until an eligible prompt lands. */
+  readonly prompt: string
+  /** Bounded final-response preview (up to three rail-card lines); `''` until the turn ends with assistant text. */
+  readonly response: string
+}
+```
+
+```ts type-equiv
+/**
+ * Fold state: the served entries plus the open turn's response draft. The
+ * draft buffers the newest text-bearing assistant message until `turn/end`
+ * commits it, and the wire view projects only `turns` — draft-only applies
+ * keep that array's identity, so the change feed stays quiet between turn
+ * boundaries.
+ */
+interface TurnOutlineState {
+  /** Started turns in ascending turn order. */
+  readonly turns: readonly TurnOutlineEntry[]
+  /** Newest text-bearing assistant preview of the open turn; `''` outside one. */
+  readonly draft: string
+}
+```
+
 全量值事件规则是承重结构：携带状态的日志事件携带的是变更后的完整状态，绝不是裸增量——这让每次状态转移始终足够廉价，也让每个被供给的值自描述（对消费方即 last-wins）。
 
 ## 快照与变更流

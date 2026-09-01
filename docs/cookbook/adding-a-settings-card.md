@@ -2,7 +2,7 @@
 
 English | [中文](adding-a-settings-card.zh.md)
 
-How a plugin puts its own configuration on the web settings page. Nothing in this path needs a change inside this repository: the Host serves every registered settings namespace, and the **Plugins** section keys its cards on the namespace they edit, so a plugin that registers both halves is paired up automatically.
+How a plugin puts its own configuration on the web settings page. An externally mounted package needs no Web application source change: the Host serves every registered settings namespace, and the **Plugins** section keys its cards on the namespace they edit, so a plugin that registers both halves is paired up automatically. A new package under `packages/client/` must also join `tsconfig.client.json`, add its `dsh.client` row to `packages/bundle/web-app/cordis.patch.yml`, and become a dependency of `packages/bundle/web-app/package.json`.
 
 The two halves live in one package — the Host half under `src/`, the browser half under `src/client/`, exported as `./client` and declared with `dsh.client`. [`packages/client/ui-theme`](../../packages/client/ui-theme) is a worked example of that packaging; the cards this section ships live in [`packages/client/ui-settings-plugins`](../../packages/client/ui-settings-plugins).
 
