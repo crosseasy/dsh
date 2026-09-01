@@ -2,7 +2,7 @@
 
 [English](README.md) | 中文
 
-模型侧 `pwsh(command)`，由一个 owner 作用域的 `ctx.terminals` shell 支撑。本包拥有工具契约与 shell 复用；部署方选择 terminal backend（配置 `shellDialect: pwsh` 的 `terminal-bash` 实例）与沙箱策略。它是 `tool-bash-persistent` 的 Windows 对应物：相同的持久状态契约，PowerShell 方言。
+模型侧 `pwsh(command)`，由一个 owner 作用域的 `ctx.terminals` shell 支撑。本包拥有工具契约与 PowerShell 方言行为；[`dsh-persistent-tool-runtime`](../persistent-tool-runtime/README.zh.md) 拥有共享 shell 生命周期。部署方选择 terminal backend（配置 `shellDialect: pwsh` 的 `terminal-bash` 实例）与沙箱策略。它是 `tool-bash-persistent` 的 Windows 对应物：相同的持久状态契约，PowerShell 方言。
 
 ## 配置
 

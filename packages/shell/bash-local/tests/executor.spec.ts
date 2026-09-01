@@ -3,8 +3,10 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { describe, expect, it } from 'vitest'
 import { Context } from '@deepseek-ai/cordis'
-import { LocalBashExecutor } from '@deepseek-ai/dsh-bash-local'
+import { ENV_OVERRIDES, LocalBashExecutor } from '@deepseek-ai/dsh-bash-local'
 import LocalSubprocessRuntime from '@deepseek-ai/dsh-subprocess-local'
+import SubprocessRuntime from '@deepseek-ai/dsh-subprocess'
+import type { SubprocessHandle, SubprocessOutputReader, SubprocessSpawnSpec } from '@deepseek-ai/dsh-subprocess'
 import { MAX_TIMER_DELAY_MS } from '@deepseek-ai/dsh-timeout'
 import type { ShellProcess } from '@deepseek-ai/dsh-shell'
 
@@ -34,6 +36,41 @@ async function readUntil(proc: ShellProcess, expected: string, timeoutMs = 5_000
     await new Promise(resolve => setTimeout(resolve, 20))
   }
   throw new Error(`process output did not include ${JSON.stringify(expected)}; accumulated ${JSON.stringify(all)}`)
+}
+
+class CapturingSubprocessRuntime extends SubprocessRuntime {
+  specs: SubprocessSpawnSpec[] = []
+
+  override async resolveExecutable(command: string): Promise<string> {
+    return command
+  }
+
+  override spawnTerminal(): Promise<never> {
+    throw new Error('bash-local does not spawn terminals')
+  }
+
+  override spawn(spec: SubprocessSpawnSpec): SubprocessHandle {
+    this.specs.push(spec)
+    const reader: SubprocessOutputReader = {
+      readFrom: () => ({ text: '', lossy: false, nextOffset: 0 }),
+    }
+    return {
+      pid: -1,
+      stdin: undefined,
+      stdout: undefined,
+      stderr: undefined,
+      collected: { stdout: reader, stderr: reader },
+      done: Promise.resolve({ exitCode: 0, signal: null }),
+      terminate: () => {},
+      waitForExit: async () => true,
+    }
+  }
+}
+
+class TestBashExecutor extends LocalBashExecutor {
+  runCustom(spec: Parameters<LocalBashExecutor['run']>[0], argv: readonly string[]) {
+    return this.runArgv(spec, argv)
+  }
 }
 
 describe('LocalBashExecutor.run', () => {
@@ -155,6 +192,38 @@ describe('LocalBashExecutor.run', () => {
     expect('stdin' in spec).toBe(false)
     expect('env' in spec).toBe(false)
     expect('dshEnv' in spec).toBe(false)
+  })
+
+  it('hands subclass argv, resolved cwd, stdin, and merged env to the lifecycle path', async () => {
+    const ctx = new Context()
+    const subprocess = new CapturingSubprocessRuntime(ctx)
+    await ctx.plugin(TestBashExecutor, {
+      cwd: '/tmp',
+      maxOutputBytes: 21,
+      maxSpillBytes: 34,
+      graceMs: 55,
+    })
+    const bash = ctx.shell as TestBashExecutor
+
+    await bash.runCustom(bash.resolve({
+      command: 'ignored by custom argv',
+      stdin: 'payload',
+      env: { TERM: 'xterm-256color', FROM_CALLER: '1' },
+      dshEnv: { DSH_FROM_RUNTIME: '2' },
+    }), ['sandbox-runner', '--', 'bash', '-c', 'ignored by custom argv'])
+
+    expect(subprocess.specs[0]).toMatchObject({
+      argv: ['sandbox-runner', '--', 'bash', '-c', 'ignored by custom argv'],
+      cwd: '/tmp',
+      stdio: {
+        stdin: { data: 'payload' },
+        stdout: { maxBytes: 21, spill: { maxBytes: 34 } },
+        stderr: { maxBytes: 21, spill: { maxBytes: 34 } },
+      },
+      graceMs: 55,
+      env: { ...ENV_OVERRIDES, TERM: 'xterm-256color', FROM_CALLER: '1', DSH_FROM_RUNTIME: '2' },
+    })
+    await ctx.fiber.dispose()
   })
 })
 

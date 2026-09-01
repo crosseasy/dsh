@@ -1,7 +1,8 @@
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
-import { join } from 'node:path'
+import { delimiter, join } from 'node:path'
 import { fileURLToPath, pathToFileURL } from 'node:url'
+import { materializeCuratedProfile } from '@deepseek-ai/dsh-curated-profiles'
 import { startMockLlmServer } from '@deepseek-ai/dsh-llm-mock-server'
 import { execa } from 'execa'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
@@ -13,6 +14,11 @@ const repoRoot = fileURLToPath(new URL('../../../', import.meta.url))
 const cliVersion = (JSON.parse(readFileSync(new URL('../package.json', import.meta.url), 'utf8')) as { version: string }).version
 const dshBin = join(repoRoot, 'apps/cli/lib/bin.js')
 const invalidProvider = fileURLToPath(new URL('./fixtures/invalid-provider.cordis.yml', import.meta.url))
+const curatedProfileFiles = ['package.json', 'cordis.patch.yml', 'pnpm-workspace.yaml', '.npmrc'] as const
+
+function readCuratedProfileBytes(profileDir: string): Readonly<Record<string, Buffer>> {
+  return Object.fromEntries(curatedProfileFiles.map(file => [file, readFileSync(join(profileDir, file))]))
+}
 
 async function runBuiltBin(
   args: readonly string[] = [],
@@ -404,6 +410,80 @@ describe.skipIf(!existsSync(dshBin))('dsh BUILT bin (node lib/bin.js, no tsx)', 
       rmSync(project, { recursive: true, force: true })
     }
   })
+
+  it.skipIf(process.platform === 'win32')(
+    'keeps curated profile files at their exact template bytes through the built plugin path',
+    async () => {
+      const root = mkdtempSync(join(tmpdir(), 'dsh-built-curated-profile-'))
+      const home = join(root, 'home')
+      const expectedHome = join(root, 'expected-home')
+      const binDir = join(root, 'bin')
+      const log = join(root, 'pnpm.log')
+      mkdirSync(binDir, { recursive: true })
+      const pnpm = join(binDir, 'pnpm')
+      writeFileSync(pnpm, [
+        '#!/bin/sh',
+        'printf "fake pnpm: %s\\n" "$*"',
+        'printf "%s\\n" "$*" >> "$DSH_TEST_PNPM_LOG"',
+        'status="${DSH_TEST_PNPM_STATUS:-0}"',
+        'if [ "$status" -eq 0 ]; then',
+        '  mkdir -p node_modules/.pnpm',
+        '  printf "%s\\n" "lockfileVersion: \'9.0\'" "" "importers:" "  .: {}" > pnpm-lock.yaml',
+        '  cp pnpm-lock.yaml node_modules/.pnpm/lock.yaml',
+        'fi',
+        'exit "$status"',
+        '',
+      ].join('\n'))
+      chmodSync(pnpm, 0o755)
+      const expectedDir = materializeCuratedProfile('web-curated', expectedHome)
+      const expectedBytes = readCuratedProfileBytes(expectedDir)
+      const profileDir = join(home, 'profiles', 'web-curated')
+      const env = {
+        DSH_HOME: home,
+        DSH_TEST_PNPM_LOG: log,
+        PATH: `${binDir}${delimiter}${process.env.PATH ?? ''}`,
+      }
+      try {
+        expect(existsSync(join(profileDir, 'node_modules'))).toBe(false)
+        for (const status of [0, 9]) {
+          for (const command of ['--help', 'list'] as const) {
+            const logBefore = existsSync(log) ? readFileSync(log, 'utf8') : undefined
+            const result = await runBuiltBin(
+              ['plugin', '--profile', 'web-curated', command],
+              { ...env, DSH_TEST_PNPM_STATUS: String(status) },
+            )
+            expect(result.code, `${command} status ${String(status)}: ${result.stderr}`).toBe(0)
+            expect(result.stderr).toBe('')
+            if (command === '--help') {
+              expect(result.stdout).toContain('Usage: dsh plugin --profile web-curated <command>')
+              expect(result.stdout).toContain('list      print the fixed curated dependency set')
+            } else {
+              expect(result.stdout).toContain('web-curated:')
+              expect(result.stdout).toContain('(no third-party plugin dependencies)')
+            }
+            expect(existsSync(log) ? readFileSync(log, 'utf8') : undefined).toBe(logBefore)
+            expect(existsSync(profileDir)).toBe(false)
+          }
+        }
+        for (const status of [0, 9]) {
+          const result = await runBuiltBin(
+            ['plugin', '--profile', 'web-curated', 'install'],
+            { ...env, DSH_TEST_PNPM_STATUS: String(status) },
+          )
+          expect(result.code, `install status ${String(status)}: ${result.stderr}`).toBe(status)
+          expect(result.stdout).toContain('fake pnpm:')
+          if (status === 0) expect(result.stderr).not.toContain('pnpm failed')
+          else expect(result.stderr).toContain('pnpm failed')
+          expect(readCuratedProfileBytes(profileDir), `install status ${String(status)}`).toEqual(expectedBytes)
+          expect(existsSync(join(profileDir, 'node_modules/.pnpm/lock.yaml'))).toBe(true)
+        }
+        expect(existsSync(join(home, 'profiles', 'web', 'package.json'))).toBe(false)
+      } finally {
+        rmSync(root, { recursive: true, force: true })
+      }
+    },
+    30_000,
+  )
 
   it('fails loud on a nonexistent profile with the plugin-command hint', async () => {
     const home = mkdtempSync(join(tmpdir(), 'dsh-missing-profile-'))

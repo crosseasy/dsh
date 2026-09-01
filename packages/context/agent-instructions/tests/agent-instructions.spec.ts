@@ -15,14 +15,14 @@ import type {
   FsEditOutcome,
   FsEditRequest,
   FsInfo,
-  FsPathInfo,
   FsTarget,
   FsWriteIntent,
   FsWriteOutcome,
 } from '@deepseek-ai/dsh-fs'
 import LocalFileSystem from '@deepseek-ai/dsh-fs-local'
 import SystemPrompt from '@deepseek-ai/dsh-system-prompt'
-import ToolRuntime, { defineContentToolFixture } from '@deepseek-ai/dsh-tools'
+import ToolRuntime from '@deepseek-ai/dsh-tools'
+import { defineContentToolFixture } from '@deepseek-ai/dsh-tools/testing'
 import type {
   ToolExecution,
   ToolExecutionToken,
@@ -39,7 +39,7 @@ import {
   reconcileInstructionContext,
   type InstructionVersionCache,
 } from '../src/state.ts'
-import { resolveConfig } from '../src/config.ts'
+import { resolveConfig, workspaceBaselineIdentity } from '../src/config.ts'
 import { candidateScopeKey, renderInstructionChanges, renderWorkspaceInstructionSet, USER_GLOBAL_DIRECTORY, USER_GLOBAL_FILE } from '../src/render.ts'
 import { MockAdapter, textResponse, toolCallResponse } from '../../../core/agent-loop/tests/mock-adapter.ts'
 
@@ -62,8 +62,10 @@ class RecordingFileSystem extends FileSystem {
   throwOnStat = new Set<string>()
   throwOnRead = new Set<string>()
   omitSizes = new Set<string>()
+  streamChunks = new Map<string, string[]>()
   readTargets: string[] = []
   readTextTargets: string[] = []
+  yieldedChunks: string[] = []
   signals: AbortSignal[] = []
 
   override async resolve(path: string, opts?: { cwd?: string; signal?: AbortSignal }): Promise<FsTarget> {
@@ -98,19 +100,6 @@ class RecordingFileSystem extends FileSystem {
     return info
   }
 
-  override async lstat(path: string, opts?: { cwd?: string }, signal?: AbortSignal): Promise<FsPathInfo | undefined> {
-    if (signal !== undefined) this.signals.push(signal)
-    signal?.throwIfAborted()
-    const target = await this.resolve(path, { ...opts, ...signal === undefined ? {} : { signal } })
-    const info = await this.stat(target, signal)
-    if (info === undefined) return undefined
-    return {
-      version: info.version,
-      type: info.type,
-      ...(info.size !== undefined ? { size: info.size } : {}),
-    }
-  }
-
   override async readText(target: FsTarget, signal?: AbortSignal): Promise<string> {
     if (signal !== undefined) this.signals.push(signal)
     signal?.throwIfAborted()
@@ -128,7 +117,16 @@ class RecordingFileSystem extends FileSystem {
     this.readTargets.push(target.targetKey)
     if (this.throwOnRead.has(target.targetKey)) throw new Error(`read failed: ${target.displayPath}`)
     const content = this.entries.get(target.targetKey)?.content ?? ''
+    const configuredChunks = this.streamChunks.get(target.targetKey)
+    const yieldedChunks = this.yieldedChunks
     return (async function* () {
+      if (configuredChunks !== undefined) {
+        for (const chunk of configuredChunks) {
+          yieldedChunks.push(chunk)
+          yield chunk
+        }
+        return
+      }
       const midpoint = Math.ceil(content.length / 2)
       yield content.slice(0, midpoint)
       signal?.throwIfAborted()
@@ -986,6 +984,23 @@ describe('workspace context request injection', () => {
     const ctx = new Context()
 
     await expect(ctx.plugin(workspaceContext, {} as workspaceContext.Config)).rejects.toThrow(/maxBytes/)
+  })
+
+  it.each([0, 1.5, Infinity])('rejects invalid maxTotalSourceBytes configuration %s', async (maxTotalSourceBytes) => {
+    const ctx = new Context()
+
+    await expect(ctx.plugin(workspaceContext, {
+      maxBytes: 65536,
+      maxTotalSourceBytes,
+    })).rejects.toThrow(/maxTotalSourceBytes/)
+  })
+
+  it('includes the aggregate source budget in baseline compatibility identity', () => {
+    const first = resolveConfig({ maxBytes: 65536, maxTotalSourceBytes: 10 })
+    const second = resolveConfig({ maxBytes: 65536, maxTotalSourceBytes: 11 })
+
+    expect(workspaceBaselineIdentity(first, '/repo', '/repo'))
+      .not.toBe(workspaceBaselineIdentity(second, '/repo', '/repo'))
   })
 
   it('mounts without requiring a filesystem provider', async () => {
@@ -2236,26 +2251,162 @@ describe('workspace context request injection', () => {
     }
   })
 
-  it('treats ctx.fs marker lookup failures as absent root markers', async () => {
-    const root = await tempRepo()
+  it('fails initial loading when a root marker is unavailable instead of selecting an ancestor project', async () => {
+    const outer = await tempRepo()
+    const root = join(outer, 'project')
     const home = await tempRepo()
     try {
-      await mkdir(join(root, '.git'), { recursive: true })
-      await write(join(root, 'AGENTS.md'), 'repo rule')
       const ctx = new Context()
       await ctx.plugin(RecordingFileSystem)
       const fs = ctx.fs as RecordingFileSystem
+      fs.entries.set(join(outer, '.git'), { type: 'directory' })
+      fs.entries.set(join(outer, 'AGENTS.md'), { type: 'file', content: 'ancestor rule must not load' })
       fs.throwOnStat.add(join(root, '.git'))
       fs.entries.set(join(root, 'AGENTS.md'), { type: 'file', content: 'repo rule' })
       await ctx.plugin(workspaceContext, { dshHome: home, maxBytes: 65536 })
       const agent = stubAgent(root)
 
+      await expect(composeBaselinePrefix(ctx, agent))
+        .rejects.toThrow(`project root marker unavailable: ${join(root, '.git')}`)
+
+      expect(fs.readTargets).not.toContain(join(outer, 'AGENTS.md'))
+    } finally {
+      await rm(outer, { recursive: true, force: true })
+      await rm(home, { recursive: true, force: true })
+    }
+  })
+
+  it('keeps the confirmed project root when its marker later becomes unavailable', async () => {
+    const outer = await tempRepo()
+    const root = join(outer, 'project')
+    const home = await tempRepo()
+    const ctx = new Context()
+    try {
+      await ctx.plugin(RecordingFileSystem)
+      const fs = ctx.fs as RecordingFileSystem
+      fs.entries.set(join(outer, '.git'), { type: 'directory' })
+      fs.entries.set(join(outer, 'AGENTS.md'), { type: 'file', content: 'ancestor rule must not load' })
+      fs.entries.set(join(root, '.git'), { type: 'directory' })
+      fs.entries.set(join(root, 'AGENTS.md'), { type: 'file', content: 'initial project rule' })
+      await ctx.plugin(workspaceContext, { dshHome: home, maxBytes: 65536 })
+      const agent = stubAgent(root)
       await composeBaselinePrefix(ctx, agent)
 
-      expect(derivedText(agent)).toContain('repo rule')
+      fs.throwOnStat.add(join(root, '.git'))
+      fs.entries.set(join(root, 'AGENTS.md'), { type: 'file', content: 'updated project rule' })
+      await syncWorkspaceContext(ctx, agent)
+
+      const pending = await workspaceContextOf(agent)
+      expect(pending.source).toMatchObject({
+        kind: 'agent-instructions',
+        changes: [{ action: 'replace', scope: sk('.', 'AGENTS.md'), path: 'AGENTS.md' }],
+      })
+      expect(blocksText(pending.content)).toContain('updated project rule')
+      expect(blocksText(pending.content)).not.toContain('ancestor rule must not load')
     } finally {
-      await rm(root, { recursive: true, force: true })
+      await ctx.fiber.dispose()
+      await rm(outer, { recursive: true, force: true })
       await rm(home, { recursive: true, force: true })
+    }
+  })
+
+  it('spends the aggregate source budget on more-specific directories using exact UTF-8 bytes', async () => {
+    const root = join(await tempRepo(), 'virtual-repo')
+    const cwd = join(root, 'pkg/app')
+    const home = join(await tempRepo(), 'virtual-home')
+    const ctx = new Context()
+    try {
+      await ctx.plugin(RecordingFileSystem)
+      const fs = ctx.fs as RecordingFileSystem
+      fs.entries.set(join(root, '.git'), { type: 'directory' })
+      fs.entries.set(join(root, 'AGENTS.md'), { type: 'file', content: 'root' })
+      fs.entries.set(join(root, 'pkg/AGENTS.md'), { type: 'file', content: 'pack' })
+      fs.entries.set(join(cwd, 'AGENTS.md'), { type: 'file', content: '界' })
+      const rendered = await loadBaselineInstructions({
+        cwd,
+        dshHome: home,
+        maxBytes: 65536,
+        maxTotalSourceBytes: 7,
+      }, fs)
+      const text = rendered?.text ?? ''
+
+      expect(text).toContain(`Instructions from: ${join('pkg', 'AGENTS.md')}\n\npack`)
+      expect(text).toContain(`Instructions from: ${join('pkg', 'app', 'AGENTS.md')}\n\n界`)
+      expect(text).not.toContain('Instructions from: AGENTS.md\n\nroot')
+      expect(fs.readTargets).toEqual([
+        join(cwd, 'AGENTS.md'),
+        join(root, 'pkg/AGENTS.md'),
+      ])
+    } finally {
+      await ctx.fiber.dispose()
+      await rm(dirname(root), { recursive: true, force: true })
+      await rm(dirname(home), { recursive: true, force: true })
+    }
+  })
+
+  it('deduplicates same-directory candidates before spending remaining budget on broader directories', async () => {
+    const root = join(await tempRepo(), 'virtual-repo')
+    const cwd = join(root, 'pkg')
+    const home = join(await tempRepo(), 'virtual-home')
+    const ctx = new Context()
+    try {
+      await ctx.plugin(RecordingFileSystem)
+      const fs = ctx.fs as RecordingFileSystem
+      fs.entries.set(join(root, '.git'), { type: 'directory' })
+      fs.entries.set(join(root, 'AGENTS.md'), { type: 'file', content: 'root' })
+      fs.entries.set(join(cwd, 'AGENTS.md'), { type: 'file', content: 'same' })
+      fs.entries.set(join(cwd, 'CLAUDE.md'), { type: 'file', content: ' same ' })
+      const rendered = await loadBaselineInstructions({
+        cwd,
+        dshHome: home,
+        maxBytes: 65536,
+        maxTotalSourceBytes: 10,
+      }, fs)
+      const text = rendered?.text ?? ''
+
+      expect(text.match(/same/g)).toHaveLength(1)
+      expect(text).toContain(`Instructions from: ${join('pkg', 'AGENTS.md')}`)
+      expect(text).not.toContain(`Instructions from: ${join('pkg', 'CLAUDE.md')}`)
+      expect(text).not.toContain('Instructions from: AGENTS.md\n\nroot')
+      expect(fs.readTargets).toEqual([
+        join(cwd, 'AGENTS.md'),
+        join(cwd, 'CLAUDE.md'),
+      ])
+    } finally {
+      await ctx.fiber.dispose()
+      await rm(dirname(root), { recursive: true, force: true })
+      await rm(dirname(home), { recursive: true, force: true })
+    }
+  })
+
+  it('counts one complete provider chunk beyond the remaining aggregate budget', async () => {
+    const root = join(await tempRepo(), 'virtual-repo')
+    const cwd = join(root, 'pkg')
+    const home = join(await tempRepo(), 'virtual-home')
+    const ctx = new Context()
+    try {
+      await ctx.plugin(RecordingFileSystem)
+      const fs = ctx.fs as RecordingFileSystem
+      const leaf = join(cwd, 'AGENTS.md')
+      fs.entries.set(join(root, '.git'), { type: 'directory' })
+      fs.entries.set(join(root, 'AGENTS.md'), { type: 'file', content: 'root' })
+      fs.entries.set(leaf, { type: 'file', content: 'a界' })
+      fs.omitSizes.add(leaf)
+      fs.streamChunks.set(leaf, ['a', '界'])
+      const rendered = await loadBaselineInstructions({
+        cwd,
+        dshHome: home,
+        maxBytes: 65536,
+        maxTotalSourceBytes: 2,
+      }, fs)
+
+      expect(rendered).toBeUndefined()
+      expect(fs.yieldedChunks).toEqual(['a', '界'])
+      expect(fs.readTargets).toEqual([leaf])
+    } finally {
+      await ctx.fiber.dispose()
+      await rm(dirname(root), { recursive: true, force: true })
+      await rm(dirname(home), { recursive: true, force: true })
     }
   })
 
@@ -2488,6 +2639,58 @@ describe('workspace context request injection', () => {
 })
 
 describe('dynamic nested workspace context injection', () => {
+  it('does not remove a lower-priority last-good source after the aggregate budget is exhausted', async () => {
+    const root = join(await tempRepo(), 'virtual-repo')
+    const home = join(await tempRepo(), 'virtual-home')
+    const ctx = new Context()
+    try {
+      await ctx.plugin(RecordingFileSystem)
+      const fs = ctx.fs as RecordingFileSystem
+      fs.entries.set(join(root, '.git'), { type: 'directory' })
+      fs.entries.set(join(root, 'AGENTS.md'), { type: 'file', content: 'root' })
+      await ctx.plugin(workspaceContext, {
+        dshHome: home,
+        maxBytes: 65536,
+        maxTotalSourceBytes: 5,
+      })
+      const agent = stubAgent(root)
+      await composeBaselinePrefix(ctx, agent)
+
+      fs.entries.delete(join(root, 'AGENTS.md'))
+      fs.entries.set(join(root, 'pkg/AGENTS.md'), { type: 'file', content: 'fresh' })
+      fs.readTargets.length = 0
+      ctx.emit('tools/result', stubToolExecution({
+        signal: testToolSignal,
+        callId: CallId('aggregate-budget-touch'),
+        name: 'read',
+        arguments: { file_path: join('pkg', 'file.txt') },
+        agent,
+      }), {
+        content: [{ type: 'text', text: 'ok' }],
+        isError: false,
+        value: null,
+      })
+      await syncWorkspaceContext(ctx, agent)
+
+      const pending = await workspaceContextOf(agent)
+      expect(pending.source).toMatchObject({
+        kind: 'agent-instructions',
+        changes: [{ action: 'set', scope: sk('pkg', 'AGENTS.md'), path: join('pkg', 'AGENTS.md') }],
+      })
+      if (pending.source.kind !== 'agent-instructions') throw new Error('missing agent-instructions source')
+      expect(pending.source.changes).not.toContainEqual({
+        action: 'remove',
+        scope: sk('.', 'AGENTS.md'),
+        path: 'AGENTS.md',
+      })
+      expect(fs.readTargets).toEqual([join(root, 'pkg/AGENTS.md')])
+    } finally {
+      await ctx.fiber.dispose()
+      await rm(dirname(root), { recursive: true, force: true })
+      await rm(dirname(home), { recursive: true, force: true })
+    }
+  })
+
   it('projects a successful file result even when a later sibling aborts the step', async () => {
     const root = await tempRepo()
     const home = await tempRepo()
@@ -3126,6 +3329,7 @@ describe('dynamic nested workspace context injection', () => {
             })],
             touchedPaths: [],
             includeBaselineScopes: false,
+            projectRoot: root,
             signal: testToolSignal,
           }
 
@@ -3175,6 +3379,7 @@ describe('dynamic nested workspace context injection', () => {
         scopeMessages: [],
         touchedPaths: [],
         includeBaselineScopes: false,
+        projectRoot: root,
         signal: testToolSignal,
       }
 
@@ -3218,6 +3423,7 @@ describe('dynamic nested workspace context injection', () => {
         scopeMessages: [],
         touchedPaths: [],
         includeBaselineScopes: false,
+        projectRoot: root,
         signal: testToolSignal,
       })
 
@@ -3250,6 +3456,7 @@ describe('dynamic nested workspace context injection', () => {
         scopeMessages: [],
         touchedPaths: [],
         includeBaselineScopes: true,
+        projectRoot: root,
         signal: testToolSignal,
       })
 

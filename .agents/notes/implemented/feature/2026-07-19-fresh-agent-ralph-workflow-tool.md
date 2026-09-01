@@ -14,7 +14,7 @@ Adding Ralph behavior to `dsh-agent-loop`, the goal driver, or the public model-
 
 Add `@deepseek-ai/dsh-tool-ralph` as a separate Consumer package under `packages/workflow/`. It registers `ralph({ objective, maxRounds? })`, owns a fixed workflow script, and depends only on `ctx.tools`, `ctx.systemPrompt`, `ctx.workflowEngine`, and `ctx.subagents`. A Ralph run is not a session goal, creates no goal state, and requires no branch in the concrete agent loop.
 
-The tool is foreground-only. The calling agent parents every child for cwd and lineage, the parent tool call waits for the complete run, and the parent step's abort signal cancels the workflow. `run.dispose()` is awaited on every path, so cancellation reaches the worker engine's bounded settlement and child quiescence before the call returns.
+The tool is foreground-only. The calling agent parents every child for cwd and lineage, and the parent tool call waits for the complete run. The Consumer rejects a pre-aborted parent step; after synchronous `start()` returns, it attaches an at-most-once bridge to `run.cancel()`, immediately rechecks the signal, and detaches the bridge before awaiting `run.dispose()` on every path. Cancellation therefore reaches the worker engine's bounded settlement and child quiescence before the call returns. The [single-owner cancellation decision](../simplification/2026-08-26-workflow-single-cancellation-owner.md) owns this protocol.
 
 ### Per-run workflow provider route
 

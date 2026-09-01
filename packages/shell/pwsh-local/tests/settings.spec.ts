@@ -21,7 +21,12 @@ class MemorySettings extends SettingsProvider {
     return Promise.resolve(structuredClone(this.doc))
   }
 
-  protected persist(ns: SettingsNamespace, section: Record<string, unknown>): Promise<void> {
+  protected persist(
+    ns: SettingsNamespace,
+    section: Record<string, unknown>,
+    assertRevision: () => void,
+  ): Promise<void> {
+    assertRevision()
     this.doc = { ...this.doc, [ns]: structuredClone(section) }
     return Promise.resolve()
   }
@@ -80,6 +85,15 @@ describe('pwsh executor over the bash settings section', () => {
     await bench.ctx.settings.update(SHELL_SETTINGS_NAMESPACE, { timeoutMs: 5_000 })
 
     expect(bench.pwsh.pwshPath).toBe(before)
+    await bench.ctx.fiber.dispose()
+  })
+
+  it('serves stored cwd to every later resolve', async () => {
+    const bench = await boot()
+
+    await bench.ctx.settings.update(SHELL_SETTINGS_NAMESPACE, { cwd: '/tmp/pwsh-workspace' })
+
+    expect(bench.pwsh.resolve({ command: 'Write-Output ok' }).workdir).toBe('/tmp/pwsh-workspace')
     await bench.ctx.fiber.dispose()
   })
 

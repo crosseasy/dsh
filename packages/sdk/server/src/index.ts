@@ -12,7 +12,7 @@
 import type { Context } from '@deepseek-ai/cordis'
 import type { Readable, Writable } from 'node:stream'
 import Schema from '@deepseek-ai/schemastery'
-import { JsonRpcLineTransport } from '@deepseek-ai/dsh-sdk-protocol'
+import { JsonRpcLineServerTransport } from '@deepseek-ai/dsh-sdk-protocol'
 import { HarnessSdkJsonRpcServer } from './server.ts'
 
 export * from './server.ts'
@@ -56,7 +56,7 @@ export function apply(ctx: Context, config: JsonRpcConfig): void {
   /* v8 ignore next -- production exit wiring; tests always inject the runtime hooks */
   const exit = config.exit ?? ((code: number): void => { process.exit(code) })
 
-  const transport = new JsonRpcLineTransport(input, output)
+  const transport = new JsonRpcLineServerTransport(input, output)
   const server = new HarnessSdkJsonRpcServer(ctx, transport, {
     maxTokensAsSuccess: resolvedConfig.maxTokensAsSuccess,
   })

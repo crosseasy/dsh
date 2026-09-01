@@ -51,7 +51,7 @@ The repository uses isolated Host and Client aggregates. An ordinary package is 
 | `tsconfig.host.json` | Host aggregate: Host packages, examples, tests, scripts, website, and the exceptional Host project of `api/remotes`. | Yes |
 | `tsconfig.client.json` | Client aggregate: `packages/client/*` packages and their tests, `apps/web`, and the exceptional Client project of `api/remotes`. | Yes |
 | `tsconfig.base.json` | Shared compilerOptions and the source `paths` map. Also the resolution facade the vitest configs point vite-tsconfig-paths at: it has no `include`, so its `paths` apply to every importer. | No |
-| `tsconfig.base.client.json` | Browser compiler settings (`jsx`, DOM libs, `types: []`) extended by the Client aggregate and every `packages/client/*` package. | No |
+| `tsconfig.base.client.json` | Browser compiler settings (`jsx`, DOM libs, `types: []`) extended by the Client aggregate and every `packages/client/*` package. It disables source redirects across Project References so tools that construct one package program consume referenced declarations instead of flattening Host source augmentations into Client analysis. | No |
 
 Host and Client stay two aggregate programs because both sides declaration-merge the cordis `Context` interface under the same keys with different services; one program seeing both merges reports a collision. The collision exists only inside a `ts.Program` — module resolution never triggers it — which is why the solution may reference both aggregates and one paths facade may span both sides. Three disciplines follow:
 
@@ -81,13 +81,7 @@ Static analysis and tests resolve workspace imports through the base `paths` map
 
 Business services declare callable methods on the Host with `@Remote` or `@RemoteScope`; the Host build generates Host-for-Client types and runtime contributions, and the Client's `api-remotes` composition loads those contributions under `ctx.remote` and scoped `agentCtx.remote` namespaces. See [API Gateway](api-gateway.md) for the generated artifacts on both sides, their assembly relationships, the SRC development fallback, and the Web build order.
 
-If a relevant local check consumes built package output, build once first:
-
-```sh
-pnpm run build
-```
-
-`pnpm run hygiene` includes `publint`, which validates package entrypoints against the built `lib/*.js` files, and `verify-node-next-types`, which validates built declarations against a temporary NodeNext consumer. A fresh worktree has no bundled JS or declarations until `pnpm run build` runs; ordinary commits and pushes do not require that build unless their selected checks consume it.
+`pnpm run hygiene` owns its artifact prerequisite: it runs `pnpm run build`, then allows `publint`, `verify-built-package-invariants`, and `verify-node-next-types` to consume that build while independent source checks run in parallel. The command neither cleans the worktree nor relies on pre-existing `lib/`, so it has the same semantics in fresh and already-built worktrees. The workspace constraints gate ignores only deleted-package directories whose entries are the generated residue accepted by `pnpm run clean`; any unknown file in a manifest-less package directory still fails. Build first only when running an artifact-specific leaf command directly.
 
 ### Environment variables
 

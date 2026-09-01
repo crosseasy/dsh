@@ -253,7 +253,8 @@ export function gatesForMode(selected: Mode): Gate[] {
       ]
     case 'hygiene':
       return [
-        ...hygieneLeafGates(),
+        pnpmScript('build', 'build'),
+        ...hygieneLeafGates({ artifactNeeds: ['build'] }),
         pnpmScript('cordis-config', 'verify-cordis-config', { label: 'Cordis config' }),
         pnpmScript('runtime-closure', 'verify-runtime-closure', { label: 'runtime closure' }),
         pnpmScript('vendored-links', 'verify-vendored-links', { label: 'vendored links' }),
@@ -668,6 +669,7 @@ function docSyncLeafGates(options: {
     pnpmScript('config-catalog', 'verify-config-catalog', { label: 'config catalog' }),
     pnpmScript('persistence-catalog', 'verify-persistence-catalog', { label: 'persistence catalog' }),
     pnpmScript('public-repository-links', 'verify-public-repository-links', { label: 'public repository links' }),
+    pnpmScript('curated-activation-evidence', 'verify-curated-activation-evidence', { label: 'curated activation evidence' }),
     pnpmScript('doc-refs', 'verify-doc-refs', { label: 'doc refs' }),
     pnpmScript('package-paths', 'verify-package-paths', { label: 'package paths' }),
     pnpmScript('config-source-ownership', 'verify-config-source-ownership', { label: 'config source ownership' }),
@@ -693,6 +695,7 @@ function builtBinSmokeGate(needs: string[] = ['build']): Gate {
     'vitest.e2e.config.ts',
     'examples/headless-agent/tests/keyless-smoke.e2e.ts',
     'apps/cli/tests/built-bin.e2e.ts',
+    'packages/curated/curated-scripts/tests/packed-entry.e2e.ts',
     'packages/examples/acp-demo/tests/built-bin.e2e.ts',
     'packages/host/directory-picker-native/tests/built-worker.e2e.ts',
     'packages/sdk/server/tests/built-scope-carrier.e2e.ts',

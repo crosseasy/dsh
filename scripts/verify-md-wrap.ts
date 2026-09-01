@@ -2,8 +2,9 @@
  * Reject Markdown prose paragraphs spanning multiple physical lines. The GFM
  * AST distinguishes paragraphs—including those in lists and blockquotes—from
  * multiline structural nodes. The checker never rewrites; symlinked instruction
- * files are deduped. VitePress frontmatter and custom-container delimiters are
- * masked before parsing. The owning convention is in `docs/AGENTS.md`.
+ * files and the non-product superpowers execution plan are deduped or excluded.
+ * VitePress frontmatter and custom-container delimiters are masked before
+ * parsing. The owning convention is in `docs/AGENTS.md`.
  */
 
 import { readFileSync } from 'node:fs'
@@ -13,6 +14,7 @@ import { parseMarkdown, visitMarkdown } from './markdown.ts'
 import { isArchivedAgentNotePath, uniqueRepoFiles } from './repo-files.ts'
 
 const root = resolve(import.meta.dirname, '..')
+const SUPERPOWERS_PLAN_PATH = 'docs/plugin/superpowers/'
 
 /** Files to check: doc-typecheck's scope, system-prompt expected outputs, and the AGENTS.md pair. */
 const PATTERNS = [
@@ -69,7 +71,7 @@ function findViolations(absPath: string): Violation[] {
   return out
 }
 
-const files = uniqueRepoFiles(root, PATTERNS, isArchivedAgentNotePath)
+const files = uniqueRepoFiles(root, PATTERNS, path => isArchivedAgentNotePath(path) || path.startsWith(SUPERPOWERS_PLAN_PATH))
 const all = files.flatMap(file => findViolations(file.abs))
 const checked = files.length
 

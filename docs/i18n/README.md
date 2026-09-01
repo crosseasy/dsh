@@ -49,6 +49,7 @@ Generated English references and graphs participate in pairing when a reviewed C
 
 - [cordis-api/inherited.md](../cordis-api/inherited.md) — generated without a reviewed Chinese counterpart, so both website locales project the English source.
 - `docs/AGENTS.md`, `.agents/notes/**/AGENTS.md`, and their `CLAUDE.md` instruction symlinks — agent instructions, maintained in English only like the root `AGENTS.md`.
+- `docs/plugin/superpowers/` and `docs/superpowers/` — local execution planning material that is not published product documentation.
 - `docs/i18n/terminology.md` and [style-samples.md](style-samples.md) — both are bilingual by construction.
 - [translation-prompt.md](translation-prompt.md) — the automated pipeline's prompt template; its body is machine-consumed verbatim, so a paired translation would change pipeline behavior.
 - `.agents/notes/archived/` — frozen historical triplets. [`verify-archived-agent-notes`](../../scripts/verify-archived-agent-notes.ts) validates their completeness and content seals; translation maintenance must never rewrite them.

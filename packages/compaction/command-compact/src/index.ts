@@ -65,10 +65,11 @@ async function executeCompact(
   try {
     const result = await ctx.compaction.compactNow(invocation.agent, invocation.signal, invocation.commandId)
     if (result === null) return { kind: 'success', text: 'No compactable history yet.' }
+    const { summarySeq } = result
     return {
       kind: 'success',
       text: `Compacted ${result.shadowedSeqs.length} history items (~${result.shadowedTokenCount} tokens).`,
-      sourceEventSeq: result.summarySeq,
+      sourceEventSeq: summarySeq,
     }
   } catch (error: unknown) {
     if (invocation.signal.aborted) return { kind: 'error', text: 'Compaction cancelled.' }

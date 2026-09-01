@@ -18,6 +18,8 @@
 
 **profile** 是存放在 Harness home 中的具名组装。它列出自己叠放的组合包，存放自己安装的树外插件，并保存用户自己的 `cordis.patch.yml`。`web` 和 `headless` 作为模板随发行版交付。
 
+五个内置精选 profile 由单独发布的 `@deepseek-ai/dsh-curated-profiles` 包物化，并共用已发布的 `@deepseek-ai/dsh-curated-base`、策略包与评测包。`packages/curated/` 下的五个包都属于 DSH 发布族，其中包括面向用户的命令包，因此已安装的 `@deepseek-ai/dsh` 不会引用未发布的 workspace 包。
+
 **组合包**是 Cordis 配置项及其挂载代码的分发格式，因此它插入的内容始终可被其上各层 patch。
 
 两者都在各自的 `package.json` 中通过 `dsh` 字段声明自己：`dsh.profile` 列出一个 profile 的组合包，`dsh.bundle` 指向一个组合包的 patch 文件。

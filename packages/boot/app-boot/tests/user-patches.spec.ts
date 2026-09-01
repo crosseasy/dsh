@@ -8,7 +8,7 @@ import { mkdirSync, mkdtempSync, unlinkSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { pathToFileURL } from 'node:url'
-import { afterEach, describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import { Context } from '@deepseek-ai/cordis'
 import Hmr from '@deepseek-ai/cordis-plugin-hmr'
 import Include, { type PatchOptions } from '@deepseek-ai/cordis-plugin-include'
@@ -42,6 +42,25 @@ describe('loadOptionalPatches', () => {
 
   it('returns undefined when no user patch file exists', () => {
     expect(loadOptionalPatches(NAME, join(tmp(), PROFILE_PATCH_FILENAME))).toBeUndefined()
+  })
+
+  it('parses bytes supplied by a validated reader without reading the path', () => {
+    const file = join(tmp(), PROFILE_PATCH_FILENAME)
+    const reader = vi.fn((requested: string) =>
+      requested === file ? '- id: validated\n  config:\n    source: descriptor\n' : undefined)
+
+    expect(loadOptionalPatches(NAME, file, reader)).toEqual([
+      { id: 'validated', config: { source: 'descriptor' } },
+    ])
+    expect(reader).toHaveBeenCalledExactlyOnceWith(file)
+  })
+
+  it('treats an undefined validated-reader result as an absent optional file', () => {
+    const file = join(tmp(), PROFILE_PATCH_FILENAME)
+    const reader = vi.fn((_requested: string) => undefined)
+
+    expect(loadOptionalPatches(NAME, file, reader)).toBeUndefined()
+    expect(reader).toHaveBeenCalledExactlyOnceWith(file)
   })
 
   it('parses a patch list and preserves !!js expressions as loader expression nodes', () => {
@@ -80,6 +99,26 @@ describe('loadOptionalPatches', () => {
     writeFileSync(join(dir, PROFILE_PATCH_FILENAME), '- id: x\n  config:\n    a: !!js\n')
     expect(() => loadOptionalPatches(NAME, join(dir, PROFILE_PATCH_FILENAME)))
       .toThrow(new RegExp(`^${NAME}: failed to parse patches `))
+  })
+
+  it('redacts a secret-shaped path from malformed YAML diagnostics', () => {
+    const secret = 'github_pat_11AA22BB33CC44DD55EE66FF77GG88HH'
+    const dir = join(tmp(), secret)
+    mkdirSync(dir)
+    const file = join(dir, PROFILE_PATCH_FILENAME)
+    writeFileSync(file, 'invalid: [unclosed\n')
+
+    let failure: unknown
+    try {
+      loadOptionalPatches(NAME, file)
+    } catch (error) {
+      failure = error
+    }
+
+    expect(failure).toBeInstanceOf(Error)
+    expect((failure as Error).message).toContain('[REDACTED]')
+    expect((failure as Error).message).not.toContain(secret)
+    expect(String((failure as Error).cause)).not.toContain(secret)
   })
 
   it('fails loud when the file is not a top-level array or an entry is not an object', () => {
@@ -268,6 +307,51 @@ describe('Loader entry disabled interpolation', () => {
 })
 
 describe('boot with user patches', () => {
+  it('reapplies bound-root patches transactionally and drains the watcher on disposal', async () => {
+    const dir = tmp()
+    const filename = join(tmp(), PROFILE_PATCH_FILENAME)
+    const basePatches: PatchOptions[] = [{
+      insert: [{ id: 'noop', name: './noop.mjs', config: { value: 'generated' } }],
+    }]
+    const ctx = await boot(NAME, writeTree(dir), basePatches, undefined, undefined, {
+      content: '[]\n',
+      assertCurrent: () => {},
+    })
+    let refresh: (() => Promise<void> | void) | undefined
+    let watcherDisposed = false
+    let generation: PatchOptions[] = []
+    try {
+      ctx.provide('hmr', {
+        registerConfig: async (_filename: string, callback: () => Promise<void> | void) => {
+          refresh = callback
+          return async () => { watcherDisposed = true }
+        },
+      })
+      const dispose = await watchUserPatches(ctx, {
+        binName: NAME,
+        filename,
+        mode: 'compose-read',
+        compose: () => structuredClone([...basePatches, ...generation]),
+      })
+
+      generation = [{ id: 'noop', config: { value: 'live' } }]
+      await refresh?.()
+      expect(entryConfig(ctx, 'noop')).toEqual({ value: 'live' })
+
+      generation = [{ id: 'noop', config: { fail: true } }]
+      await expect(refresh?.()).rejects.toThrow('candidate config failed')
+      expect(entryConfig(ctx, 'noop')).toEqual({ value: 'live' })
+
+      generation = []
+      await refresh?.()
+      expect(entryConfig(ctx, 'noop')).toEqual({ value: 'generated' })
+      await dispose()
+      expect(watcherDisposed).toBe(true)
+    } finally {
+      await ctx.fiber.dispose()
+    }
+  })
+
   it('applies id-targeted overrides, inserts, and interpolates !!js from the environment', async () => {
     const dir = tmp()
     const userDir = tmp()
@@ -367,6 +451,35 @@ describe('boot with user patches', () => {
       }
     } finally {
       await dispose()
+      await ctx.fiber.dispose()
+    }
+  })
+
+  it('lets composition own patch loading without a watcher path read', async () => {
+    const dir = tmp()
+    const filename = join(tmp(), PROFILE_PATCH_FILENAME)
+    const ctx = await boot(NAME, writeTree(dir))
+    let refresh: (() => Promise<void> | void) | undefined
+    try {
+      ctx.provide('hmr', {
+        registerConfig: async (_filename: string, callback: () => Promise<void> | void) => {
+          refresh = callback
+          return async () => {}
+        },
+      })
+      const compose = vi.fn(() => [{ id: 'noop', config: { value: 'compose-owned' } }])
+      await watchUserPatches(ctx, {
+        binName: NAME,
+        filename,
+        mode: 'compose-read',
+        compose,
+      })
+
+      await refresh?.()
+
+      expect(compose).toHaveBeenCalledExactlyOnceWith()
+      expect(entryConfig(ctx, 'noop')).toEqual({ value: 'compose-owned' })
+    } finally {
       await ctx.fiber.dispose()
     }
   })

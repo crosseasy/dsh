@@ -40,6 +40,15 @@
       "path": "../../llm/llm"
     },
     {
+      "path": "../../llm/token-meter"
+    },
+    {
+      "path": "../../plan/plan-mode"
+    },
+    {
+      "path": "../../session/session-stats"
+    },
+    {
       "path": "../../runtime-diagnostics/invariants"
     },
     {

@@ -1,0 +1,40 @@
+# 验收清单
+
+- [x] Settings wire 对 union、intersection、transform、default、nested dict/array 和 adversarial error text fail closed，且直接对象 secret 仍输出 `{ path, set }`。
+- [x] Settings read/write RPC 只使用 `describeForWire()`，任何 secret、secret default、callback source 或原始 rejected input 均未进入 wire、日志或错误响应。
+- [x] `pnpm run hygiene` 在 clean artifact state 与 completed-build state 使用同一 gate graph 并得出相同结论，workspace constraints 仍拒绝真实意外 package directory。
+- [x] Superseded preset generation 在所有 agent 与 cold-reader holders 释放后恰好 dispose 一次；并发 refresh 和 mount failure 不泄漏或误回收。
+- [x] Settings registration disposer 返回时 watcher quiescent；replacement 在旧 persist 成功或失败后保持最新 resolved cache、revision 和可用 write queue。
+- [x] Agent Instructions root marker 区分 present/absent/unavailable，不跨越不可用真实 root，并在动态失败或预算耗尽时保留 last-good state。
+- [x] `maxTotalSourceBytes` 可配置且经过校验，baseline/reconciliation 共用 deep-first、deduplicated、exact UTF-8 byte accounting。
+- [x] ACP subagent 复用现有 out-of-process helpers，保留 ACP teardown/error/output 语义并实现生产代码净删除。
+- [x] `FileSystem.lstat`、`FsPathInfo` 和只为该 service method 存在的 provider helpers/tests 已移除；真实 Node/platform `lstat` 调用保留。
+- [x] Session reference 的 ranking/preparation 不再进入 public Service catalog，Remote candidates 与 pre-step 行为保持不变。
+- [x] `CompactionResult` 仅保留 `summarySeq`、`shadowedRange`、`shadowedSeqs`、`shadowedTokenCount`，所有当前生产消费者和类型文档同步。
+- [x] Tools 与 llm-retry 的测试入口只从显式 `/testing` subpath 暴露，package root 不再公开 test-only internals。
+- [x] `LocalPtySession` 的单次 send 使用一个 lifecycle owner，原有 race matrix 全部通过且生产代码净删除。
+- [x] Bash/Pwsh persistent、one-shot executor 和 sandbox 共享私有 lifecycle core；dialect 行为保持分离，生产代码净删除且 `jscpd` exceptions 减少。
+- [x] One-shot tool 公共逻辑只有在至少净删除 100 行且无需 dialect/config switch 时才提取；否则有完整 inventory 证明保持分离更简单。
+- [x] Workflow 只由 `WorkflowRun.cancel()` 拥有运行期取消，pre-start 到 post-settlement 的全部 abort branches 最多生效一次且 dispose quiescent。
+- [x] TypeScript JSON-RPC server/client 不再携带未使用的对向角色；TypeScript client 保留 Codex outbound notification，Python 删除 dormant server-role API。
+- [x] JSON-RPC request-id correlation、malformed frames、notifications、concurrency、process exit 和当前 message-id prompt settlement 保持不变，双 SDK outputs 未漂移。
+- [x] Plan、session stats、token usage、context pressure 和 context breakdown/request composition 的 production 与 fixture 对相同 event vectors 生成相同 wire views。
+- [x] Client fixture 不再包含上述平行 folds，且未引入通用 projection package、完整 Host registry、client injection 或新的运行时 peer dependency。
+- [x] 每项非机械改动已添加或更新正确的英文/中文/sidecar Agent Note，并完成 scoped supersession audit；archived Notes 未修改。
+- [x] 受影响 README、JSDoc、subsystem docs、cookbook、type-equivalence、API/config/tool/persistence catalogs 与 translation pairing 全部同步。
+- [x] 所有新增行为测试遵循 RED-GREEN-REFACTOR，失败原因和通过证据已记录。
+- [x] 所有 focused unit、integration、built-artifact、keyless snapshot 和双 SDK expected-output 检查通过；每条 shell command 在 55 秒内结束。
+- [x] Settings UI 使用外部 Chrome 和 CDP `9333` 完成真实装配验证，浏览器 console 无错误。
+- [x] 独立最终 code review 未留下 Critical 或 Important finding，完整 diff 无 scope drift、debug residue、孤儿 import 或无依据兼容层。
+- [x] `git diff --check` 通过，diff 不包含 `vendor/` 或既有 archived Agent Note 的修改；本轮新增归档已封存，现有用户改动未被回滚。
+- [x] 未执行 `commit`、`push`、`merge`、`rebase` 或 `reset`。
+- [x] `gtimeout 55s pnpm exec vitest run --config vitest.snapshot.config.ts scripts/translation-prompt.snapshot.ts` 通过，且期望输出与 `docs/development*` 当前内容一致。
+- [x] 已从当前工作树逐项重建 12 项审计结论，生产引用、实现、测试、文档与 Agent Note 证据均与报告验收一致。
+- [x] 独立分片 reviewer 与最终 reviewer 均未留下 Critical 或 Important finding；所有新发现均已修复并有回归证据。
+- [x] 新鲜 focused tests、typecheck、lint、duplication、build、hygiene、doc-sync 与 whitespace 检查通过，或已有明确记录的等价叶级证据。
+- [x] 外部 Chrome CDP `9333` Settings UI 与仓库正式 built CLI PTY smoke 均通过，浏览器 console 无错误；未虚构仓库不存在的 TUI profile。
+- [x] 最终审计 scope 没有 scope drift、debug residue、`vendor/` 或既有 archived Agent Note 修改；新归档 triplet 已封存，且未执行未经授权的 Git 操作。
+- [x] 旧 Settings owner 的持久化在等待期间已由 provider 发布相同 section 时，replacement registration 只推进一次 revision 且只发出一次 `settings/document-updated`。
+- [x] `llm-pi-ai` 省略或留空 `headers` 时 secret sidecar 报告 `set: false`，非空 headers 报告 `set: true` 且不泄露 header 名称和值。
+- [x] Settings provider 在 `persist()` 内 reconciliation 推进 revision 后，携带旧 `expectedRevision` 的写入以 `SettingsConflictError` 失败且不覆盖外部 section。
+- [x] Settings raw revision 不因 registration replacement 或暂时无 owner 而重置；非零 revision 数字碰撞与 no-owner reconciliation 均拒绝陈旧写。

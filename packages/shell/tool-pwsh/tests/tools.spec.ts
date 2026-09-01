@@ -539,7 +539,7 @@ describe('per-call sandbox policy resolution', () => {
     await ctx.plugin(BashEnvPlugin)
     await ctx.plugin(ConfiningFakeBash)
     await expect(ctx.plugin(ToolPwsh)).rejects.toThrow(
-      'tool-pwsh: the mounted bash executor confines but ctx.sandboxPolicy is missing',
+      'tool-pwsh: the mounted shell executor confines but ctx.sandboxPolicy is missing',
     )
   })
 })

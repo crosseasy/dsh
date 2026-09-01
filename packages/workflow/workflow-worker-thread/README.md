@@ -36,7 +36,7 @@ Unknown options, malformed arguments, unsupported schemas, tripped caps, provide
 
 ## Run sequence
 
-`start()` validates meta, parses the body, resolves a registered normalized provider route, and resolves any per-run total-child cap before creating a worker or publishing `workflow/start`. A requested `maxTotalAgents` must be a positive safe integer no greater than the engine's configured deployment ceiling. Source mode installs TypeScript transforms through a data-URL bootstrap; built mode passes sibling `lib/worker.cjs` as a filesystem path because pkg's VFS hook expects CommonJS. Both work under ordinary Node. A ready/go handshake prevents a start-signal cancellation racing worker boot from executing the script's initial synchronous slice.
+`start()` validates meta, parses the body, resolves a registered normalized provider route, and resolves any per-run total-child cap before creating a worker or publishing `workflow/start`. A requested `maxTotalAgents` must be a positive safe integer no greater than the engine's configured deployment ceiling. Source mode installs TypeScript transforms through a data-URL bootstrap; built mode passes sibling `lib/worker.cjs` as a filesystem path because pkg's VFS hook expects CommonJS. Both work under ordinary Node. A ready/go handshake lets `WorkflowRun.cancel()` issued immediately after `start()` returns close admission before the script's initial synchronous slice runs.
 
 For each `agent()` call:
 
@@ -56,13 +56,13 @@ Child results are projected and snapshotted before crossing from the host to the
 
 ## Cancellation and disposal
 
-`WorkflowRun.cancel()` records the first reason, tells the worker to cancel, aborts the one signal shared by every pending and published child, and arms the `disposeGraceMs` timer. Worker hooks then throw `CANCELLED` at their next await. If the run remains unsettled at the deadline, the host resolves it as cancelled, pairs stranded child lifecycle events, and terminates the worker.
+`WorkflowRun.cancel()` records the first reason, tells the worker to cancel, aborts the one signal shared by every pending and published child, and arms the `disposeGraceMs` timer. Reentrant or repeated calls are no-ops. `WorkflowStartRequest` does not carry a caller signal; consumers that own one must reject before `start()` or bridge at most one later abort to this handle method. Worker hooks then throw `CANCELLED` at their next await. If the run remains unsettled at the deadline, the host resolves it as cancelled, pairs stranded child lifecycle events, and terminates the worker.
 
 The subagent seam has one cancellation channel: the request signal. There is no separate child-cancel RPC. Published child teardown uses `run.dispose()`; pending provider starts remain provider-owned until their promise rejects or fulfills.
 
 Normal settlement also aborts pending starts and begins disposing any published fire-and-forget children before the result becomes externally settled. The host's quiescence condition includes both pending starts and published child disposals, so cleanup does not forget an async startup transaction.
 
-`dispose()` is idempotent. It cancels the run, starts host-driven disposal immediately, waits for result plus child quiescence up to the same grace, terminates the worker unconditionally, and performs a final survivor sweep. Per-child disposal is memoized so worker RPC, host cancellation, death cleanup, and public disposal all join one operation.
+`dispose()` is idempotent. It cancels the run, starts host-driven disposal immediately, waits up to the same grace for the result and child quiescence, terminates the worker unconditionally, performs a final survivor sweep, then awaits every remaining provider start and child disposal. Per-child disposal is memoized so worker RPC, host cancellation, death cleanup, and public disposal all join one operation. `disposeGraceMs` bounds worker settlement and termination, not provider-owned cleanup.
 
 ## Outcome and event guarantees
 
@@ -81,7 +81,7 @@ The host keeps a ledger of forwarded child starts. A graceful worker supplies th
 | `maxTotalAgents` | `1000` | Total `agent()` calls in one run. |
 | `maxItemsPerCall` | `4096` | Items accepted by one `parallel()` or `pipeline()` call. |
 | `syncTimeoutMs` | `5000` | VM timeout for the script's initial synchronous slice. |
-| `disposeGraceMs` | `5000` | Bound before force-settlement/termination and for public disposal. |
+| `disposeGraceMs` | `5000` | Bound before force-settlement and worker termination; public disposal then awaits host-side child quiescence. |
 
 An owning consumer may set `WorkflowStartRequest.subagentProvider` and `WorkflowStartRequest.maxTotalAgents` for one run. These are engine-level policy, not script hooks or model-facing options; the ordinary `workflow` tool leaves both unset. A per-run total-child cap may lower but never raise the configured `maxTotalAgents` ceiling.
 

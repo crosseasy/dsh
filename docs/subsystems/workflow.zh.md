@@ -10,13 +10,15 @@ Service Definition：[dsh-workflow](../../packages/workflow/workflow)（`ctx.wor
 
 ## 启动请求
 
-本节定义调用方启动一次运行时提交的请求。普通工作流工具会根据模型的 `{ script, meta, args }` 调用和发起调用的 agent 构建该请求；专用消费方还可以为本次运行选择引擎级 `subagentProvider`，并将 `maxTotalAgents` 调低，但脚本无法观察或替换这两项策略。`meta` 与 `args` 是普通 JSON 数据；引擎会用 schema 校验 `meta`，并在任何工作开始前明确报错并拒绝无效数据。引擎绝不会通过对脚本文本求值来获取它们。`parent` 是必填字段——脚本启动的每个子 agent 都归属于它，cwd、谱系与深度通过 [subagent seam](subagent.zh.md) 传递。
+本节定义调用方启动一次运行时提交的请求。普通工作流工具会根据模型的 `{ script, meta, args }` 调用和发起调用的 agent 构建该请求；专用消费方还可以为本次运行选择引擎级 `subagentProvider`，并将 `maxTotalAgents` 调低，但脚本无法观察或替换这两项策略。`meta` 与 `args` 是普通 JSON 数据；引擎会用 schema 校验 `meta`，并在任何工作开始前明确报错并拒绝无效数据。引擎绝不会通过对脚本文本求值来获取它们。`parent` 是必填字段——脚本启动的每个子 agent 都归属于它，cwd、谱系与深度通过 [subagent seam](subagent.zh.md) 传递。由于 `start()` 同步返回，请求不包含取消信号：消费方拒绝已经中止的调用，然后向返回的运行添加一条最多转发一次的中止桥接，并立即复查调用方信号。
 
 ```ts type-equiv
 /**
  * What a caller asks for when starting a workflow run. `meta` and `args` are
  * plain JSON data by the seam contract. `parent` is required because every
- * `agent()` spawned by the script is attributed to that live Agent.
+ * `agent()` spawned by the script is attributed to that live Agent. The
+ * request has no cancellation signal: callers reject before `start()` or
+ * bridge later aborts to the returned {@link WorkflowRun.cancel}.
  */
 interface WorkflowStartRequest {
   /** The plain-JS script body (top-level await allowed; ends with `return <json-value>`). */
@@ -31,8 +33,6 @@ interface WorkflowStartRequest {
   maxTotalAgents?: number
   /** The agent on whose behalf the run executes (parent of every child). */
   parent: Agent
-  /** Cancels the run when aborted. */
-  signal?: AbortSignal
 }
 ```
 
@@ -92,7 +92,7 @@ interface WorkflowResult {
 
 ## 活跃运行：`WorkflowRun`
 
-脚本执行期间消费方持有的句柄。消费方会等待 `result`，可以在运行期间调用 `cancel`，并且必须在每条路径上调用 `dispose`（资源释放）。`result` 不会被拒绝：脚本失败会兑现为 `stopReason: 'error'`。运行被取消后，即使脚本本身永不结算，结果也会在引擎规定的有界宽限期内结算；引擎会强制将其结算为 `cancelled`，随后 worker-thread 引擎会终止脚本所在的 worker。因此，等待 `result` 的消费方不会在取消后无限期挂起。`dispose()` 会执行取消、等待有界结算并等待子 agent 完全停稳，不会因脚本卡死而挂起。
+脚本执行期间消费方持有的句柄。消费方会等待 `result`，可以在运行期间调用 `cancel`，并且必须在每条路径上调用 `dispose`（资源释放）。`cancel()` 是幂等的，首次取消原因优先；子 agent 中止处理重入该方法时也遵循此规则。`result` 不会被拒绝：脚本失败会兑现为 `stopReason: 'error'`。运行被取消后，即使脚本本身永不结算，结果也会在引擎规定的有界宽限期内结算；引擎会强制将其结算为 `cancelled`，随后 worker-thread 引擎会终止脚本所在的 worker。因此，等待 `result` 的消费方不会在取消后无限期挂起。`dispose()` 会限制引擎自有执行的时长，然后等待子 agent 完全停稳；未结算启动或 dispose 的提供方会延迟其返回。
 
 ```ts type-equiv
 /**
@@ -104,9 +104,9 @@ interface WorkflowRun {
   /** The validated meta block available before the script body runs. */
   readonly meta: WorkflowMeta
   readonly result: Promise<WorkflowResult>
-  /** Cancel the run and its children. */
+  /** Cancel the run and its children; idempotent, first reason wins, and settled runs ignore it. */
   cancel(reason?: string): void
-  /** Cancel if needed and await bounded settlement and cleanup. */
+  /** Cancel if needed, terminate engine-owned execution within its bound, and await child quiescence. */
   dispose(): Promise<void>
 }
 ```
@@ -139,13 +139,13 @@ Generated from source by `scripts/gen-cordis-catalog.ts` (verified fresh by `pnp
 
 ### `ctx.workflowEngine` — `WorkflowEngine` (abstract seam)
 
-Workflow Service Definition contract. Invalid requests throw before publication; a live run is holder-owned, its result never rejects, cancellation and disposal are bounded, and disposal waits for child cleanup within that bound. Lifecycle listener failures are contained, and `workflow/end` fires exactly once as the result settles.
+Workflow Service Definition contract. Invalid requests throw before publication; a live run is holder-owned, its result never rejects, and cancellation settles engine-owned execution within its configured grace. Disposal uses `disposeGraceMs` to escalate worker termination, then awaits host-owned pending starts and child disposal to quiescence. Lifecycle listener failures are contained, and `workflow/end` fires exactly once as the result settles.
 
 ```ts cordis-catalog
 /**
  * Parse and execute a workflow script.
- * @param request - the script, its `args`, the parent agent, and an
- *   optional cancel signal.
+ * @param request - the script, its `args`, and the parent agent; cancellation
+ *   belongs to the returned run.
  * @returns the live run; its `result` resolves when the script settles.
  */
 abstract start(request: WorkflowStartRequest): WorkflowRun

@@ -8,11 +8,123 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import type { SessionId, WorkspaceId } from '../src/client/api.ts'
 import { RpcId } from '../src/client/api.ts'
 import type { HostFrame, MuxFrame, RpcMessage, RpcRequest } from '../src/client/api.ts'
+import type { SessionEvent } from '@deepseek-ai/dsh-session/types'
+import {
+  applyPlanProjectionEvent,
+  foldPlanProjection,
+  initialPlanProjectionState,
+  viewPlanProjectionState,
+} from '@deepseek-ai/dsh-plan-mode/client'
+import { planProjectionDefinition } from '@deepseek-ai/dsh-plan-mode/src/projection.ts'
+import {
+  applySessionStatsProjectionEvent,
+  foldSessionStatsProjection,
+  initialSessionStatsState,
+  viewSessionStatsProjectionState,
+} from '@deepseek-ai/dsh-session-stats/client'
+import { sessionStatsProjectionDefinition } from '@deepseek-ai/dsh-session-stats/src/projection.ts'
+import {
+  applyContextBreakdownProjectionEvent,
+  applyContextPressureProjectionEvent,
+  applyTokenUsageProjectionEvent,
+  foldContextBreakdownProjection,
+  foldContextPressureProjection,
+  foldTokenUsageProjection,
+  initialContextBreakdownState,
+  initialContextPressureState,
+  initialTokenUsageState,
+  viewContextBreakdownProjectionState,
+  viewContextPressureProjectionState,
+  viewTokenUsageProjectionState,
+} from '@deepseek-ai/dsh-token-meter/client'
+import { contextBreakdownProjectionDefinition } from '@deepseek-ai/dsh-token-meter/src/breakdown-projection.ts'
+import {
+  contextPressureProjectionDefinition,
+  tokenUsageProjectionDefinition,
+} from '@deepseek-ai/dsh-token-meter/src/usage-projection.ts'
 import { FixtureApiClient, createFixtureApi } from '../src/client/fixture.ts'
 
 const sid = (id: string): SessionId => id as SessionId
 const req = <P>(payload: P): RpcRequest<P> => ({ rpcId: RpcId(`t-${Math.abs(Math.sin(reqCount++)).toString(36).slice(2, 10)}`), payload })
 let reqCount = 0
+
+const sharedProjectionEvents = [
+  { type: 'turn/start', data: { turn: 1 } },
+  { type: 'plan/mode', data: { active: true } },
+  {
+    type: 'request/header',
+    data: {
+      header: {
+        config: { provider: 'fixture', model: 'fixture-model' },
+        system: 'Shared projection system prompt.',
+        tools: [{
+          name: 'fixture_tool',
+          description: 'Exercise request composition.',
+          parameters: { type: 'object', properties: {} },
+        }],
+      },
+      reason: 'initial',
+    },
+  },
+  {
+    type: 'request/context',
+    data: { provider: 'fixture', model: 'fixture-model', contextWindow: 128_000 },
+  },
+  {
+    type: 'user/message',
+    data: {
+      role: 'user',
+      content: [{ type: 'text', text: 'Exercise message composition.' }],
+      source: { kind: 'user' },
+    },
+    surfaceOp: 'append',
+  },
+  { type: 'step/start', data: { turn: 1, step: 1 } },
+  {
+    type: 'assistant/chunk',
+    data: {
+      turn: 1,
+      step: 1,
+      chunk: {
+        type: 'usage',
+        usage: {
+          inputTokens: 40,
+          outputTokens: 6,
+          cacheReadTokens: 8,
+          cacheWriteTokens: 2,
+        },
+      },
+    },
+  },
+  { type: 'step/end', data: { turn: 1, step: 1 } },
+  { type: 'turn/end', data: { turn: 1, reason: { kind: 'completed' } } },
+  {
+    type: 'command/run',
+    data: {
+      commandId: 'fixture-plan-off',
+      name: 'plan',
+      args: 'off',
+      source: { kind: 'user' },
+    },
+  },
+  {
+    type: 'command/done',
+    data: { commandId: 'fixture-plan-off', kind: 'success' },
+  },
+].map((event, seq) => ({ ...event, seq, time: 1_000 + seq })) as SessionEvent[]
+
+function projectionView<S, V>(
+  definition: {
+    init(): S
+    apply(state: S, event: SessionEvent): S
+    wire: { view(state: S): V }
+  },
+  events: readonly SessionEvent[],
+): V {
+  let state = definition.init()
+  for (const event of events) state = definition.apply(state, event)
+  return definition.wire.view(state)
+}
 
 interface TimingHooks {
   setHistoryDelay(ms: number): void
@@ -178,6 +290,82 @@ describe('createFixtureApi', () => {
         },
       } },
     })
+  })
+
+  it('serves product projection folds for fixture history', async () => {
+    const api = createFixtureApi()
+    const history = await api.sessions.history(req({ sessionId: sid('fx-alpha'), maxMessages: 1000 }))
+    if (!history.result.ok) throw new Error('history failed')
+    const log = history.result.value.events.map(entry => entry.event)
+    const projections = history.result.value.projections
+    if (projections === undefined) throw new Error('projections missing')
+    const values = projections.values
+
+    expect(planProjectionDefinition).toMatchObject({
+      init: initialPlanProjectionState,
+      apply: applyPlanProjectionEvent,
+      wire: { view: viewPlanProjectionState },
+    })
+    expect(sessionStatsProjectionDefinition).toMatchObject({
+      init: initialSessionStatsState,
+      apply: applySessionStatsProjectionEvent,
+      wire: { view: viewSessionStatsProjectionState },
+    })
+    expect(tokenUsageProjectionDefinition).toMatchObject({
+      init: initialTokenUsageState,
+      apply: applyTokenUsageProjectionEvent,
+      wire: { view: viewTokenUsageProjectionState },
+    })
+    expect(contextPressureProjectionDefinition).toMatchObject({
+      init: initialContextPressureState,
+      apply: applyContextPressureProjectionEvent,
+      wire: { view: viewContextPressureProjectionState },
+    })
+    expect(contextBreakdownProjectionDefinition).toMatchObject({
+      init: initialContextBreakdownState,
+      apply: applyContextBreakdownProjectionEvent,
+      wire: { view: viewContextBreakdownProjectionState },
+    })
+    expect(values.plan).toEqual(projectionView(planProjectionDefinition, log))
+    expect(values.tokenUsage).toEqual(projectionView(tokenUsageProjectionDefinition, log))
+    expect(values.contextPressure).toEqual(projectionView(contextPressureProjectionDefinition, log))
+    expect(values.contextBreakdown).toEqual(projectionView(contextBreakdownProjectionDefinition, log))
+    expect(values.sessionStats).toEqual(projectionView(sessionStatsProjectionDefinition, log))
+  })
+
+  it('keeps fixture complete-log helpers in parity on a non-default shared event vector', () => {
+    const helperViews = {
+      plan: foldPlanProjection(sharedProjectionEvents),
+      tokenUsage: foldTokenUsageProjection(sharedProjectionEvents),
+      contextPressure: foldContextPressureProjection(sharedProjectionEvents),
+      contextBreakdown: foldContextBreakdownProjection(sharedProjectionEvents),
+      sessionStats: foldSessionStatsProjection(sharedProjectionEvents),
+    }
+    const productionViews = {
+      plan: projectionView(planProjectionDefinition, sharedProjectionEvents),
+      tokenUsage: projectionView(tokenUsageProjectionDefinition, sharedProjectionEvents),
+      contextPressure: projectionView(contextPressureProjectionDefinition, sharedProjectionEvents),
+      contextBreakdown: projectionView(contextBreakdownProjectionDefinition, sharedProjectionEvents),
+      sessionStats: projectionView(sessionStatsProjectionDefinition, sharedProjectionEvents),
+    }
+
+    expect(helperViews).toEqual(productionViews)
+    expect(helperViews.plan).toEqual({ active: true, pending: true })
+    expect(helperViews.tokenUsage).toEqual({
+      uncachedInputTokens: 40,
+      outputTokens: 6,
+      cacheReadTokens: 8,
+      cacheWriteTokens: 2,
+    })
+    expect(helperViews.contextPressure).toEqual({
+      pressureTokens: 50,
+      contextWindow: 128_000,
+      projectedTokens: 50,
+    })
+    expect(helperViews.contextBreakdown.systemTokens).toBeGreaterThan(0)
+    expect(helperViews.contextBreakdown.toolsTokens).toBeGreaterThan(0)
+    expect(helperViews.contextBreakdown.messageTokens).toBeGreaterThan(0)
+    expect(helperViews.sessionStats).toMatchObject({ turns: 1, steps: 1 })
   })
 
   it('serves grouped models and keeps a selection for later history and fixture requests', async () => {

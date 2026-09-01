@@ -20,11 +20,11 @@ Node 24 消费方任务采用单个包含 10 道门禁的模式，而非由 shel
 
 [scripts/publint-all.ts](../../../../scripts/publint-all.ts) 从 `packages/<group>/<pkg>` 发现包，并以根据 `availableParallelism()` 确定大小的 worker 池运行 `publint`。`DSH_PUBLINT_CONCURRENCY` 可以针对资源配置不同的本地机器和 CI runner 限制或提高 worker 数量。结果按包缓冲，并按确定性的包顺序打印，因此并行执行不会打乱各包的日志块。
 
-各门禁的包脚本仍是临时本地运行所用的命令入口。`hygiene` 调用包含相同十三道检查且限制为本地四个 worker 的调度器模式，而 `doc-sync` 的成员列表由调度器管理（[通过门禁调度器运行 doc-sync](../../archived/process/2026-07-21-doc-sync-through-gate-scheduler.md)）。
+各门禁的包脚本仍可用于临时本地运行。`hygiene` 和 `check:all` 复用同一产物依赖图：同一次构建先于 `publint`、已构建包不变式和 NodeNext 消费方执行，而独立的源码检查可以立即启动。独立运行的 `hygiene` 保持本地 4 个 worker 的上限，且绝不清理 worktree；`doc-sync` 的成员列表由调度器管理（[通过门禁调度器运行 doc-sync](../../archived/process/2026-07-21-doc-sync-through-gate-scheduler.md)）。
 
 ## 验证
 
-[scripts/run-gates.spec.ts](../../../../scripts/run-gates.spec.ts) 在执行器运行前拒绝无效图，锁定必须通过与只等结算两种顺序，锁定 hygiene、消费方与原生 Windows 清单及其失败语义，通过真实子进程验证信号终止，并证明流式输出会立即显示且不被缓冲。[scripts/publint-all.spec.ts](../../../../scripts/publint-all.spec.ts) 在下游产物消费方运行前拒绝缺失的公开导出。
+[scripts/run-gates.spec.ts](../../../../scripts/run-gates.spec.ts) 在执行器运行前拒绝无效图，锁定必须通过与只等结算两种顺序，锁定 hygiene、消费方与原生 Windows 清单及其失败语义，并通过真实子进程验证信号终止。其进程冒烟测试会在无构建产物与已有构建产物时运行完整 hygiene 图，要求每个产物消费方都观察到构建，并保留未知 package 目录失败。该测试集还证明流式输出会立即显示且不被缓冲。[scripts/publint-all.spec.ts](../../../../scripts/publint-all.spec.ts) 在下游产物消费方运行前拒绝缺失的公开导出。
 
 ## 曾考虑的替代方案
 
@@ -38,6 +38,8 @@ Node 24 消费方任务采用单个包含 10 道门禁的模式，而非由 shel
 ## 后果
 
 由调度器支持的命令耗时取决于最慢的依赖链，而非各独立门禁耗时之和，并会报告决定总耗时的门禁。无效图会直接失败，不会先执行其中一部分。代价是维护一个具有显式模式清单的定制调度器。
+
+独立运行的 hygiene 会生成自己的产物输入，而不信任残留输出。对已有构建的 worktree 重复构建会增加耗时，但干净状态和已有构建状态会执行同一张图；保留 worktree 内容也使 workspace 约束可以继续拒绝意外的包目录。
 
 这条验证链会让使用已验证产物的下游消费方和 lint 延后启动，直至共享产物视图经确认有效且临时暂存已清除；这些下游门禁仍可彼此重叠运行。`publint` 需要构建，却不依赖暂存的验证视图，因此它会与验证器重叠，而不会延长这条依赖链。
 

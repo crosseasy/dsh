@@ -613,6 +613,7 @@ Expected: boot 通过（`assertEntriesActivated` 不抛），服务监听 `http:
 - 任务看板 / 皮肤中心 / 宠物 入口可见；
 - console **无报错**（有则先修，用户规则）；
 - 粘贴一张图片走 modlens（若可快速验证），否则记录为 Task 6 回归项。
+
 截图留证。停止服务。
 
 - [ ] **Step 5: 更新导航（若有）**
@@ -707,6 +708,7 @@ git commit -m "docs: add fusion-tui profile guide"
 - 左侧 ui-sidebar：New Session / 会话列表可用；
 - 会话 fork / resume / compact / export 可用；
 - Editor / Search / Settings / 模型选择面板可用。
+
 每项记录 pass/fail 到回归报告。
 
 - [ ] **Step 2: 去重生效验证**

@@ -1,10 +1,15 @@
 /**
- * Client-namespace projection of the session-stats domain: a pure re-export
- * of the package's types outlet. Client code imports ONLY the client
- * namespace (repo discipline), so `./client` projects the same single-source
- * content `./types` serves to host consumers — zero duplication.
+ * Browser-safe session-stats types and Cordis-free fold functions.
  *
  * @module @deepseek-ai/dsh-session-stats/client
  */
 
 export type * from './types.ts'
+export {
+  applySessionStatsProjectionEvent,
+  foldSessionStatsProjection,
+  foldSessionStatsProjectionState,
+  initialSessionStatsState,
+  viewSessionStatsProjectionState,
+} from './projection-fold.ts'
+export type { SessionStatsState, SessionStatsTotals } from './projection-fold.ts'

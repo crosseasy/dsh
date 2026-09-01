@@ -100,6 +100,10 @@ Optional `timeoutMs` must be positive and finite; it is policy metadata, not mod
 
 Optional `isConcurrencySafe(args)` receives typed, softly validated arguments. Exact `true` permits concurrent dispatch/body execution; invalid input and all other outcomes remain exclusive. Opted-in bodies do not mutate parent-owned state, and shared-state races must commute or fail closed. The [parallel tool-call Agent Note](../../../.agents/notes/implemented/feature/2026-07-10-parallel-tool-call-execution.md) owns the full safety contract.
 
+### Testing support
+
+Repository tests that need a fixture whose canonical value is its rendered content import `defineContentToolFixture` and `ContentToolFixtureOptions` from `@deepseek-ai/dsh-tools/testing`. The package root stays the production API for registry, schema, execution, and presentation contracts.
+
 ### Enforced raw JSON Schema subset
 
 `JsonSchemaNode` is the raw counterpart shared by tool outputs, Code Mode generation, subagents, and workflows. It permits any JSON root, an annotation-only unconstrained JSON node, and exact-one `oneOf`; annotations must remain lossless JSON. `assertSupportedJsonSchema()` rejects unsupported constructs, while `validateJsonSchemaValue()` returns path-qualified violations. Subagents and workflows retain their caller-defined object-root requirement through `assertObjectJsonSchema()` and `ObjectJsonSchema`, not through a limitation in the shared vocabulary.

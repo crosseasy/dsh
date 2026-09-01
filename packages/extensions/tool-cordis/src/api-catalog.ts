@@ -150,7 +150,7 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
       },
       {
         signature: 'async mount(agentCtx: Context, id?: string): Promise<AgentPreset>',
-        description: 'Compose one agent from a preset: ensure the preset\'s standing mount, then parent the agent\'s scope key to it so the mount\'s registrations and listeners cover this agent.\n\nCall from the agent factory\'s `setup(agentCtx)`; a rejection there rolls the agent creation back, so a broken preset never yields a half-composed session.',
+        description: 'Compose one agent from a preset: acquire the preset\'s standing generation, then parent the agent\'s scope key to it so the generation\'s registrations and listeners cover this agent until the agent scope unloads.\n\nCall from the agent factory\'s `setup(agentCtx)`; a rejection there rolls the agent creation back, so a broken preset never yields a half-composed session.',
         parameters: [{ name: 'agentCtx', description: 'the agent\'s scope context.' }, { name: 'id', description: 'the preset id, or `undefined` for {@link defaultId}.' }],
         returns: 'the preset that was composed, for the caller to record.',
         throws: ['when the preset is unknown or its composition is unusable.'],
@@ -195,16 +195,16 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
       },
       {
         signature: 'async recompose(agentCtx: Context, id: string): Promise<AgentPreset>',
-        description: 'Re-link one agent to a different preset\'s standing composition.\n\nOnly valid while the agent has produced nothing: swapping tools mid conversation would leave logged tool calls the new composition cannot make. The CALLER owns that check — this method does not read session history.\n\nThe swap is a parent re-link, not an unmount: standing mounts are shared and permanent, so the old composition stays for its other agents and the new one is ensured BEFORE the link moves. An unknown or unusable preset therefore throws with the agent exactly as it was — there is no torn-down state to restore. The re-link runs through the binding this roster kept from the agent\'s mount — dsh-scope\'s only re-link authority. An agent that never composed one has nothing to re-link: the switch is then the agent\'s first bind, exactly a mount.',
+        description: 'Re-link one agent to a different preset\'s standing composition.\n\nOnly valid while the agent has produced nothing: swapping tools mid conversation would leave logged tool calls the new composition cannot make. The CALLER owns that check — this method does not read session history.\n\nThe swap is a parent re-link, not an unmount: standing generations are shared, so the old composition stays for its other agents and the new one is ensured BEFORE the link moves. An unknown or unusable preset therefore throws with the agent exactly as it was. The previous holder is released only after the new binding succeeds; if the old generation was already retired, that release is the point that may dispose it. The re-link runs through the binding this roster kept from the agent\'s mount — dsh-scope\'s only re-link authority. An agent that never composed one has nothing to re-link: the switch is then the agent\'s first bind, exactly a mount.',
         parameters: [{ name: 'agentCtx', description: 'the agent\'s scope context.' }, { name: 'id', description: 'the preset to compose the agent from instead.' }],
         returns: 'the preset now installed.',
         throws: ['when the preset is unknown or its composition is unusable.'],
       },
       {
-        signature: 'async standingKeyFor(id?: string): Promise<ScopeKey>',
-        description: 'The standing scope key of one preset, for a host reader with no agent.\n\nA cold transcript read resolves tool presenters against the composition the session recorded, and the standing mount makes that possible without resuming anything: ensuring the mount composes plugins but starts no agent, no session, and no turn.',
+        signature: 'async acquireStanding(id?: string): Promise<StandingPresetLease>',
+        description: 'Acquire one preset generation for a host reader with no agent.\n\nA cold transcript read resolves tool presenters against the composition the session recorded, and the standing mount makes that possible without resuming anything. The returned lease keeps a retired generation mounted until the reader leaves its `finally` block.',
         parameters: [{ name: 'id', description: 'the preset id, or `undefined` for {@link defaultId}.' }],
-        returns: 'the standing scope key readers pass as a registry view scope.',
+        returns: 'a lease whose `key` is the registry view scope.',
         throws: ['when the preset is unknown or its composition is unusable.'],
       },
     ],
@@ -614,7 +614,7 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
         signature: 'abstract compactRegion( start: number, end: number, agent: CompactionAgentContext, signal?: AbortSignal, ): Promise<CompactionResult>',
         description: 'Forcibly compact a range of surface nodes into a single summary node. `start` and `end` name an inclusive span by surface position, not numeric seq order; replacements can make visible seqs non-monotonic. Both edges must be balanced so assistant tool calls remain paired with their results. A model- backed implementation forwards cancellation and rejects active, missing, reversed, or unbalanced ranges. The target session is `agent.session`. Its replacement user message must use compactCheckpointSource with the transaction\'s `CompactionId`. Use toolPairingBalancedBefore and toolPairingBalancedAfter for the edge checks.',
         parameters: [{ name: 'start', description: 'first surface seq, inclusive.' }, { name: 'end', description: 'last surface seq, inclusive.' }, { name: 'agent', description: 'context whose session is mutated and whose routing options guide summarization.' }, { name: 'signal', description: 'optional cancellation; model-backed implementations must forward it.' }],
-        returns: 'the appended event seqs, summary, replaced range, and token accounting.',
+        returns: 'the summary event seq, replaced range, and token accounting.',
         throws: ['when compaction is active or the range is missing, reversed, or unbalanced.'],
       },
     ],
@@ -674,6 +674,64 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
         signature: 'abstract deleteRecord(key: CredentialKey): Promise<void>',
         description: 'Remove one record; removing an absent record is a no-op.',
         parameters: [{ name: 'key', description: 'the record to remove.' }],
+      },
+    ],
+  },
+  {
+    key: 'curatedBench',
+    summary: 'Read-only curated benchmark asset service exposed as `ctx.curatedBench`.',
+    description: 'Read-only curated benchmark asset service exposed as `ctx.curatedBench`.',
+    methods: [
+      {
+        signature: 'assetDirs(): CuratedBenchAssetDirs',
+        description: 'Return the asset directories used by this service.',
+        parameters: [],
+        returns: 'frozen directory paths keyed by asset class.',
+      },
+      {
+        signature: 'listAssets(kind: CuratedBenchAssetKind): readonly string[]',
+        description: 'List JSON asset paths for one asset class.',
+        parameters: [{ name: 'kind', description: 'Asset class to list.' }],
+        returns: 'sorted POSIX-style relative JSON paths.',
+        throws: ['when the asset tree exceeds 64 nested levels or 1,024 total entries.'],
+      },
+      {
+        signature: 'readAsset(kind: CuratedBenchAssetKind, path: string): CuratedBenchJson',
+        description: 'Read and freeze one JSON asset.',
+        parameters: [{ name: 'kind', description: 'Asset class containing the file.' }, { name: 'path', description: 'Safe POSIX-style relative path ending in `.json`.' }],
+        returns: 'the parsed plain JSON value.',
+        throws: ['when the path is unsafe, the target is not a contained stable regular file, the read exceeds its limit, the content is malformed JSON, or the parsed value is not plain JSON.'],
+      },
+    ],
+  },
+  {
+    key: 'curatedPolicy',
+    summary: 'Read-only curated policy service exposed as `ctx.curatedPolicy`.',
+    description: 'Read-only curated policy service exposed as `ctx.curatedPolicy`.',
+    methods: [
+      {
+        signature: 'listCandidates(): readonly CuratedCandidate[]',
+        description: 'List every audited candidate in catalog order.',
+        parameters: [],
+        returns: 'a frozen array of frozen candidate records.',
+      },
+      {
+        signature: 'listCapabilityConflicts(): readonly CapabilityConflictRule[]',
+        description: 'List every curated capability conflict rule in catalog order.',
+        parameters: [],
+        returns: 'a frozen array of frozen conflict rules.',
+      },
+      {
+        signature: 'listPermissionRules(): readonly PermissionRule[]',
+        description: 'List every curated permission rule in catalog order.',
+        parameters: [],
+        returns: 'a frozen array of frozen permission rules.',
+      },
+      {
+        signature: 'getProfileCandidates(profileId: string): readonly CuratedCandidate[]',
+        description: 'List active candidates assigned to one profile.',
+        parameters: [{ name: 'profileId', description: 'Curated profile id.' }],
+        returns: 'a stable frozen array in catalog order.',
       },
     ],
   },
@@ -767,12 +825,6 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
         description: 'Return target metadata, or `undefined` when the target does not exist.',
         parameters: [{ name: 'target', description: 'the resolved target to stat.' }, { name: 'signal', description: 'aborts the metadata round-trip.' }],
         returns: 'metadata only, never content; undefined for an absent target.',
-      },
-      {
-        signature: 'abstract lstat(path: string, opts?: { cwd?: string }, signal?: AbortSignal): Promise<FsPathInfo | undefined>',
-        description: 'Return path metadata without following the final path component when it is a symbolic link. This is intentionally path-shaped, not target-shaped: resolve follows symlinks to produce the stable identity used by normal reads/writes, while `lstat` lets a consumer reject the path itself before that follow happens.\n\n`opts.cwd` follows resolve\'s cwd rules. `undefined` means the path is absent.',
-        parameters: [{ name: 'path', description: 'the path to inspect; relative paths resolve against `opts.cwd`.' }, { name: 'opts', description: '`cwd` overrides the backend\'s default base for relative paths.' }, { name: 'signal', description: 'aborts the metadata round-trip.' }],
-        returns: 'metadata only, never content; undefined for an absent path.',
       },
       {
         signature: 'abstract readText(target: FsTarget, signal?: AbortSignal): Promise<string>',
@@ -1434,22 +1486,10 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
     description: 'Exact-read consumer that prepares immutable cross-session message context.',
     methods: [
       {
-        signature: 'async listCandidates( agent: Agent, query: string = \'\', limit: number = this.config.candidateLimit, signal?: AbortSignal, ): Promise<SessionReferenceCandidate[]>',
-        description: 'List reference candidates, ranked by working-directory affinity.',
-        parameters: [{ name: 'agent', description: 'target agent; self is excluded and its cwd drives ranking.' }, { name: 'query', description: 'optional case-insensitive session-id/cwd/title substring.' }, { name: 'limit', description: 'optional positive result cap.' }, { name: 'signal', description: 'optional cancellation boundary for host autocomplete teardown.' }],
-        returns: 'candidates labeled by latest title or, when absent, session id.',
-      },
-      {
         signature: '@Remote(\'candidates\') async remoteExportCandidates( agent: Agent, query: string, signal: AbortSignal, ): Promise<SessionReferenceMentionCandidate[]>',
-        description: 'Remote face of listCandidates: the configured candidate limit applies, and every candidate carries the canonical mention a host inserts into the prompt draft.',
+        description: 'Remote candidate discovery applies the configured candidate limit and attaches the canonical mention a host inserts into the prompt draft.',
         parameters: [{ name: 'agent', description: 'target agent; self is excluded and its cwd drives ranking.' }, { name: 'query', description: 'optional case-insensitive session-id/cwd/title substring.' }, { name: 'signal', description: 'caller cancellation.' }],
         returns: 'mention-carrying candidates in rank order.',
-      },
-      {
-        signature: 'async prepare( agent: Agent, content: ContentBlock[], references: SessionReferenceInput[], signal?: AbortSignal, ): Promise<PreparedReferencedMessage>',
-        description: 'Snapshot all references for one accepted direct message and return one aggregated durable context.',
-        parameters: [{ name: 'agent', description: 'target agent; references to it are rejected.' }, { name: 'content', description: 'already host-normalized readable message content.' }, { name: 'references', description: 'structured source sessions in mention order.' }, { name: 'signal', description: 'optional cancellation boundary for the active turn.' }],
-        returns: 'detached content and optional referenced-session context.',
       },
     ],
   },
@@ -1590,15 +1630,29 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
       },
       {
         signature: 'register<T>(ns: SettingsNamespace, schema: z<T>, options?: SettingsRegisterOptions<T>): SettingsScope<T>',
-        description: 'Register a namespace schema and receive its owner scope. The registration is an effect on the calling plugin\'s fiber: disposing that fiber removes the namespace and its observers. An invalid stored section fails the registration itself — the earliest point where the schema can judge it.',
+        description: 'Register a namespace schema and receive its owner scope. The registration is an effect on the calling plugin\'s fiber: disposing that fiber removes the namespace and its observers, skips watcher calls that have not started, and waits for started watcher calls before resolving. A scope whose registration was disposed rejects later writes or watchers. An invalid stored section fails the registration itself — the earliest point where the schema can judge it.',
         parameters: [{ name: 'ns', description: 'unique namespace; duplicate registration fails loud.' }, { name: 'schema', description: 'schemastery schema resolving this namespace\'s value.' }, { name: 'options', description: 'composition `base` layer and effect timing.' }],
         returns: 'the owner scope for reads, observation, and updates.',
       },
       {
-        signature: 'describe(options?: SettingsDescribeOptions): SettingsDescriptor[]',
-        description: 'Describe every registered namespace for configuration surfaces, including the composition `base` and raw user layers so a form can mark which fields the user overrode (presence in `user`) and what a reset returns to.',
-        parameters: [{ name: 'options', description: 'redaction switch; wire surfaces must redact.' }],
+        signature: 'describe(): SettingsDescriptor[]',
+        description: 'Describe every registered namespace for same-process configuration consumers, including verbatim values and serialized schema metadata.',
+        parameters: [],
         returns: 'one descriptor per registered namespace, in registration order.',
+      },
+      {
+        signature: 'describeForWire(): WireSettingsDescriptor[]',
+        description: 'Describe every registered namespace for wire consumers through the only supported serialization path. The complete schema graph is checked before serialization; secrets are removed from values and schema defaults.',
+        parameters: [],
+        returns: 'all descriptors in registration order.',
+        throws: ['a value-free error when a schema cannot be represented safely.'],
+      },
+      {
+        signature: 'describeForWire(ns: SettingsNamespace): WireSettingsDescriptor | undefined',
+        description: 'Describe one registered namespace for wire consumers through the only supported serialization path. The complete schema graph is checked before serialization; secrets are removed from values and schema defaults.',
+        parameters: [{ name: 'ns', description: 'namespace selecting one descriptor.' }],
+        returns: 'the selected descriptor, or `undefined` while unregistered.',
+        throws: ['a value-free error when the schema cannot be represented safely.'],
       },
       {
         signature: 'get(ns: SettingsNamespace): unknown',
@@ -1625,8 +1679,8 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
   },
   {
     key: 'shell',
-    summary: 'Abstract shell execution service shared by Bash and PowerShell providers.',
-    description: 'Abstract shell execution service shared by Bash and PowerShell providers. Subclass, implement the abstract methods, and load the subclass as a plugin — it registers as `ctx.shell` (one implementation per context; loading a second throws, which is cordis\' standard duplicate-service behavior).\n\nImplementations must honor these semantics:\n\n- run rejects only for infrastructure failures. Nonzero exits, timeout kills, and abort kills resolve with a ShellRunResult.\n- start returns immediately; no timeout applies to background processes. `done` settles at process close and never rejects; spawn failures settle as `killed` with the error on stderr.\n- ShellProcess.readOutput is incremental: consecutive reads never repeat output. Lossy reads report truncation and available spill files.\n- A still-running background process is stopped and awaited when its owning composition tears down. With the subprocess seam that boundary is `ctx.subprocess` disposal, so a background process survives an executor-only reload.',
+    summary: 'Abstract shell execution service.',
+    description: 'Abstract shell execution service. Subclass, implement the abstract methods, and load the subclass as a plugin — it registers as `ctx.shell` (one implementation per context; loading a second throws, which is cordis\' standard duplicate-service behavior).\n\nImplementations must honor these semantics:\n\n- run rejects only for infrastructure failures. Nonzero exits, timeout kills, and abort kills resolve with a ShellRunResult.\n- start returns immediately; no timeout applies to background processes. `done` settles at process close and never rejects; spawn failures settle as `killed` with the error on stderr.\n- ShellProcess.readOutput is incremental: consecutive reads never repeat output. Lossy reads report truncation and available spill files.\n- A still-running background process is stopped and awaited when its owning composition tears down. With the subprocess seam that boundary is `ctx.subprocess` disposal, so a background process survives an executor-only reload.',
     methods: [
       {
         signature: 'abstract resolve(request: ShellExecRequest): ShellExecSpec',
@@ -2302,12 +2356,12 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
   {
     key: 'workflowEngine',
     summary: 'Workflow Service Definition contract.',
-    description: 'Workflow Service Definition contract. Invalid requests throw before publication; a live run is holder-owned, its result never rejects, cancellation and disposal are bounded, and disposal waits for child cleanup within that bound. Lifecycle listener failures are contained, and `workflow/end` fires exactly once as the result settles.',
+    description: 'Workflow Service Definition contract. Invalid requests throw before publication; a live run is holder-owned, its result never rejects, and cancellation settles engine-owned execution within its configured grace. Disposal uses `disposeGraceMs` to escalate worker termination, then awaits host-owned pending starts and child disposal to quiescence. Lifecycle listener failures are contained, and `workflow/end` fires exactly once as the result settles.',
     methods: [
       {
         signature: 'abstract start(request: WorkflowStartRequest): WorkflowRun',
         description: 'Parse and execute a workflow script.',
-        parameters: [{ name: 'request', description: 'the script, its `args`, the parent agent, and an optional cancel signal.' }],
+        parameters: [{ name: 'request', description: 'the script, its `args`, and the parent agent; cancellation belongs to the returned run.' }],
         returns: 'the live run; its `result` resolves when the script settles.',
       },
     ],
@@ -3022,6 +3076,14 @@ export const TYPE_API: readonly TypeApiEntry[] = [
     declaration: 'export interface CancelOptions {\n    keepInbox?: boolean | undefined;\n}',
   },
   {
+    name: 'CapabilityConflictRule',
+    declaration: 'export interface CapabilityConflictRule {\n    readonly capability: string;\n    readonly defaultProvider: string | null;\n    readonly fallbacks: readonly string[];\n    readonly rule: CapabilityConflictRuleKind;\n    readonly reason: string;\n}',
+  },
+  {
+    name: 'CapabilityConflictRuleKind',
+    declaration: 'export type CapabilityConflictRuleKind = \'not-simultaneous\' | \'one-active-provider\' | \'not-long-running-together\';',
+  },
+  {
     name: 'ClientResponse',
     declaration: 'export interface ClientResponse {\n    type: \'client-response\';\n    rpcId: RpcId;\n    result: RpcResult<unknown>;\n}',
   },
@@ -3086,20 +3148,12 @@ export const TYPE_API: readonly TypeApiEntry[] = [
     declaration: 'export interface CommandInvocation {\n    readonly commandId: CommandId;\n    readonly agent: Agent;\n    readonly rawInput: string;\n    readonly attachments: readonly ImageBlock[];\n    readonly signal: AbortSignal;\n}',
   },
   {
-    name: 'CommandResult',
-    declaration: 'export type CommandResult = {\n    readonly kind: \'success\';\n    readonly text?: string;\n    readonly sourceEventSeq?: number;\n} | {\n    readonly kind: \'error\';\n    readonly text: string;\n};',
-  },
-  {
     name: 'CompactionAgentContext',
     declaration: 'export interface CompactionAgentContext {\n    session: Session;\n    options: {\n        provider?: string;\n        model?: string;\n    };\n}',
   },
   {
-    name: 'CompactionId',
-    declaration: 'export type CompactionId = Branded<\'CompactionId\'>;',
-  },
-  {
     name: 'CompactionResult',
-    declaration: 'export interface CompactionResult {\n    compactionId: CompactionId;\n    sourceCommandId?: CommandId;\n    startSeq: number;\n    summarySeq: number;\n    endSeq: number;\n    summary: ContentBlock[];\n    shadowedRange: {\n        start: number;\n        end: number;\n    };\n    shadowedSeqs: number[];\n    shadowedTokenCount: number;\n}',
+    declaration: 'export interface CompactionResult {\n    summarySeq: number;\n    shadowedRange: {\n        start: number;\n        end: number;\n    };\n    shadowedSeqs: number[];\n    shadowedTokenCount: number;\n}',
   },
   {
     name: 'CompactionTrigger',
@@ -3224,6 +3278,42 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   {
     name: 'CredentialRef',
     declaration: 'export type CredentialRef = Branded<\'CredentialRef\'>;',
+  },
+  {
+    name: 'CuratedBenchAssetDirs',
+    declaration: 'export interface CuratedBenchAssetDirs {\n    readonly manifests: string;\n    readonly tasks: string;\n    readonly baselines: string;\n}',
+  },
+  {
+    name: 'CuratedBenchAssetKind',
+    declaration: 'export type CuratedBenchAssetKind = keyof CuratedBenchAssetDirs;',
+  },
+  {
+    name: 'CuratedBenchJson',
+    declaration: 'export type CuratedBenchJson = null | boolean | number | string | readonly CuratedBenchJson[] | {\n    readonly [key: string]: CuratedBenchJson;\n};',
+  },
+  {
+    name: 'CuratedCandidate',
+    declaration: 'export interface CuratedCandidate {\n    readonly id: string;\n    readonly priority: CuratedPriority;\n    readonly capability: string;\n    readonly repository: string;\n    readonly repositoryPath: string | null;\n    readonly commit: string;\n    readonly sourceStatus: CuratedSourceStatus;\n    readonly auditedAt: string;\n    readonly manifestPath: string | null;\n    readonly expectedPackage: string | null;\n    readonly nodeEngine: string | null;\n    readonly nodeEngineEvidence: string | null;\n    readonly requiresCorePatch: boolean | null;\n    readonly license: string | null;\n    readonly bundlePatch: string | null;\n    readonly sourceContentSha256?: string;\n    readonly treeSha256?: string;\n    readonly runtimeDependencyClosureSha256?: string;\n    readonly npmVersion?: string;\n    readonly npmIntegrity?: string;\n    readonly testFiles: number;\n    readonly ciWorkflows: number;\n    readonly installScripts: Readonly<Record<string, string>>;\n    readonly externalDependencies: readonly string[];\n    readonly requiredRuntimeBundles?: readonly string[];\n    readonly networkAccess: readonly string[];\n    readonly credentials: readonly string[];\n    readonly targetProfiles: readonly string[];\n    readonly active: boolean;\n    readonly auditWarnings: readonly string[];\n    readonly rejections: readonly CuratedRejection[];\n    readonly scoreDimensions: CuratedScoreDimensions;\n    readonly score: number;\n    readonly resources?: CuratedCandidateResources;\n    readonly config?: CuratedCand /* …truncated — full shape in source */',
+  },
+  {
+    name: 'CuratedCandidateResources',
+    declaration: 'export interface CuratedCandidateResources {\n    readonly entryIds?: readonly string[];\n    readonly toolNames?: readonly string[];\n    readonly commandNames?: readonly string[];\n    readonly serviceKeys?: readonly string[];\n    readonly uiSlots?: readonly string[];\n    readonly settingsTabs?: readonly string[];\n    readonly routes?: readonly string[];\n    readonly ports?: readonly string[];\n    readonly sqlitePaths?: readonly string[];\n    readonly cacheDirs?: readonly string[];\n    readonly envVars?: readonly string[];\n    readonly waterfallListeners?: readonly string[];\n    readonly automationBehaviors?: readonly string[];\n}',
+  },
+  {
+    name: 'CuratedPriority',
+    declaration: 'export type CuratedPriority = \'P0\' | \'P1\' | \'P2\';',
+  },
+  {
+    name: 'CuratedRejection',
+    declaration: 'export interface CuratedRejection {\n    readonly code: string;\n    readonly evidence: string;\n}',
+  },
+  {
+    name: 'CuratedScoreDimensions',
+    declaration: 'export interface CuratedScoreDimensions {\n    readonly nativeCompatibility: number;\n    readonly functionalCompleteness: number;\n    readonly testAndCi: number;\n    readonly securityAndPrivacy: number;\n    readonly maintenanceHealth: number;\n    readonly performanceCost: number;\n    readonly operability: number;\n    readonly communitySignal: number;\n}',
+  },
+  {
+    name: 'CuratedSourceStatus',
+    declaration: 'export type CuratedSourceStatus = \'verified\' | \'unreachable\';',
   },
   {
     name: 'DiffCallView',
@@ -3376,10 +3466,6 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   {
     name: 'FsObservation',
     declaration: 'export type FsObservation = {\n    readonly kind: \'present\';\n    readonly version: FsVersion;\n} | {\n    readonly kind: \'absent\';\n};',
-  },
-  {
-    name: 'FsPathInfo',
-    declaration: 'export interface FsPathInfo {\n    version: FsVersion;\n    type: \'file\' | \'directory\' | \'symlink\' | \'other\';\n    size?: number;\n}',
   },
   {
     name: 'FsTarget',
@@ -3806,6 +3892,14 @@ export const TYPE_API: readonly TypeApiEntry[] = [
     declaration: 'export interface OneShotSubagentDescriptorData extends SubagentDescriptorBase {\n    readonly mode: \'one-shot\';\n    readonly label?: string;\n}',
   },
   {
+    name: 'PermissionDecision',
+    declaration: 'export type PermissionDecision = \'allow\' | \'ask\' | \'deny\';',
+  },
+  {
+    name: 'PermissionRule',
+    declaration: 'export interface PermissionRule {\n    readonly id: string;\n    readonly decision: PermissionDecision;\n    readonly appliesTo: readonly string[];\n    readonly reason: string;\n}',
+  },
+  {
     name: 'PermissionSelect',
     declaration: 'export interface PermissionSelect {\n    options: PresetOption[];\n    currentValue: string;\n}',
   },
@@ -3820,10 +3914,6 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   {
     name: 'PreparedLlmCall',
     declaration: 'export interface PreparedLlmCall {\n    readonly config: LlmCallConfig;\n    readonly retryPolicy: ResolvedRetryPolicy;\n    readonly context?: LlmModelContext;\n    readonly inputModalities?: readonly ModelModality[];\n    readonly adapterDefaults: LlmCallConfigAdapterDefaults;\n    stream(options: GenerateOptions): AsyncIterable<StreamChunk>;\n}',
-  },
-  {
-    name: 'PreparedReferencedMessage',
-    declaration: 'export interface PreparedReferencedMessage {\n    content: ContentBlock[];\n    additionalContext?: UserMessage;\n}',
   },
   {
     name: 'PrepareSessionOptions',
@@ -4210,10 +4300,6 @@ export const TYPE_API: readonly TypeApiEntry[] = [
     declaration: 'export interface SessionReferenceCandidate {\n    sessionId: SessionId;\n    label: string;\n    cwd?: string;\n    createdAt: number;\n}',
   },
   {
-    name: 'SessionReferenceInput',
-    declaration: 'export interface SessionReferenceInput {\n    sessionId: SessionId;\n    label?: string;\n}',
-  },
-  {
     name: 'SessionReferenceMentionCandidate',
     declaration: 'export interface SessionReferenceMentionCandidate extends SessionReferenceCandidate {\n    mention: string;\n}',
   },
@@ -4318,12 +4404,8 @@ export const TYPE_API: readonly TypeApiEntry[] = [
     declaration: 'export type SettingsApplies = \'live\' | \'restart\';',
   },
   {
-    name: 'SettingsDescribeOptions',
-    declaration: 'export interface SettingsDescribeOptions {\n    redactSecrets?: boolean;\n}',
-  },
-  {
     name: 'SettingsDescriptor',
-    declaration: 'export interface SettingsDescriptor {\n    ns: SettingsNamespace;\n    schema: unknown;\n    value: unknown;\n    revision: number;\n    base?: unknown;\n    user?: unknown;\n    applies: SettingsApplies;\n    secrets?: RedactedSecret[];\n}',
+    declaration: 'export interface SettingsDescriptor {\n    ns: SettingsNamespace;\n    schema: unknown;\n    value: unknown;\n    revision: number;\n    base?: unknown;\n    user?: unknown;\n    applies: SettingsApplies;\n}',
   },
   {
     name: 'SettingsNamespace',
@@ -4444,6 +4526,10 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   {
     name: 'SpillSource',
     declaration: 'export interface SpillSource {\n    toolName: string;\n    callId: CallId;\n    label: string;\n}',
+  },
+  {
+    name: 'StandingPresetLease',
+    declaration: 'export interface StandingPresetLease {\n    readonly presetId: string;\n    readonly key: ScopeKey;\n    release(): Promise<void>;\n}',
   },
   {
     name: 'StorageBackend',
@@ -5006,6 +5092,10 @@ export const TYPE_API: readonly TypeApiEntry[] = [
     declaration: 'export interface WebUpgradeRoute {\n    path: string;\n    handler: (req: IncomingMessage, socket: Duplex, head: Buffer) => void | Promise<void>;\n}',
   },
   {
+    name: 'WireSettingsDescriptor',
+    declaration: 'export interface WireSettingsDescriptor extends SettingsDescriptor {\n    secrets: RedactedSecret[];\n}',
+  },
+  {
     name: 'WorkflowAgentEndInfo',
     declaration: 'export interface WorkflowAgentEndInfo extends WorkflowAgentInfo {\n    outcome: WorkflowAgentOutcome;\n}',
   },
@@ -5047,7 +5137,7 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   },
   {
     name: 'WorkflowStartRequest',
-    declaration: 'export interface WorkflowStartRequest {\n    script: string;\n    meta: WorkflowMeta;\n    args?: unknown;\n    subagentProvider?: string;\n    maxTotalAgents?: number;\n    parent: Agent;\n    signal?: AbortSignal;\n}',
+    declaration: 'export interface WorkflowStartRequest {\n    script: string;\n    meta: WorkflowMeta;\n    args?: unknown;\n    subagentProvider?: string;\n    maxTotalAgents?: number;\n    parent: Agent;\n}',
   },
   {
     name: 'WorkflowStopReason',
@@ -5076,7 +5166,7 @@ function referencedTypeClosure(seeds: readonly string[]): TypeApiEntry[] {
     const next: string[] = []
     for (const entry of TYPE_API) {
       if (included.has(entry.name)) continue
-      const pattern = new RegExp(`\b${entry.name}\b`)
+      const pattern = new RegExp(`\\b${entry.name}\\b`)
       if (!frontier.some(text => pattern.test(text))) continue
       included.add(entry.name)
       next.push(entry.declaration)

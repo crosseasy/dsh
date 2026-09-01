@@ -1,0 +1,25 @@
+schemaVersion: 1
+source: docs/plugin/superpowers/05-安全供应链与风险.md#31-安全执行顺序固定
+order:
+  - core-sandbox
+  - permission-rules
+  - high-risk-approval-or-auto-review
+  - tool-execution
+  - result-audit
+defaults:
+  configImportMode: dry-run
+  otelCaptureBody: false
+  credentialStorage: credentials-service-or-env
+rules:
+  - id: credentials-never-in-profile
+    decision: deny
+    appliesTo: [profiles, logs, session-export]
+    reason: 凭证只引用环境变量或 credentials service，不写入 profile、日志和会话导出。
+  - id: config-import-dry-run
+    decision: ask
+    appliesTo: [dsh-config-manager]
+    reason: 配置导入默认 dry-run，并按分区批准。
+  - id: external-body-egress-off
+    decision: deny
+    appliesTo: [search, browser, im, office, remote-runtime]
+    reason: 外部系统正文外发需要部署方显式配置域名、上传限制、脱敏和审计留存期。

@@ -34,8 +34,15 @@ export type {
   DshEnvironment,
   DshEnvironmentKey,
 } from './types.ts'
-export { parseExitStatus } from './render.ts'
-export type { ParsedExitStatus } from './render.ts'
+export {
+  SHELL_BACKGROUND_OUTPUT_PROPERTIES,
+  parseExitStatus,
+  projectShellForegroundResult,
+  renderShellProcessRead,
+  renderShellResult,
+  shellProcessOutcome,
+} from './render.ts'
+export type { ParsedExitStatus, RenderableShellResult, ShellForegroundResult } from './render.ts'
 export {
   classifySandboxDenial,
   classifySandboxRunnerFailure,
@@ -50,7 +57,7 @@ declare module '@deepseek-ai/cordis' {
 }
 
 /**
- * Abstract shell execution service shared by Bash and PowerShell providers. Subclass, implement the abstract methods,
+ * Abstract shell execution service. Subclass, implement the abstract methods,
  * and load the subclass as a plugin — it registers as `ctx.shell` (one
  * implementation per context; loading a second throws, which is cordis'
  * standard duplicate-service behavior).

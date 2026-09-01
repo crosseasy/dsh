@@ -1,8 +1,9 @@
 /**
  * Host side of one workflow run. The first worker result, unexpected death, or
  * cancellation-grace expiry owns settlement and closes message admission.
- * Pending starts share one abort signal; published children share idempotent
- * cleanup, and quiescence waits for both while synthesizing any missing end events.
+ * Pending starts share the run-owned abort signal; published children share
+ * idempotent cleanup, and quiescence waits for both while synthesizing any
+ * missing end events.
  * @module @deepseek-ai/dsh-workflow-worker-thread/host
  */
 
@@ -124,9 +125,6 @@ export class WorkerRun implements WorkflowRun {
   private readonly quiescenceWaiters: (() => void)[] = []
   /** The per-run abort fanout every child start request carries. */
   private readonly controller = new AbortController()
-  /** External start signal and the exact callback installed on it, retained only until first settle/teardown. */
-  private inputSignal: AbortSignal | undefined
-  private inputSignalAbort: (() => void) | undefined
   private disposed: Promise<void> | undefined
 
   constructor(
@@ -139,7 +137,6 @@ export class WorkerRun implements WorkflowRun {
     private readonly provider: string,
     private readonly disposeGraceMs: number,
     private readonly observer: ExecutionObserver,
-    signal: AbortSignal | undefined,
   ) {
     this.result = new Promise<WorkflowResult>((resolve) => { this.settleResolve = resolve })
     // workerData rides the structured clone: args are plain JSON by the seam
@@ -155,17 +152,6 @@ export class WorkerRun implements WorkflowRun {
       this.workerGone = true
       this.onWorkerDeath(`workflow worker exited before the run settled (exit code ${code})`, true)
     })
-    if (signal?.aborted) {
-      this.cancel('workflow start signal already aborted')
-    } else if (signal !== undefined) {
-      const onAbort = (): void => {
-        this.detachInputSignal()
-        this.cancel('workflow signal aborted')
-      }
-      this.inputSignal = signal
-      this.inputSignalAbort = onAbort
-      signal.addEventListener('abort', onAbort, { once: true })
-    }
   }
 
   /**
@@ -204,19 +190,16 @@ export class WorkerRun implements WorkflowRun {
   }
 
   /**
-   * Cancel + bounded settle + termination. Host-drives every registered
+   * Cancel + bounded worker settlement + termination. Host-drives every registered
    * child's disposal IMMEDIATELY — a wedged worker can relay no dispose RPC,
    * and deferring child teardown to the post-terminate reap would spend the
-   * whole grace waiting for a quiescence that cannot start, then return with
-   * the disposals still in flight — so child disposal overlaps the same
+   * whole grace before cleanup can start — so child disposal overlaps the same
    * grace the worker gets to settle (the worker's own dispose RPCs join the
-   * shared per-child disposal). Waits (at most the grace) for the result and
-   * child quiescence, then terminates the worker unconditionally — the
-   * thread never outlives its run — and reaps whatever children remain
-   * (their disposal is contained, not awaited past the grace, the same
-   * abandonment the seam documents for a slow-disposing child). Idempotent;
-   * safe on every path.
-   * @returns resolves when the run's resources are released or abandoned.
+   * shared per-child disposal). Waits up to the grace for the result and child
+   * quiescence, then terminates the worker unconditionally — the thread never
+   * outlives its run — and awaits any remaining host-side provider starts and
+   * child disposals. Idempotent; safe on every path.
+   * @returns resolves when the worker and all host-side child work are quiescent.
    */
   dispose(): Promise<void> {
     if (this.disposed !== undefined) return this.disposed
@@ -226,7 +209,6 @@ export class WorkerRun implements WorkflowRun {
     const claimed = Promise.withResolvers<undefined>()
     this.disposed = claimed.promise
     void (async () => {
-      this.detachInputSignal()
       this.cancel('workflow disposed')
       // cancel() deliberately becomes a no-op after terminal settlement, but
       // disposal still owns every registered child. Reap independently so an
@@ -243,6 +225,7 @@ export class WorkerRun implements WorkflowRun {
       ])
       await this.worker.terminate()
       this.reapChildren('workflow disposed')
+      await this.childQuiescence()
     })().then(
       () => { claimed.resolve(undefined) },
       /* v8 ignore next -- result/quiescence never reject and Worker.terminate is the only external promise */
@@ -589,17 +572,7 @@ export class WorkerRun implements WorkflowRun {
     return { value: null, stopReason: 'cancelled', error: `workflow run cancelled: ${reason}`, agentsStarted }
   }
 
-  /** Remove the exact abort callback installed on the caller's start signal. */
-  private detachInputSignal(): void {
-    const signal = this.inputSignal
-    const onAbort = this.inputSignalAbort
-    if (signal === undefined || onAbort === undefined) return
-    this.inputSignal = undefined
-    this.inputSignalAbort = undefined
-    signal.removeEventListener('abort', onAbort)
-  }
-
-  /** First settle wins; disarms the grace timer and releases the caller signal. */
+  /** First settle wins and disarms the grace timer. */
   private settleResult(result: WorkflowResult): void {
     // Every current terminal source claims ownership before calling here; keep
     // the fallback local so a future caller cannot resolve twice.
@@ -607,7 +580,6 @@ export class WorkerRun implements WorkflowRun {
     if (this.settled) return
     this.terminalClaimed = true
     this.settled = true
-    this.detachInputSignal()
     clearTimeout(this.graceTimer)
     this.settleResolve(result)
   }

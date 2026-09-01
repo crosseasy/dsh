@@ -18,7 +18,7 @@ Status: implemented
 
 `native/landlock-run` 和 `native/landlock-run/packages/*` 属于仓库根 pnpm workspace，并使用根 `pnpm-lock.yaml`。Harness 消费方将 `@deepseek-ai/node-addon-landlock-run` 声明为 `workspace:*`，因此开发、类型检查、构建和 PR 测试都会从同一个 checkout 解析入口包。根 TypeScript 项目图会先构建该入口包，再构建消费方；仓库清理器负责清理其直接生成的 `lib/` 输出目录。
 
-公开 npm 分发边界由 3 个归组织所有的包组成，它们共用一个启动器包家族版本：`@deepseek-ai/node-addon-landlock-run`、`@deepseek-ai/node-addon-landlock-run-linux-x64` 和 `@deepseek-ai/node-addon-landlock-run-linux-arm64`。入口包继续通过 `optionalDependencies` 声明两个平台包；它们在 manifest（元数据清单）中的 `os` 和 `cpu` 字段让 npm 只安装兼容的包。仓库约束要求这 3 个包名设置 `publishConfig.access: public`，并要求其版本与私有启动器 workspace 根包一致。原先的非 scoped 包名不属于本仓库的发布目标。这 3 个已不再是唯一的公开包：[按序列区分 access 的决策](2026-08-13-public-vendor-and-native-sequences.zh.md)让 vendored 框架九包也公开发布，而 dsh 族保持受限。
+公开 npm 分发边界由 3 个归组织所有的包组成，它们共用一个启动器包家族版本：`@deepseek-ai/node-addon-landlock-run`、`@deepseek-ai/node-addon-landlock-run-linux-x64` 和 `@deepseek-ai/node-addon-landlock-run-linux-arm64`。入口包继续通过 `optionalDependencies` 声明两个平台包；它们在 manifest（元数据清单）中的 `os` 和 `cpu` 字段让 npm 只安装兼容的包。仓库约束要求这 3 个包名设置 `publishConfig.access: public`，并要求其版本与私有启动器 workspace 根包一致。原先的非 scoped 包名不属于本仓库的发布目标。这 3 个包组成一条公开发布序列，与同样公开的 vendored 和 dsh 族并列；[由 manifest 持有的 access](2026-08-13-public-vendor-and-native-sequences.zh.md)让完整安装闭包无需 scope 凭据即可获取。
 
 主仓库同时负责原生 CI 和发布。`Landlock Run` 会为相关 PR 和 `master` 推送运行，并在各自匹配的原生 runner 上构建每个平台包。手动触发的 `Landlock Run Release` 工作流会构建两个平台的二进制文件，将其作为工作流产物传递，组装并验证完整的包家族，打包出内容不可变的 npm tarball，安装并实际运行这些 tarball，之后才允许受保护的发布作业执行。发布顺序是平台 tarball 在前，最后发布将它们列为可选依赖的入口 tarball。发布使用 `landlock-run-vX.Y.Z` tag，避免启动器版本与 monorepo 中其他发布家族发生冲突；预发布版本使用 npm 的 `next` dist-tag。
 
@@ -39,6 +39,6 @@ npm 消费方改为安装 `@deepseek-ai/node-addon-landlock-run`；原先的非 
 
 实现涉及的文件比只修改一行依赖更多，因为仓库还必须负责 workspace 约束、TypeScript 构建顺序、清理、CI 触发条件、发布 tag、锁文件生成、将已安装二进制与 workspace 构建进行比较、发布文档和生成的第三方声明。行为边界仍然很窄：此次改动只影响 Landlock 包家族及其 3 个直接 workspace 消费方，不改变其他 DeepSeek Harness 包的版本或发布状态。
 
-第一次发布 scoped 包时，必须通过 `npm-publish` 环境的 `NPM_TOKEN` 使用 `@deepseek-ai` 组织 token，因为 npm 只有在包已经存在后才能配置 trusted publishing。完成 bootstrap 后，必须让 3 个包都授权本仓库的发布工作流，才能移除后备 token。npm 仍会按顺序发布各个包，且不提供跨包事务，因此发布失败可能留下只完成了一部分的版本。由于 npm 会拒绝已经发布的同名同版本包，操作人员必须检查注册表并只发布缺失的 tarball，而不能原样重新运行工作流。Linux x64 和 arm64 runner 仍提供权威的二进制构建与真实内核检查；macOS checkout 可以验证入口包和不受支持平台上的行为，但不能取代这些作业。
+第一次发布 scoped 包时，必须通过 `npm-publish` 环境的 `NPM_TOKEN` 使用 `@deepseek-ai` 组织 token，因为 npm 只有在包已经存在后才能配置 trusted publishing。完成 bootstrap 后，必须让 3 个包都授权本仓库的发布工作流，才能移除后备 token。npm 仍会按顺序发布各个包，且不提供跨包事务，因此发布失败可能留下只完成了一部分的版本。发布脚本使重试具备注册表感知能力并保持幂等：重新运行时会发布注册表中缺少的版本，跳过注册表完整性与已打包 tarball 一致的版本，并在同一版本内容不同时失败；遇到瞬时写入失败后，它会在重试前重新读取注册表，因为该次写入可能已经成功。Linux x64 和 arm64 runner 仍提供权威的二进制构建与真实内核检查；macOS checkout 可以验证入口包和不受支持平台上的行为，但不能取代这些作业。
 
 本说明仅取代[沙箱 Agent Note](../feature/2026-07-06-sandbox.zh.md)中有关发布镜像和开发源码时依赖注册表固定版本的表述；该 Agent Note 仍负责沙箱行为、runner 选择和强制执行语义。

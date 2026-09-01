@@ -12,11 +12,11 @@
 
 `SessionProjectionStateMap` 是 host 折叠状态的 merge-extensible 类型表。每个 `ProjectionDefinition` key 都属于此表并提供 `stateSchema`；缓存行只有通过校验后才能为折叠提供初始状态。`SessionProjectionMap` 保留原有名称和语义，继续作为唯一的客户端可见全量值类型表，因此 `title: string | null` 等既有客户端数据结构保持不变。
 
-如果一个单元的 key 也存在于 `SessionProjectionMap`，该单元就提供 `wire.viewSchema` 与 `wire.view`。每个单元的状态都会写入检查点——client-visible 与 host-only 一视同仁；`persist` 选择项已移除，任何单元都不能悄悄跳过持久化缓存。快照 API 只返回 `SessionProjectionMap`，因此内部状态不会进入 API 载荷。host 代码通过 `stateOf(session, key)` 读取一份当前状态；返回的是借用引用，不得修改。
+如果一个单元的 key 也存在于 `SessionProjectionMap`，该单元就提供 `wire.viewSchema` 与 `wire.view`。plan mode、[session stats](../bug-fix/2026-08-12-full-session-turn-step-counts.zh.md) 和 token meter 会通过各自领域拥有的 `./client` 子路径导出不依赖 Cordis 的 `init`、`apply`、`view` 函数；生产投影定义组合这些函数，开发 fixture（测试前置数据）则调用它们的全日志 helper。这样每个领域仅保留一个 reducer，且无需在浏览器中挂载 Host registry。每个单元的状态都会写入检查点——client-visible 与 host-only 一视同仁；`persist` 选择项已移除，任何单元都不能悄悄跳过持久化缓存。快照 API 只返回 `SessionProjectionMap`，因此内部状态不会进入 API 载荷。host 代码通过 `stateOf(session, key)` 读取一份当前状态；返回的是借用引用，不得修改。
 
 ## 结果
 
-投影状态和客户端值分别获得类型与校验，同时不引入第二套客户端 DTO 词汇。单元可以保留更丰富的 host 状态，并暴露紧凑或兼容既有结构的客户端值。畸形缓存状态不能为 `viewCheckpoint` 提供数据；恢复会拒绝畸形状态，并由缓存既有的全量读取回退从日志重建。host 消费方可以用同一套增量折叠替换私有日志扫描。
+投影状态和客户端值分别获得类型与校验，同时不引入第二套客户端 DTO 词汇。单元可以保留更丰富的 host 状态，并暴露紧凑或兼容既有结构的客户端值。畸形缓存状态不能为 `viewCheckpoint` 提供数据；恢复会拒绝畸形状态，并由缓存既有的全量读取回退从日志重建。host 消费方可以用同一套增量折叠替换私有日志扫描；fixture 也可以复用同一 fold，而无需把 Host registry 装进浏览器。
 
 原始 [session-projection 提案](../../proposed/architecture/2026-07-27-session-projection-and-command-log.zh.md)已记录这次拆分。既有的 [subagent 身份投影](2026-08-06-subagent-list-identity-projection.zh.md)与[投影化 token 用量](2026-07-29-projected-token-usage-and-request-context.zh.md)决策仍然有效；其中的领域折叠迁入状态表，不改变面向用户的值。
 

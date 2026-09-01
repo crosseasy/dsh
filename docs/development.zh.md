@@ -55,7 +55,7 @@ pnpm run typecheck
 | `tsconfig.host.json` | Host aggregate：Host 包、示例、测试、脚本和 website，以及 `api/remotes` 的 Host 特例 project。 | 是 |
 | `tsconfig.client.json` | Client aggregate：`packages/client/*` 包及其测试、`apps/web`，以及 `api/remotes` 的 Client 特例 project。 | 是 |
 | `tsconfig.base.json` | 共享 compilerOptions 与源码 `paths` 映射。同时是各 vitest 配置让 vite-tsconfig-paths 指向的解析门面：它没有 `include`，因此其 `paths` 适用于任何 importer。 | 否 |
-| `tsconfig.base.client.json` | 浏览器编译设置（`jsx`、DOM lib、`types: []`），由 Client aggregate 和每个 `packages/client/*` 包 extends。 | 否 |
+| `tsconfig.base.client.json` | 浏览器编译设置（`jsx`、DOM lib、`types: []`），由 Client aggregate 和每个 `packages/client/*` 包 extends。它会禁用 Project Reference 之间的源码重定向，让构造单一 package program 的工具消费被引用项目的声明，而不是把 Host 源码 augmentation 展平到 Client 分析中。 | 否 |
 
 Host 与 Client 保持两个 aggregate program，是因为两侧在相同键下以不同服务对 cordis `Context` 接口做声明合并；单一 program 同时看到两份合并会报冲突。这种冲突只存在于 `ts.Program` 内部——模块解析永远不会触发它——所以 solution 可以同时引用两个 aggregate，一个 paths 门面也可以横跨两侧。由此推出三条纪律：
 
@@ -85,13 +85,7 @@ Typert 只在 Host tsdown 中以 `tsconfig.host.json` 为种子运行。它分�
 
 业务服务在 Host 使用 `@Remote` 或 `@RemoteScope` 声明可调用方法；Host 构建生成 Host-for-Client 类型与运行时贡献，Client 的 `api-remotes` 组合加载这些贡献并挂到 `ctx.remote` 与作用域 `agentCtx.remote` namespace。两侧的生成产物、装配关系、SRC 开发回退和 Web 构建顺序见 [API Gateway](api-gateway.zh.md)。
 
-如果相关的本地检查需要使用构建后的包产物，请先构建一次：
-
-```sh
-pnpm run build
-```
-
-`pnpm run hygiene` 包含 `publint`（用构建出的 `lib/*.js` 文件校验包入口点）和 `verify-node-next-types`（用一个临时的 NodeNext 消费方校验构建出的声明文件）。新 worktree 在 `pnpm run build` 运行之前没有打包的 JS 和声明文件；普通提交和推送无需构建，除非所选检查会使用这些产物。
+`pnpm run hygiene` 自身负责产物前置条件：它先运行 `pnpm run build`，再让 `publint`、`verify-built-package-invariants` 和 `verify-node-next-types` 消费该构建，同时并行运行独立的源码检查。该命令既不清理 worktree，也不依赖预先存在的 `lib/`，因此在新 worktree 和已有构建的 worktree 中语义相同。workspace constraints gate 只会忽略 `pnpm run clean` 接受的已删除包目录生成残留；不含 manifest 的包目录中任何未知文件仍会失败。仅在直接运行消费产物的叶子命令时才需要先构建。
 
 ### 环境变量
 

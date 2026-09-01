@@ -12,11 +12,14 @@
  * ([rationale](../../.agents/notes/implemented/process/2026-08-10-npm-release-sequences.md)).
  *
  * What this proves is that `files` selected a complete payload and that the
- * published dependency ranges resolve. A workspace link or a stale `lib/` in the
- * checkout cannot stand in for a missing file here.
+ * published dependency ranges resolve. The install initially supplies every same-release
+ * tarball to avoid registry publication-order dependencies, then prunes packages outside
+ * the installed entry's declared runtime closure before executing it. A workspace link,
+ * an undeclared top-level package, or a stale `lib/` in the checkout cannot stand in for a
+ * missing declaration or file here.
  */
 
-import { mkdtempSync, readdirSync, rmSync, writeFileSync } from 'node:fs'
+import { mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
 import { pathToFileURL } from 'node:url'
@@ -66,6 +69,71 @@ function packedDependencies(directories: readonly string[]): Map<string, { url: 
   return dependencies
 }
 
+/**
+ * Build the external consumer manifest that supplies every same-release tarball without registry timing assumptions.
+ * The verifier prunes packages outside the installed entry's declared closure before it executes the entry.
+ * @param consumerName - Throwaway consumer package name.
+ * @param entryName - Installed executable package.
+ * @param packed - Packed package identities supplied as direct install sources.
+ * @returns npm manifest for the initial isolated install.
+ */
+export function packedConsumerManifest(
+  consumerName: string,
+  entryName: string,
+  packed: ReadonlyMap<string, { url: string; version: string }>,
+): Record<string, unknown> {
+  const entry = packed.get(entryName)
+  if (entry === undefined) throw new Error(`${entryName} is not among the packed tarballs`)
+  return {
+    name: consumerName,
+    version: '0.0.0',
+    private: true,
+    dependencies: Object.fromEntries([...packed].map(([name, packedEntry]) => [name, packedEntry.url])),
+  }
+}
+
+/**
+ * Resolve the packed-package closure declared by installed package manifests.
+ * @param consumerRoot - Isolated npm consumer root.
+ * @param entryName - Package whose executable is verified.
+ * @param packedNames - Same-release package names supplied to npm.
+ * @returns Packed package names reachable from the entry through runtime declarations.
+ */
+export function packedDeclaredClosure(
+  consumerRoot: string,
+  entryName: string,
+  packedNames: ReadonlySet<string>,
+): ReadonlySet<string> {
+  const closure = new Set<string>()
+  const pending = [entryName]
+  while (pending.length > 0) {
+    const name = pending.pop() as string
+    if (closure.has(name)) continue
+    closure.add(name)
+    const manifestPath = join(consumerRoot, 'node_modules', ...name.split('/'), 'package.json')
+    const manifest = JSON.parse(readFileSync(manifestPath, 'utf8')) as Record<string, unknown>
+    for (const field of ['dependencies', 'optionalDependencies', 'peerDependencies']) {
+      const declarations = manifest[field]
+      if (declarations === null || typeof declarations !== 'object' || Array.isArray(declarations)) continue
+      for (const dependency of Object.keys(declarations)) {
+        if (packedNames.has(dependency) && !closure.has(dependency)) pending.push(dependency)
+      }
+    }
+  }
+  return closure
+}
+
+function prunePackedPackages(
+  consumerRoot: string,
+  packedNames: ReadonlySet<string>,
+  closure: ReadonlySet<string>,
+): void {
+  for (const name of packedNames) {
+    if (closure.has(name)) continue
+    rmSync(join(consumerRoot, 'node_modules', ...name.split('/')), { recursive: true, force: true })
+  }
+}
+
 /** Install every tarball under `--from` and drive the `--family` entry. */
 function main(): void {
   const { values } = parseArgs({
@@ -90,12 +158,11 @@ function main(): void {
 
   const consumerRoot = mkdtempSync(join(tmpdir(), `dsh-packed-${family.id}-`))
   try {
-    writeFileSync(join(consumerRoot, 'package.json'), `${JSON.stringify({
-      name: `dsh-packed-install-${family.id}`,
-      version: '0.0.0',
-      private: true,
-      dependencies: Object.fromEntries([...packed].map(([name, entryPacked]) => [name, entryPacked.url])),
-    }, null, 2)}\n`)
+    writeFileSync(join(consumerRoot, 'package.json'), `${JSON.stringify(
+      packedConsumerManifest(`dsh-packed-install-${family.id}`, entry.packageName, packed),
+      null,
+      2,
+    )}\n`)
 
     const environment = consumerEnvironment(consumerRoot)
     console.log(`release verify-packed-install: installing ${String(packed.size)} tarball(s) into ${consumerRoot}`)
@@ -106,11 +173,25 @@ function main(): void {
     // its tarball is supplied through --from.
     capture('npm', ['install', '--no-audit', '--no-fund', '--package-lock=false', '--omit=optional'],
       { cwd: consumerRoot, env: environment })
+    const packedNames = new Set(packed.keys())
+    const closure = packedDeclaredClosure(consumerRoot, entry.packageName, packedNames)
+    prunePackedPackages(consumerRoot, packedNames, closure)
 
     const bin = join(consumerRoot, 'node_modules', ...entry.packageName.split('/'), entry.binPath)
     const version = capture(process.execPath, [bin, '--version'], { cwd: consumerRoot, env: environment })
     if (version !== expected.version) {
       throw new Error(`installed ${entry.packageName} --version reported ${JSON.stringify(version)}, expected ${expected.version}`)
+    }
+    if (family.id === 'dsh') {
+      const config = capture(process.execPath, [
+        bin,
+        '--profile',
+        'web-curated',
+        '--dump-default-config',
+      ], { cwd: consumerRoot, env: environment })
+      if (config.length === 0) {
+        throw new Error('installed dsh produced an empty web-curated default config')
+      }
     }
     console.log(`release verify-packed-install: installed ${entry.packageName} reports ${version}`)
   } finally {

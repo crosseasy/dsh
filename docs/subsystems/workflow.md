@@ -10,13 +10,15 @@ Sources: browser-safe vocabulary in [`packages/workflow/workflow/src/types.ts`](
 
 ## The start request
 
-What a caller asks for when starting a run. The ordinary workflow tool builds this from the model's `{ script, meta, args }` call plus the calling agent; specialized consumers may also select one engine-wide `subagentProvider` and lower `maxTotalAgents` for the run, but the script cannot observe or replace either policy. `meta` and `args` are plain JSON DATA (the engine validates `meta` against its schema and rejects loud BEFORE anything runs — no script text is ever evaluated to obtain it). `parent` is REQUIRED — every child the script starts is attributed to it, and cwd, lineage, and depth pass through the [subagent seam](subagent.md).
+What a caller asks for when starting a run. The ordinary workflow tool builds this from the model's `{ script, meta, args }` call plus the calling agent; specialized consumers may also select one engine-wide `subagentProvider` and lower `maxTotalAgents` for the run, but the script cannot observe or replace either policy. `meta` and `args` are plain JSON DATA (the engine validates `meta` against its schema and rejects loud BEFORE anything runs — no script text is ever evaluated to obtain it). `parent` is REQUIRED — every child the script starts is attributed to it, and cwd, lineage, and depth pass through the [subagent seam](subagent.md). The request has no cancellation signal because `start()` returns synchronously: consumers reject a pre-aborted call, then attach an at-most-once abort bridge to the returned run and immediately recheck the caller signal.
 
 ```ts type-equiv
 /**
  * What a caller asks for when starting a workflow run. `meta` and `args` are
  * plain JSON data by the seam contract. `parent` is required because every
- * `agent()` spawned by the script is attributed to that live Agent.
+ * `agent()` spawned by the script is attributed to that live Agent. The
+ * request has no cancellation signal: callers reject before `start()` or
+ * bridge later aborts to the returned {@link WorkflowRun.cancel}.
  */
 interface WorkflowStartRequest {
   /** The plain-JS script body (top-level await allowed; ends with `return <json-value>`). */
@@ -31,8 +33,6 @@ interface WorkflowStartRequest {
   maxTotalAgents?: number
   /** The agent on whose behalf the run executes (parent of every child). */
   parent: Agent
-  /** Cancels the run when aborted. */
-  signal?: AbortSignal
 }
 ```
 
@@ -92,7 +92,7 @@ interface WorkflowResult {
 
 ## A live run: `WorkflowRun`
 
-The handle the consumer holds while a script executes. The consumer awaits `result`, may `cancel` mid-flight, and MUST `dispose` on every path. `result` does NOT reject — a script failure resolves with `stopReason: 'error'` — and once the run is cancelled it SETTLES within the engine's bounded grace even if the script itself never settles (the engine force-settles `cancelled`; the worker-thread engine then terminates the script's worker), so a consumer awaiting `result` is never wedged past a cancellation. `dispose()` = cancel + that bounded settle + child quiescence; it never hangs on a stuck script.
+The handle the consumer holds while a script executes. The consumer awaits `result`, may `cancel` mid-flight, and MUST `dispose` on every path. `cancel()` is idempotent and the first cancellation reason wins, including when child abort handling reenters it. `result` does NOT reject — a script failure resolves with `stopReason: 'error'` — and once the run is cancelled it SETTLES within the engine's bounded grace even if the script itself never settles (the engine force-settles `cancelled`; the worker-thread engine then terminates the script's worker), so a consumer awaiting `result` is never wedged past a cancellation. `dispose()` bounds engine-owned execution, then awaits child quiescence; a provider that does not settle its start or disposal can delay it.
 
 ```ts type-equiv
 /**
@@ -104,9 +104,9 @@ interface WorkflowRun {
   /** The validated meta block available before the script body runs. */
   readonly meta: WorkflowMeta
   readonly result: Promise<WorkflowResult>
-  /** Cancel the run and its children. */
+  /** Cancel the run and its children; idempotent, first reason wins, and settled runs ignore it. */
   cancel(reason?: string): void
-  /** Cancel if needed and await bounded settlement and cleanup. */
+  /** Cancel if needed, terminate engine-owned execution within its bound, and await child quiescence. */
   dispose(): Promise<void>
 }
 ```
@@ -139,13 +139,13 @@ Generated from source by `scripts/gen-cordis-catalog.ts` (verified fresh by `pnp
 
 ### `ctx.workflowEngine` — `WorkflowEngine` (abstract seam)
 
-Workflow Service Definition contract. Invalid requests throw before publication; a live run is holder-owned, its result never rejects, cancellation and disposal are bounded, and disposal waits for child cleanup within that bound. Lifecycle listener failures are contained, and `workflow/end` fires exactly once as the result settles.
+Workflow Service Definition contract. Invalid requests throw before publication; a live run is holder-owned, its result never rejects, and cancellation settles engine-owned execution within its configured grace. Disposal uses `disposeGraceMs` to escalate worker termination, then awaits host-owned pending starts and child disposal to quiescence. Lifecycle listener failures are contained, and `workflow/end` fires exactly once as the result settles.
 
 ```ts cordis-catalog
 /**
  * Parse and execute a workflow script.
- * @param request - the script, its `args`, the parent agent, and an
- *   optional cancel signal.
+ * @param request - the script, its `args`, and the parent agent; cancellation
+ *   belongs to the returned run.
  * @returns the live run; its `result` resolves when the script settles.
  */
 abstract start(request: WorkflowStartRequest): WorkflowRun

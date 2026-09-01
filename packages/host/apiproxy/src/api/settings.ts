@@ -1,9 +1,9 @@
 /**
  * settings domain contract: the web face of the user-settings seam
- * (`ctx.settings`). Every payload that leaves this domain is redacted by the
- * seam (`describe({ redactSecrets: true })` semantics): `role('secret')`
- * fields never ride a response in any layer, and the `secrets` slot list is
- * how a form learns a write-only field exists and whether it is configured.
+ * (`ctx.settings`). Every payload that leaves this domain comes from the
+ * seam's fail-closed `describeForWire()` path: `role('secret')` fields and
+ * defaults never ride a response, and the `secrets` slot list tells a form
+ * which write-only fields exist and whether they are configured.
  */
 
 import type { RpcRequest, RpcResponse } from './rpc.ts'
@@ -53,10 +53,11 @@ export type SettingsPathOpView =
 export interface SettingsApi {
   /**
    * Describe every registered namespace: redacted layered values plus the
-   * serialized schema a client renders its form from. `hasDocument` reports
-   * whether a file-backed provider owns a local document without exposing its
-   * Host path. This method is loopback-only; `writable: false` (read-only
-   * provider) tells the client to disable every write control.
+   * callback-free serialized schema a client renders its form from. A schema
+   * that cannot be represented safely rejects the whole read. `hasDocument`
+   * reports whether a file-backed provider owns a local document without
+   * exposing its Host path. This method is loopback-only; `writable: false`
+   * (read-only provider) tells the client to disable every write control.
    */
   describe(request: RpcRequest<{}>): Promise<RpcResponse<{
     writable: boolean
@@ -79,7 +80,8 @@ export interface SettingsApi {
    * commit). Secret-role fields may be INCLUDED in the patch (write-only
    * direction); a form that leaves a secret untouched simply omits it and the
    * merge preserves the stored value. Responds with the namespace's new
-   * redacted view; a schema or storage rejection is `settings-rejected`.
+   * redacted view; a schema or storage rejection is `settings-rejected` with
+   * fixed text that cannot echo rejected input.
    */
   update(request: RpcRequest<{ ns: string; patch: object; expectedRevision?: number }>): Promise<RpcResponse<SettingsNamespaceView>>
 

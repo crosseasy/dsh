@@ -1,0 +1,32 @@
+{
+  "schemaVersion": 1,
+  "evidenceKind": "planned",
+  "source": "docs/plugin/superpowers/04-评测体系.md#22-web-回归cdp-9333用户规则第-0-条",
+  "profile": "web-coding",
+  "browser": {
+    "kind": "Chrome",
+    "cdpPort": 9333,
+    "ideEmbeddedBrowserAllowed": false
+  },
+  "checks": [
+    {
+      "id": "cdp-version",
+      "command": "curl -s http://localhost:9333/json/version | grep -q Browser && echo cdp ok",
+      "expected": "cdp ok"
+    },
+    {
+      "id": "console-no-error",
+      "expected": "no console error entries"
+    },
+    {
+      "id": "url-handoff-preserved",
+      "expected": "web URL print and handoff behavior unchanged"
+    },
+    {
+      "id": "existing-panels-preserved",
+      "expected": "existing panels remain mounted beside DSH-better-sidebar"
+    }
+  ],
+  "blockingPlugins": ["DSH-better-sidebar"],
+  "status": "requires-browser-environment"
+}

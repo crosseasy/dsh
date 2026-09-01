@@ -1,0 +1,57 @@
+[
+  {
+    "title": "Non-exact managed dependency sets bypass lock provenance checks",
+    "file": "packages/curated/curated-scripts/src/index.ts",
+    "start_line": 756,
+    "end_line": 768,
+    "severity": "P1",
+    "category": "SECURITY",
+    "confidence": 10,
+    "suggestion": "Validate each selected candidate against its manifest entry and both pnpm locks even when a custom managed profile has additional non-catalog dependencies. Use the shared exact-set admission only when the full dependency set is bindable; never source observed version or integrity fields solely from the catalog.",
+    "rationale": "When a managed profile's dependency names do not exactly equal the catalog-selected package names, hasBindableInstalledLocks() returns false and this branch uses resolveCandidateLocalInstalledArtifact(). That fallback validates the installed direct-candidate tree but does not parse either lockfile; for npm candidates it copies packageVersion and npmIntegrity from the catalog. A custom profile with dependencies {plugin-a:'9.9.9', extra:'1.0.0'} and present but invalid root and installed locks can therefore pass verify-lock, preflight, and smoke when the direct candidate tree matches, despite the public observed-admission contract requiring the manifest and both locks to agree. Tampered transitive dependency identities are outside the direct-tree digest and can reach runtime."
+  },
+  {
+    "title": "Retry recovery discards the trusted backup left by an identity-safe rollback failure",
+    "file": "apps/cli/src/plugin.ts",
+    "start_line": 446,
+    "end_line": 453,
+    "severity": "P1",
+    "category": "LOGIC",
+    "confidence": 9,
+    "suggestion": "Persist enough activation state to distinguish successful activation with deferred cleanup from failed rollback, or validate and admit the live directory before deleting .install-previous. Preserve the previous directory and fail recovery whenever the live directory cannot be proven to be the activated staged identity.",
+    "rationale": "Post-rename validation can detect that liveDir was replaced, deliberately leave that replacement untouched, and retain the identity-verified old profile at .install-previous. The focused test reproduces this reachable state. On the next install, recoverCuratedInstallState() sees both paths, checks only that both are regular directories, and unconditionally deletes .install-previous before openExistingCuratedProfileFiles() validates liveDir. The retry destroys the last trusted profile and then fails on the replacement. If only a replaced previousDir remains, the same recovery function promotes it to liveDir before validation."
+  },
+  {
+    "title": "Missing canonical snapshots disable current-candidate validation",
+    "file": "packages/curated/curated-bench/src/invariant.ts",
+    "start_line": 218,
+    "end_line": 225,
+    "severity": "P1",
+    "category": "BUSINESS_SEMANTICS",
+    "confidence": 9,
+    "suggestion": "Report each missing locks/web-curated.json and profiles/web-curated.json asset independently, then run the manifest/snapshot/profile cross-check only after all required files have been proven present.",
+    "rationale": "The current-candidate consistency check runs only when the candidate manifest and both fixed snapshot paths exist, while no preceding check requires the fixed snapshots. Reproducing with the shipped assets by renaming locks/web-curated.json, updating benchmark.json to reference the renamed identical file, and replacing curated-candidates.json with {} made validateCuratedBenchAssets() return an empty array. The publication invariant can therefore accept an unaudited current candidate manifest when a mandatory canonical snapshot is absent."
+  },
+  {
+    "title": "Non-finite parsed numbers alias to null in snapshot digests",
+    "file": "packages/curated/curated-bench/src/snapshot.ts",
+    "start_line": 438,
+    "end_line": 446,
+    "severity": "P1",
+    "category": "LOGIC",
+    "confidence": 9,
+    "suggestion": "Handle numbers separately and reject values for which Number.isFinite(value) is false before canonical serialization.",
+    "rationale": "JSON.parse('1e400') produces Infinity, and normalizedBenchmarkJson() accepts every number. JSON.stringify() then serializes Infinity as null. An isolated reproduction confirmed that {\"extra\":1e400} parses to a non-finite value but receives the same canonical SHA-256 as {\"extra\":null}. This breaks the content-addressed identity promised by the public snapshot reader and can let distinct parsed values satisfy the same reference digest."
+  },
+  {
+    "title": "Malformed snapshot directory entries escape the validator result API",
+    "file": "packages/curated/curated-bench/src/invariant.ts",
+    "start_line": 342,
+    "end_line": 346,
+    "severity": "P2",
+    "category": "ROBUSTNESS",
+    "confidence": 9,
+    "suggestion": "Catch opendirSync and traversal filesystem failures at the collection call sites and append labeled invariant messages, consistent with readJsonObject() failure handling.",
+    "rationale": "validateCuratedBenchAssets() is documented and consumed as returning invariant failure messages, but listPublishedJsonFiles() calls its initial opendirSync() before entering the try/finally. Replacing baselines/locks with a regular file reproducibly throws ENOTDIR instead of returning a diagnostic, aborting validation before remaining asset issues can be collected."
+  }
+]

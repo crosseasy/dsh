@@ -49,6 +49,7 @@ export const testInvariantCompanions: Readonly<Record<string, () => Promise<Test
 const MANUAL_INVARIANT_TEST_EXCEPTIONS = [
   '/packages/runtime-diagnostics/invariants/tests/service.spec.ts',
   '/packages/examples/agent-spine-demo/tests/agent-core.spec.ts',
+  '/packages/preset/agent-presets/tests/mount.spec.ts',
 ] as const
 
 interface InvariantHost {

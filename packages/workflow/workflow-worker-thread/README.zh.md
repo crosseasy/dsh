@@ -36,7 +36,7 @@ worker 仍提供实用的隔离：
 
 ## 运行顺序
 
-`start()` 会校验 meta、解析脚本正文、解析一个已注册且规范化的提供方路由，并解析每次运行的子 agent 总数上限，然后才创建 worker 或发布 `workflow/start`。请求的 `maxTotalAgents` 必须是正安全整数，且不能超过引擎配置的部署上限。源代码模式通过 data URL bootstrap 安装 TypeScript 转换；构建模式把同级 `lib/worker.cjs` 作为文件系统路径传入，因为 pkg 的虚拟文件系统（VFS）钩子要求 CommonJS。两者都能在普通 Node 下运行。ready/go 握手可以避免启动信号取消与 worker 启动发生竞态，导致脚本最初的同步片段被执行。
+`start()` 会校验 meta、解析脚本正文、解析一个已注册且规范化的提供方路由，并解析每次运行的子 agent 总数上限，然后才创建 worker 或发布 `workflow/start`。请求的 `maxTotalAgents` 必须是正安全整数，且不能超过引擎配置的部署上限。源代码模式通过 data URL bootstrap 安装 TypeScript 转换；构建模式把同级 `lib/worker.cjs` 作为文件系统路径传入，因为 pkg 的虚拟文件系统（VFS）钩子要求 CommonJS。两者都能在普通 Node 下运行。ready/go 握手使 `start()` 返回后立即发出的 `WorkflowRun.cancel()` 可以在脚本最初的同步片段运行前关闭接纳。
 
 对于每次 `agent()` 调用：
 
@@ -56,13 +56,13 @@ worker 仍提供实用的隔离：
 
 ## 取消与 dispose
 
-`WorkflowRun.cancel()` 会记录第一个原因、通知 worker 取消、中止每个待处理及已发布子 agent 共享的唯一信号，并启动 `disposeGraceMs` 定时器。worker 钩子会在下次 await 时抛出 `CANCELLED`。如果运行到期限仍未结算，宿主会将其以已取消状态兑现、为悬空的子 agent 生命周期事件配对，并终止 worker。
+`WorkflowRun.cancel()` 会记录第一个原因、通知 worker 取消、中止每个待处理及已发布子 agent 共享的唯一信号，并启动 `disposeGraceMs` 定时器。重入或重复调用不会执行任何操作。`WorkflowStartRequest` 不携带调用方 signal；拥有 signal 的消费方必须在 `start()` 前拒绝，或最多把之后的一次中止桥接到这个句柄方法。worker 钩子会在下次 await 时抛出 `CANCELLED`。如果运行到期限仍未结算，宿主会将其以已取消状态兑现、为悬空的子 agent 生命周期事件配对，并终止 worker。
 
 subagent seam 只有一个取消通道：请求信号。不存在单独的子 agent 取消 RPC。已发布子 agent 使用 `run.dispose()` 清理；待处理的提供方启动在其 promise 拒绝或兑现前仍由提供方负责。
 
 正常结算也会中止待处理启动，并在结果对外结算前开始 dispose 所有已发布但无需等待的子 agent。宿主的完全停稳条件同时包括待处理启动和已发布子 agent 的 dispose，因此清理不会遗漏异步启动事务。
 
-`dispose()` 是幂等的。它会取消运行、立即启动宿主驱动的 dispose、在同一宽限时间内等待结果和子 agent 完全停稳、无条件终止 worker，并执行最后一次幸存项扫描。每个子 agent 的 dispose 都会记忆化，使 worker RPC、宿主取消、死亡清理和公开 dispose 都汇入同一操作。
+`dispose()` 是幂等的。它会取消运行、立即启动宿主驱动的 dispose、在同一宽限时间内等待结果和子 agent 完全停稳、无条件终止 worker、执行最后一次幸存项扫描，然后等待所有剩余提供方启动与子 agent dispose。每个子 agent 的 dispose 都会记忆化，使 worker RPC、宿主取消、死亡清理和公开 dispose 都汇入同一操作。`disposeGraceMs` 只限制 worker 结算与终止，不限制提供方自有清理。
 
 ## 结果与事件保证
 
@@ -81,7 +81,7 @@ worker 错误、消息失败或提前退出会在清理前关闭消息接纳，�
 | `maxTotalAgents` | `1000` | 一次运行中的 `agent()` 调用总数。 |
 | `maxItemsPerCall` | `4096` | 一次 `parallel()` 或 `pipeline()` 调用接受的条目数。 |
 | `syncTimeoutMs` | `5000` | 脚本最初同步片段的 VM 超时时间。 |
-| `disposeGraceMs` | `5000` | 强制结算/终止之前的期限，也是公开 dispose 的期限。 |
+| `disposeGraceMs` | `5000` | 强制结算和终止 worker 前的期限；公开 dispose 随后等待宿主侧子 agent 完全停稳。 |
 
 负责该引擎的消费方可以为一次运行设置 `WorkflowStartRequest.subagentProvider` 和 `WorkflowStartRequest.maxTotalAgents`。它们属于引擎级策略，不是脚本钩子或面向模型的选项；普通 `workflow` 工具不会设置两者。每次运行的子 agent 总数上限可以降低、但绝不能提高已配置的 `maxTotalAgents` 上限。
 

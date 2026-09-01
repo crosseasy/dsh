@@ -22,7 +22,7 @@ Status: implemented
 
 skill 教 agent 通过 `ctx.agentPresets` 自行挂载校验其组装，其余每个示例都取自同一仓库中已发布的组装。
 
-`standingKeyFor(id)` 是校验手段。它走 `ensureStanding()`——与会话启动完全相同的真实挂载，只是不创建 agent——因此能拒绝包无法解析的行、配置非法的行、把服务发布进根 realm 的行，以及始终未激活的行。挂载失败会删除常驻条目并 dispose 其 scope，不留残留；挂载成功则装上首次真实会话本来也会装上的那个常驻代际。因此 skill 把它安排为完成编辑后的最终检查，而不是逐行循环。
+`acquireStanding(id)` 是校验手段。它走 `ensureStanding()`——与会话启动完全相同的真实挂载，只是不创建 agent——因此能拒绝包无法解析的行、配置非法的行、把服务发布进根 realm 的行，以及始终未激活的行。挂载失败会保留既有代际并 dispose 失败的 scope；挂载成功则装上首次真实会话本来也会装上的那个常驻代际。因此 skill 把它安排为完成编辑后的最终检查，而不是逐行循环，并随后释放返回的 lease。
 
 skill 明确写出：`list()` 的 `broken` 字段**不是**校验。发现阶段的健康检查只证明文件能被 Loader 的方言解析且行带 `name`，上述四类失败全部能通过它。
 
@@ -42,7 +42,7 @@ agent 按 `cordis_mount` 自身文档所述的方式够到 roster 服务：挂�
 
 下表每一行都由启动已发布的 Web 组装、并在由 `cordis` 组装出的 agent 上经 `ctx.tools.execute` 调用工具得出——全程无模型参与。
 
-| 被测组装 | `list()` 的 `broken` | `standingKeyFor()` |
+| 被测组装 | `list()` 的 `broken` | `acquireStanding()` |
 |---|---|---|
 | 行指向不存在的包 | 空 | `Cannot find package '@deepseek-ai/dsh-does-not-exist'` |
 | 服务行未套 realm，名字宿主已提供 | 空 | `service "tasks" has been registered at <LocalJobRegistry>` |
@@ -63,7 +63,7 @@ skill 自带的 `cordis_mount` 代码片段经工具注册表逐字执行：它�
 
 ## 后果
 
-- 校验成功会留下一个永不回收的常驻代际，这是 roster 按代际本就承担的[常驻挂载](../architecture/2026-08-08-per-preset-standing-mounts.zh.md)代价——由 agent 在编辑收尾时付一次，而不是由用户在首次会话时付。
+- 校验成功会留下当前常驻代际供复用；后续替换会让它 retired，并由[代际回收决策](2026-08-25-preset-generation-reclamation.zh.md)在最后一个 holder 退出后释放它。
 - skill 现在依赖 `cordis_inspect` 生成的 API 目录对 `agentPresets` 保持最新；`doc-sync` 中的 `verify-cordis-api` 是守住这一点的门禁。
 - 有两个示例现在是对 `standard` 组装的引用。若该文件的 `delegation` 组发生变化它们会漂移，而 `web-agent-presets` e2e 捕捉不到。
 - 被修正的四条陈述原本是该 skill 对 realm 规则仅有的具体图示。选择替换而非删除，规则才仍然可教；替换后的示例读一个已发布文件即可核验。

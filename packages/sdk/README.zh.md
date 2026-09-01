@@ -2,7 +2,7 @@
 
 [English](README.md) | 中文
 
-本组包含用于从另一进程驱动 Harness 运行时的协议栈。调用方提供运行时可执行文件及其 `cordis.yml`；本组不创建、配置、构建或启动开发者项目。[TypeScript SDK 决策](../../.agents/notes/implemented/feature/2026-07-27-typescript-sdk-and-sdk-subagent-backend.zh.md)负责客户端约定，[工具链移除](../../.agents/notes/implemented/simplification/2026-08-11-remove-sdk-project-toolchain.zh.md)负责产品边界。
+本组包含用于从另一进程驱动 Harness 运行时的单向协议栈：客户端发送请求并接收响应或通知，服务端接收请求并发送响应或通知。调用方提供运行时可执行文件及其 `cordis.yml`；本组不创建、配置、构建或启动开发者项目。[TypeScript SDK 决策](../../.agents/notes/implemented/feature/2026-07-27-typescript-sdk-and-sdk-subagent-backend.zh.md)负责客户端约定，[单向传输决策](../../.agents/notes/implemented/simplification/2026-07-19-make-jsonrpc-directional.zh.md)负责协议角色，[工具链移除](../../.agents/notes/implemented/simplification/2026-08-11-remove-sdk-project-toolchain.zh.md)负责产品边界。
 
 | 包 | 职责 |
 |---|---|

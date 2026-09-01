@@ -180,6 +180,12 @@ importers:
       '@deepseek-ai/dsh-cordis-client-runner':
         specifier: workspace:^
         version: link:../../packages/extensions/cordis-client-runner
+      '@deepseek-ai/dsh-curated-base':
+        specifier: workspace:^
+        version: link:../../packages/curated/curated-base
+      '@deepseek-ai/dsh-curated-profiles':
+        specifier: workspace:^
+        version: link:../../packages/curated/curated-profiles
       '@deepseek-ai/dsh-fs-local':
         specifier: workspace:^
         version: link:../../packages/fs/fs-local
@@ -225,6 +231,9 @@ importers:
       '@deepseek-ai/dsh-session-reference':
         specifier: workspace:^
         version: link:../../packages/context/session-reference
+      '@deepseek-ai/dsh-shell-runtime':
+        specifier: workspace:^
+        version: link:../../packages/shell/shell-runtime
       '@deepseek-ai/dsh-skill':
         specifier: workspace:^
         version: link:../../packages/skill/skill
@@ -610,6 +619,9 @@ importers:
       '@deepseek-ai/dsh-shell-env':
         specifier: workspace:*
         version: link:../packages/shell/shell-env
+      '@deepseek-ai/dsh-shell-runtime':
+        specifier: workspace:*
+        version: link:../packages/shell/shell-runtime
       '@deepseek-ai/dsh-skill':
         specifier: workspace:*
         version: link:../packages/skill/skill
@@ -1544,9 +1556,18 @@ importers:
       '@deepseek-ai/dsh-llm':
         specifier: workspace:^
         version: link:../../llm/llm
+      '@deepseek-ai/dsh-plan-mode':
+        specifier: workspace:^
+        version: link:../../plan/plan-mode
       '@deepseek-ai/dsh-session':
         specifier: workspace:^
         version: link:../../core/session
+      '@deepseek-ai/dsh-session-stats':
+        specifier: workspace:^
+        version: link:../../session/session-stats
+      '@deepseek-ai/dsh-token-meter':
+        specifier: workspace:^
+        version: link:../../llm/token-meter
       '@deepseek-ai/dsh-tools':
         specifier: workspace:^
         version: link:../../core/tools
@@ -3880,6 +3901,110 @@ importers:
       '@deepseek-ai/dsh-launch-environment':
         specifier: workspace:^
         version: link:../../util/launch-environment
+
+  packages/curated/curated-base:
+    dependencies:
+      '@deepseek-ai/dsh-curated-bench':
+        specifier: workspace:^
+        version: link:../curated-bench
+      '@deepseek-ai/dsh-curated-policy':
+        specifier: workspace:^
+        version: link:../curated-policy
+    devDependencies:
+      '@deepseek-ai/cordis':
+        specifier: workspace:^
+        version: link:../../../vendor/cordis
+      '@deepseek-ai/dsh-invariants':
+        specifier: workspace:^
+        version: link:../../runtime-diagnostics/invariants
+
+  packages/curated/curated-bench:
+    dependencies:
+      '@deepseek-ai/dsh-curated-policy':
+        specifier: workspace:^
+        version: link:../curated-policy
+      '@deepseek-ai/dsh-curated-profiles':
+        specifier: workspace:^
+        version: link:../curated-profiles
+    devDependencies:
+      '@deepseek-ai/cordis':
+        specifier: workspace:^
+        version: link:../../../vendor/cordis
+      '@deepseek-ai/dsh-invariants':
+        specifier: workspace:^
+        version: link:../../runtime-diagnostics/invariants
+
+  packages/curated/curated-policy:
+    dependencies:
+      js-yaml:
+        specifier: ^4.2.0
+        version: 4.2.0
+    devDependencies:
+      '@deepseek-ai/cordis':
+        specifier: workspace:^
+        version: link:../../../vendor/cordis
+      '@deepseek-ai/dsh-invariants':
+        specifier: workspace:^
+        version: link:../../runtime-diagnostics/invariants
+
+  packages/curated/curated-profiles:
+    dependencies:
+      '@deepseek-ai/dsh-app-boot':
+        specifier: workspace:^
+        version: link:../../boot/app-boot
+      '@deepseek-ai/dsh-curated-policy':
+        specifier: workspace:^
+        version: link:../curated-policy
+      js-yaml:
+        specifier: ^4.2.0
+        version: 4.2.0
+    devDependencies:
+      '@deepseek-ai/cordis':
+        specifier: workspace:^
+        version: link:../../../vendor/cordis
+      '@deepseek-ai/dsh-invariants':
+        specifier: workspace:^
+        version: link:../../runtime-diagnostics/invariants
+      '@types/js-yaml':
+        specifier: ^4.0.9
+        version: 4.0.9
+
+  packages/curated/curated-scripts:
+    dependencies:
+      '@deepseek-ai/cordis-plugin-include':
+        specifier: workspace:^
+        version: link:../../../vendor/include
+      '@deepseek-ai/dsh':
+        specifier: workspace:^
+        version: link:../../../apps/cli
+      '@deepseek-ai/dsh-app-boot':
+        specifier: workspace:^
+        version: link:../../boot/app-boot
+      '@deepseek-ai/dsh-curated-bench':
+        specifier: workspace:^
+        version: link:../curated-bench
+      '@deepseek-ai/dsh-curated-policy':
+        specifier: workspace:^
+        version: link:../curated-policy
+      '@deepseek-ai/dsh-curated-profiles':
+        specifier: workspace:^
+        version: link:../curated-profiles
+      '@deepseek-ai/dsh-subprocess':
+        specifier: workspace:^
+        version: link:../../subprocess/subprocess
+      js-yaml:
+        specifier: ^4.2.0
+        version: 4.2.0
+    devDependencies:
+      '@deepseek-ai/cordis':
+        specifier: workspace:^
+        version: link:../../../vendor/cordis
+      '@deepseek-ai/dsh-invariants':
+        specifier: workspace:^
+        version: link:../../runtime-diagnostics/invariants
+      '@types/js-yaml':
+        specifier: ^4.0.9
+        version: 4.0.9
 
   packages/e2b/e2b:
     dependencies:
@@ -6733,6 +6858,9 @@ importers:
       '@deepseek-ai/dsh-shell':
         specifier: workspace:^
         version: link:../shell
+      '@deepseek-ai/dsh-shell-runtime':
+        specifier: workspace:^
+        version: link:../shell-runtime
       '@deepseek-ai/dsh-subprocess':
         specifier: workspace:^
         version: link:../../subprocess/subprocess
@@ -6766,12 +6894,45 @@ importers:
       '@deepseek-ai/dsh-shell':
         specifier: workspace:^
         version: link:../shell
+      '@deepseek-ai/dsh-shell-runtime':
+        specifier: workspace:^
+        version: link:../shell-runtime
       '@deepseek-ai/dsh-subprocess-local':
         specifier: workspace:^
         version: link:../../subprocess/subprocess-local
       '@deepseek-ai/node-addon-landlock-run':
         specifier: workspace:^
         version: link:../../../native/landlock-run/packages/entry
+
+  packages/shell/persistent-tool-runtime:
+    devDependencies:
+      '@deepseek-ai/cordis':
+        specifier: workspace:^
+        version: link:../../../vendor/cordis
+      '@deepseek-ai/dsh-agent':
+        specifier: workspace:^
+        version: link:../../core/agent
+      '@deepseek-ai/dsh-invariants':
+        specifier: workspace:^
+        version: link:../../runtime-diagnostics/invariants
+      '@deepseek-ai/dsh-llm':
+        specifier: workspace:^
+        version: link:../../llm/llm
+      '@deepseek-ai/dsh-session':
+        specifier: workspace:^
+        version: link:../../core/session
+      '@deepseek-ai/dsh-system-prompt':
+        specifier: workspace:^
+        version: link:../../core/system-prompt
+      '@deepseek-ai/dsh-terminal':
+        specifier: workspace:^
+        version: link:../../terminal/terminal
+      '@deepseek-ai/dsh-timeout':
+        specifier: workspace:^
+        version: link:../../util/timeout
+      '@deepseek-ai/dsh-tools':
+        specifier: workspace:^
+        version: link:../../core/tools
 
   packages/shell/pwsh-local:
     dependencies:
@@ -6791,6 +6952,9 @@ importers:
       '@deepseek-ai/dsh-shell':
         specifier: workspace:^
         version: link:../shell
+      '@deepseek-ai/dsh-shell-runtime':
+        specifier: workspace:^
+        version: link:../shell-runtime
       '@deepseek-ai/dsh-subprocess':
         specifier: workspace:^
         version: link:../../subprocess/subprocess
@@ -6824,6 +6988,9 @@ importers:
       '@deepseek-ai/dsh-shell':
         specifier: workspace:^
         version: link:../shell
+      '@deepseek-ai/dsh-shell-runtime':
+        specifier: workspace:^
+        version: link:../shell-runtime
       '@deepseek-ai/dsh-subprocess-local':
         specifier: workspace:^
         version: link:../../subprocess/subprocess-local
@@ -6876,6 +7043,24 @@ importers:
       '@deepseek-ai/dsh-tools':
         specifier: workspace:^
         version: link:../../core/tools
+
+  packages/shell/shell-runtime:
+    devDependencies:
+      '@deepseek-ai/cordis':
+        specifier: workspace:^
+        version: link:../../../vendor/cordis
+      '@deepseek-ai/dsh-invariants':
+        specifier: workspace:^
+        version: link:../../runtime-diagnostics/invariants
+      '@deepseek-ai/dsh-shell':
+        specifier: workspace:^
+        version: link:../shell
+      '@deepseek-ai/dsh-subprocess':
+        specifier: workspace:^
+        version: link:../../subprocess/subprocess
+      '@deepseek-ai/dsh-timeout':
+        specifier: workspace:^
+        version: link:../../util/timeout
 
   packages/shell/tool-bash:
     dependencies:
@@ -6968,6 +7153,9 @@ importers:
       '@deepseek-ai/dsh-llm':
         specifier: workspace:^
         version: link:../../llm/llm
+      '@deepseek-ai/dsh-persistent-tool-runtime':
+        specifier: workspace:^
+        version: link:../persistent-tool-runtime
       '@deepseek-ai/dsh-sandbox':
         specifier: workspace:^
         version: link:../../sandbox/sandbox
@@ -7078,6 +7266,9 @@ importers:
       '@deepseek-ai/dsh-llm':
         specifier: workspace:^
         version: link:../../llm/llm
+      '@deepseek-ai/dsh-persistent-tool-runtime':
+        specifier: workspace:^
+        version: link:../persistent-tool-runtime
       '@deepseek-ai/dsh-pwsh-local':
         specifier: workspace:^
         version: link:../pwsh-local
@@ -8849,6 +9040,9 @@ importers:
       '@deepseek-ai/dsh-permission-presets':
         specifier: workspace:^
         version: link:../../packages/interaction/permission-presets
+      '@deepseek-ai/dsh-persistent-tool-runtime':
+        specifier: workspace:^
+        version: link:../../packages/shell/persistent-tool-runtime
       '@deepseek-ai/dsh-persona':
         specifier: workspace:^
         version: link:../../packages/preset/persona
@@ -8921,6 +9115,9 @@ importers:
       '@deepseek-ai/dsh-shell-env':
         specifier: workspace:^
         version: link:../../packages/shell/shell-env
+      '@deepseek-ai/dsh-shell-runtime':
+        specifier: workspace:^
+        version: link:../../packages/shell/shell-runtime
       '@deepseek-ai/dsh-skill':
         specifier: workspace:^
         version: link:../../packages/skill/skill

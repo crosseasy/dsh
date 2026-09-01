@@ -14,6 +14,8 @@ The live handle repeats event-era data after those observers disappear. `Workflo
 
 Cancellation also has two public channels for one synchronous start. `WorkflowStartRequest.signal` is passed to the worker host, while the sole production caller separately bridges the same signal to `WorkflowRun.cancel()`. Because `start()` returns the run before control can yield, there is no readiness window that requires request-time cancellation; the duplicate signal adds host listener/disarm state without closing a race.
 
+The cancellation-only finding is implemented by the [single-owner workflow cancellation decision](../../implemented/simplification/2026-08-26-workflow-single-cancellation-owner.md). The rest of this proposal remains rejected: workflow metadata, progress events, run identity, and the pairing ledger have production consumers and remain part of the capability.
+
 `WorkflowError.fatal` is the same speculative branch in miniature: every production construction is fatal, `fatal: false` exists only in tests, and combinators already distinguish workflow failures with `instanceof`.
 
 ## Proposal

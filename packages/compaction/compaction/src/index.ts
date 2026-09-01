@@ -159,7 +159,7 @@ export abstract class CompactionEngine extends Service {
    * @param agent - context whose session is mutated and whose routing options guide summarization.
    * @param signal - optional cancellation; model-backed implementations must forward it.
    * @throws when compaction is active or the range is missing, reversed, or unbalanced.
-   * @returns the appended event seqs, summary, replaced range, and token accounting.
+   * @returns the summary event seq, replaced range, and token accounting.
    */
   abstract compactRegion(
     start: number,

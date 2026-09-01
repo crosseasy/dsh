@@ -149,10 +149,11 @@ export function isFatalWorkflowError(error: unknown): boolean {
 
 /**
  * Workflow Service Definition contract. Invalid requests throw before publication; a live
- * run is holder-owned, its result never rejects, cancellation and disposal are
- * bounded, and disposal waits for child cleanup within that bound. Lifecycle
- * listener failures are contained, and `workflow/end` fires exactly once as the
- * result settles.
+ * run is holder-owned, its result never rejects, and cancellation settles
+ * engine-owned execution within its configured grace. Disposal uses
+ * `disposeGraceMs` to escalate worker termination, then awaits host-owned pending
+ * starts and child disposal to quiescence. Lifecycle listener failures are
+ * contained, and `workflow/end` fires exactly once as the result settles.
  */
 export abstract class WorkflowEngine extends Service {
   constructor(ctx: Context) {
@@ -161,8 +162,8 @@ export abstract class WorkflowEngine extends Service {
 
   /**
    * Parse and execute a workflow script.
-   * @param request - the script, its `args`, the parent agent, and an
-   *   optional cancel signal.
+   * @param request - the script, its `args`, and the parent agent; cancellation
+   *   belongs to the returned run.
    * @returns the live run; its `result` resolves when the script settles.
    */
   abstract start(request: WorkflowStartRequest): WorkflowRun

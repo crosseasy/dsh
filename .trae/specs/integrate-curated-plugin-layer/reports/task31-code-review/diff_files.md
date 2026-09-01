@@ -1,0 +1,64 @@
+# Diff 文件列表
+
+范围: HEAD
+diff_direction: base → source（`-` 行 = 旧代码/已删除，`+` 行 = 新代码/待评审）
+
+| 状态 | 文件路径 |
+| ---- | -------- |
+| M    | .agents/notes/implemented/architecture/2026-08-25-curated-plugin-layer-governance.i18n.yaml |
+| M    | .agents/notes/implemented/architecture/2026-08-25-curated-plugin-layer-governance.md |
+| M    | .agents/notes/implemented/architecture/2026-08-25-curated-plugin-layer-governance.zh.md |
+| M    | .trae/specs/integrate-curated-plugin-layer/checklist.md |
+| M    | .trae/specs/integrate-curated-plugin-layer/tasks.md |
+| M    | apps/cli/README.i18n.yaml |
+| M    | apps/cli/README.md |
+| M    | apps/cli/README.zh.md |
+| M    | apps/cli/reference/README.i18n.yaml |
+| M    | apps/cli/reference/README.md |
+| M    | apps/cli/reference/README.zh.md |
+| M    | apps/cli/src/curated-profile.ts |
+| M    | apps/cli/src/dump-config.ts |
+| M    | apps/cli/src/plugin.ts |
+| M    | apps/cli/src/profile-boot.ts |
+| M    | apps/cli/tests/curated-profile.spec.ts |
+| M    | apps/cli/tests/plugin-install-scripts.spec.ts |
+| M    | apps/cli/tests/profile-boot-lifecycle.spec.ts |
+| M    | docs/config-catalog.i18n.yaml |
+| M    | docs/config-catalog.md |
+| M    | docs/config-catalog.zh.md |
+| M    | docs/event-producer-consumer.i18n.yaml |
+| M    | docs/event-producer-consumer.md |
+| M    | docs/event-producer-consumer.zh.md |
+| M    | docs/subsystems/curated.i18n.yaml |
+| M    | docs/subsystems/curated.md |
+| M    | docs/subsystems/curated.zh.md |
+| M    | packages/boot/app-boot/README.i18n.yaml |
+| M    | packages/boot/app-boot/README.md |
+| M    | packages/boot/app-boot/README.zh.md |
+| M    | packages/boot/app-boot/src/index.ts |
+| M    | packages/boot/app-boot/tests/app-boot.spec.ts |
+| M    | packages/boot/app-boot/tests/config-dump.spec.ts |
+| M    | packages/boot/app-boot/tests/user-patches.spec.ts |
+| M    | packages/curated/curated-bench/README.i18n.yaml |
+| M    | packages/curated/curated-bench/README.md |
+| M    | packages/curated/curated-bench/README.zh.md |
+| M    | packages/curated/curated-bench/src/index.ts |
+| M    | packages/curated/curated-bench/src/invariant.ts |
+| M    | packages/curated/curated-bench/src/snapshot.ts |
+| M    | packages/curated/curated-bench/tests/bench.spec.ts |
+| M    | packages/curated/curated-policy/README.i18n.yaml |
+| M    | packages/curated/curated-policy/README.md |
+| M    | packages/curated/curated-policy/README.zh.md |
+| M    | packages/curated/curated-policy/src/index.ts |
+| M    | packages/curated/curated-profiles/README.i18n.yaml |
+| M    | packages/curated/curated-profiles/README.md |
+| M    | packages/curated/curated-profiles/README.zh.md |
+| M    | packages/curated/curated-profiles/src/index.ts |
+| M    | packages/curated/curated-profiles/tests/profiles.spec.ts |
+| M    | packages/curated/curated-scripts/README.i18n.yaml |
+| M    | packages/curated/curated-scripts/README.md |
+| M    | packages/curated/curated-scripts/README.zh.md |
+| M    | packages/curated/curated-scripts/src/index.ts |
+| M    | packages/curated/curated-scripts/tests/commands.spec.ts |
+| M    | packages/curated/curated-scripts/tests/packed-entry.e2e.ts |
+| M    | packages/extensions/tool-cordis/src/api-catalog.ts |

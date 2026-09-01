@@ -34,6 +34,7 @@
   "peerDependencies": {
     "@deepseek-ai/dsh-shell": "workspace:^",
     "@deepseek-ai/dsh-bash-local": "workspace:^",
+    "@deepseek-ai/dsh-shell-runtime": "workspace:^",
     "@deepseek-ai/dsh-invariants": "workspace:^",
     "@deepseek-ai/dsh-sandbox": "workspace:^",
     "@deepseek-ai/dsh-sandbox-policy": "workspace:^",
@@ -42,6 +43,7 @@
   "devDependencies": {
     "@deepseek-ai/dsh-shell": "workspace:^",
     "@deepseek-ai/dsh-bash-local": "workspace:^",
+    "@deepseek-ai/dsh-shell-runtime": "workspace:^",
     "@deepseek-ai/dsh-invariants": "workspace:^",
     "@deepseek-ai/dsh-subprocess-local": "workspace:^",
     "@deepseek-ai/dsh-sandbox": "workspace:^",

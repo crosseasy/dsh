@@ -41,9 +41,10 @@ export interface Config {
   /** vm timeout for the script's initial synchronous slice, inside the worker (default 5000 ms). */
   syncTimeoutMs?: number
   /**
-   * How long after a cancellation an unsettled script may keep running before
-   * the run force-settles `cancelled` and its worker is TERMINATED (default
-   * 5000 ms); also bounds `dispose()`.
+   * How long after cancellation an unsettled run may remain open before the
+   * host force-settles it as `cancelled` and terminates its worker (default
+   * 5000 ms). Public `dispose()` then still waits for host-side provider
+   * starts and child disposal to quiesce.
    */
   disposeGraceMs?: number
 }
@@ -136,8 +137,8 @@ class WorkerThreadWorkflowEngine extends WorkflowEngine {
    * block, `SCRIPT_PARSE` for a body that does not compile) for a request
    * that cannot begin; once a run is returned, every failure resolves through
    * `result.stopReason` instead.
-   * @param request - the script body, its meta data and `args`, the parent
-   *   agent, and an optional cancel signal.
+   * @param request - the script body, its meta data and `args`, and the
+   *   parent agent.
    * @returns the live run (its `result` resolves when the script settles).
    */
   start(request: WorkflowStartRequest): WorkflowRun {
@@ -184,7 +185,6 @@ class WorkerThreadWorkflowEngine extends WorkflowEngine {
         agentStart: (agent) => { this.emitWorkflowEvent('workflow/agent-start', info, agent) },
         agentEnd: (agent) => { this.emitWorkflowEvent('workflow/agent-end', info, agent) },
       },
-      request.signal,
     )
 
     this.emitWorkflowEvent('workflow/start', info)

@@ -21,7 +21,12 @@ class MemorySettings extends SettingsProvider {
     return Promise.resolve(structuredClone(this.doc))
   }
 
-  protected persist(ns: SettingsNamespace, section: Record<string, unknown>): Promise<void> {
+  protected persist(
+    ns: SettingsNamespace,
+    section: Record<string, unknown>,
+    assertRevision: () => void,
+  ): Promise<void> {
+    assertRevision()
     this.doc = { ...this.doc, [ns]: structuredClone(section) }
     return Promise.resolve()
   }
@@ -91,7 +96,7 @@ describe('web-search-deepseek settings section', () => {
     const bench = await boot()
     await bench.ctx.settings.update(WEB_SEARCH_DEEPSEEK_SETTINGS_NAMESPACE, { apiKey: 'ds-stored-secret' })
 
-    const [descriptor] = bench.ctx.settings.describe({ redactSecrets: true })
+    const [descriptor] = bench.ctx.settings.describeForWire()
       .filter(row => String(row.ns) === 'web-search-deepseek')
 
     expect(JSON.stringify(descriptor)).not.toContain('ds-stored-secret')

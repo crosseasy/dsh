@@ -9,19 +9,10 @@
  */
 
 import { Context } from '@deepseek-ai/cordis'
-import {
-  classifySandboxDenial,
-  classifySandboxRunnerFailure,
-  isSandboxRunnerSpawnFailure,
-  matchesSandboxSignature,
-} from '@deepseek-ai/dsh-shell'
 import type { ShellExecRequest, ShellExecSpec, ShellProcess, ShellRunResult } from '@deepseek-ai/dsh-shell'
 import { SandboxUnavailableError } from '@deepseek-ai/dsh-sandbox'
 import type {
   ConfinedArgv,
-  ConfinedSandboxMode,
-  RunnerFailureRule,
-  SandboxEnforcement,
   SandboxExecutionPolicy,
   SandboxMode,
   SandboxPolicy,
@@ -29,6 +20,7 @@ import type {
 import type {} from '@deepseek-ai/dsh-sandbox-policy'
 import { LocalBashExecutor } from '@deepseek-ai/dsh-bash-local'
 import type { Config as LocalConfig } from '@deepseek-ai/dsh-bash-local'
+import { OneShotSandboxSettlement } from '@deepseek-ai/dsh-shell-runtime'
 
 /**
  * Plugin config: the local executor's knobs, verbatim. The sandbox policy —
@@ -54,20 +46,8 @@ export class SandboxBashExecutor extends LocalBashExecutor {
   // verbatim (the config catalog walks the inherited static).
 
   private readonly mode: SandboxMode
-  /**
-   * Per-process confinement facts retained until settlement. Providers may
-   * vary enforcement and diagnostic dialect between overlapping calls, so a
-   * shared latest-wrap value would classify a process against the wrong facts.
-   * Unconfined processes have no entry.
-   */
-  private readonly processFacts = new Map<ShellProcess, {
-    mode: ConfinedSandboxMode
-    enforcement: SandboxEnforcement
-    denialSignatures: readonly string[]
-    runnerFailureRules: readonly RunnerFailureRule[]
-    runnerProgram: string | undefined
-    workdir: string
-  }>()
+  private readonly sandboxSettlement = new OneShotSandboxSettlement((mode, detail) =>
+    new SandboxUnavailableError(mode, detail))
 
   constructor(ctx: Context, config: Config) {
     super(ctx, config)
@@ -92,63 +72,24 @@ export class SandboxBashExecutor extends LocalBashExecutor {
 
   override async run(spec: ShellExecSpec): Promise<ShellRunResult> {
     const policy = spec.sandboxPolicy as SandboxExecutionPolicy
-    const { mode } = policy
-    if (mode === 'danger-full-access') {
-      const result = await super.run(spec)
-      return { ...result, sandbox: { mode, denied: false } }
-    }
-    const confined = this.confine(spec.command, { ...policy, mode })
-    let result: ShellRunResult
-    try {
-      result = await this.runArgv(spec, confined.argv)
-    } catch (error) {
-      // An upstream abort remains cancellation even when it prevents spawn.
-      if (spec.signal?.aborted === true) spec.signal.throwIfAborted()
-      if (isSandboxRunnerSpawnFailure(error, confined.argv[0], spec.workdir)) {
-        throw new SandboxUnavailableError(mode, String(error))
-      }
-      throw error
-    }
-    // Runner failure outranks denial because the command did not run. Carry
-    // the matched fatal line, not an informational line that preceded it.
-    const runnerFailure = classifySandboxRunnerFailure(result.exitCode, result.stderr.text, confined.runnerFailureRules)
-    if (runnerFailure !== undefined) {
-      throw new SandboxUnavailableError(mode, runnerFailure.detail)
-    }
-    return {
-      ...result,
-      sandbox: { mode, denied: classifySandboxDenial(result, confined.denialSignatures), enforcement: confined.enforcement },
-    }
+    return this.sandboxSettlement.run({
+      spec,
+      mode: policy.mode,
+      confine: mode => this.confine(spec.command, { ...policy, mode }),
+      runConfined: (current, argv) => this.runArgv(current, argv),
+      runUnconfined: current => super.run(current),
+    })
   }
 
   override start(spec: ShellExecSpec): ShellProcess {
     const policy = spec.sandboxPolicy as SandboxExecutionPolicy
-    const { mode } = policy
-    if (mode === 'danger-full-access') return super.start(spec)
-    // Once startArgv returns, install facts synchronously; promise settlement
-    // cannot run before start() returns.
-    const confined = this.confine(spec.command, { ...policy, mode })
-    let proc: ShellProcess
-    try {
-      proc = this.startArgv(spec, confined.argv)
-    } catch (error) {
-      // LocalSubprocessRuntime reports ENOENT/EACCES with the failed executable path through async
-      // `done` rejection; this covers alternatives that throw the same error synchronously.
-      if (isSandboxRunnerSpawnFailure(error, confined.argv[0], spec.workdir)) {
-        throw new SandboxUnavailableError(mode, String(error))
-      }
-      throw error
-    }
-    const { enforcement, denialSignatures, runnerFailureRules } = confined
-    this.processFacts.set(proc, {
-      mode,
-      enforcement,
-      denialSignatures,
-      runnerFailureRules,
-      runnerProgram: confined.argv[0],
-      workdir: spec.workdir,
+    return this.sandboxSettlement.start({
+      spec,
+      mode: policy.mode,
+      confine: mode => this.confine(spec.command, { ...policy, mode }),
+      startConfined: (current, argv) => this.startArgv(current, argv),
+      startUnconfined: current => super.start(current),
     })
-    return proc
   }
 
   /**
@@ -156,23 +97,7 @@ export class SandboxBashExecutor extends LocalBashExecutor {
    * have no facts; signal deaths are not denials.
    */
   protected override onProcessDone(proc: ShellProcess, stderr: string, spawnFailed: boolean, spawnError?: unknown): void {
-    const facts = this.processFacts.get(proc)
-    if (facts !== undefined) {
-      this.processFacts.delete(proc)
-      // A rejected spawn never started the confined launch. Otherwise runner
-      // failure outranks denial because its diagnostics may contain denial terms.
-      const runnerFailed = spawnFailed
-        ? isSandboxRunnerSpawnFailure(spawnError, facts.runnerProgram, facts.workdir)
-        : classifySandboxRunnerFailure(proc.exitCode, stderr, facts.runnerFailureRules) !== undefined
-      proc.sandbox = {
-        mode: facts.mode,
-        denied: proc.status !== 'killed'
-          && !runnerFailed
-          && matchesSandboxSignature(proc.exitCode, stderr, facts.denialSignatures),
-        enforcement: facts.enforcement,
-        ...(runnerFailed ? { runnerFailed } : {}),
-      }
-    }
+    this.sandboxSettlement.settleProcess(proc, stderr, spawnFailed, spawnError)
     super.onProcessDone(proc, stderr, spawnFailed, spawnError)
   }
 

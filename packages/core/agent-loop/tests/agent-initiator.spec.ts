@@ -6,7 +6,8 @@ import LlmRuntime, { createUserMessage, CallId, LlmAdapter  } from '@deepseek-ai
 import type { GenerateOptions, StreamChunk } from '@deepseek-ai/dsh-llm'
 import SessionStore, { SessionId } from '@deepseek-ai/dsh-session'
 import SystemPrompt from '@deepseek-ai/dsh-system-prompt'
-import ToolRuntime, { defineContentToolFixture } from '@deepseek-ai/dsh-tools'
+import ToolRuntime from '@deepseek-ai/dsh-tools'
+import { defineContentToolFixture } from '@deepseek-ai/dsh-tools/testing'
 import { MockAdapter, textResponse, toolCallResponse } from './mock-adapter.ts'
 
 const testToolSignal = new AbortController().signal

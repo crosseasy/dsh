@@ -12,6 +12,10 @@ The node half guards every entry under `/api` before bridging or upgrading (`src
 
 `/api/events.mux` and `/api/events.host` each accept a WebSocket upgrade and send only the corresponding `ServerRequest` text messages to the browser; the client sends no application data over these sockets. If either socket ends, the current connection generation fails and rebuilds both streams; readiness still requires both sockets to be open and the `host.describe` HTTP call to succeed. Host teardown terminates both sockets, aborts their sources, and waits for source cleanup before returning. Ordinary network GETs to these paths return 426 with no SSE fallback; `toFetchHandler`'s SSE codec serves only the isomorphic in-process carrier.
 
+## Development fixture
+
+`createFixtureApi()` authors deterministic scenarios and wire events locally. Its projection values call the domain-owned pure folds for plan mode, token-meter, and session-stats instead of carrying fixture-local reducers; fixture-specific projections such as permissions, goals, todos, and image limits remain local mirrors of their owning host services.
+
 ## Model Experience
 
 None, as the wire consumer layer moves already-composed messages between browser and host; nothing here reaches a model request.

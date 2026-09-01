@@ -1,4 +1,4 @@
-# Shell Executor
+# Shell Executors
 
 English | [中文](shell.zh.md)
 
@@ -8,7 +8,7 @@ Source: [`packages/shell/shell/src/types.ts`](../../packages/shell/shell/src/typ
 
 ## Managed shell environment namespace
 
-`DSH_*` variables are Harness-owned child-process facts. The model-facing Bash and PowerShell tools collect them through `ctx.shellEnv` and pass them through `ShellExecRequest.dshEnv`; the subprocess service removes inherited `DSH_*` names before merging the current snapshot. The `DshEnvironmentKey`/`DshEnvironment` vocabulary is owned by the [subprocess seam](subprocess.md) and re-exported by `dsh-shell`.
+`DSH_*` variables are Harness-owned child-process facts. The model-facing shell tools collect them through `ctx.shellEnv` and pass them through `ShellExecRequest.dshEnv`; the subprocess service removes inherited `DSH_*` names before merging the current snapshot. The `DshEnvironmentKey`/`DshEnvironment` vocabulary is owned by the [subprocess seam](subprocess.md) and re-exported by `dsh-shell`.
 
 ## Request vs. spec: the `resolve()` split
 
@@ -30,8 +30,8 @@ interface ShellExecRequest {
   /**
    * Foreground stdout capture budget in bytes. Absent uses the executor's
    * default output cap. Trusted in-process consumers use this when they must
-   * parse complete stdout up to their own bounded limit; the model-facing Bash
-   * and PowerShell tools do not expose it as a parameter.
+   * parse complete stdout up to their own bounded limit; the model-facing
+   * shell tools do not expose it as a parameter.
    */
   stdoutMaxBytes?: number | undefined
   /** Abort signal — implementations kill the command when it fires. */
@@ -40,9 +40,9 @@ interface ShellExecRequest {
    * Bytes to write to the command's stdin, then close it. Absent leaves stdin
    * closed/empty (the default for model-driven tool calls). Set by in-process
    * plugins (e.g. the hooks bridges, which write a hook command's JSON payload
-   * to its stdin); the model-facing Bash and PowerShell tools do not expose it
-   * as a parameter (a model that needs stdin uses the active shell's inline
-   * input or pipeline syntax).
+   * to its stdin); the model-facing shell tools do not expose it as a
+   * parameter (a model that needs stdin uses shell syntax like a heredoc or a
+   * pipe).
    */
   stdin?: string | undefined
   /**
@@ -50,7 +50,7 @@ interface ShellExecRequest {
    * scrub. Managed facts belong in {@link dshEnv}, which merges after this
    * map, so an entry here can never displace one. Set by in-process plugins
    * (the hooks bridges set `CLAUDE_PROJECT_DIR`, `CLAUDE_PLUGIN_ROOT`, …); the
-   * model-facing Bash and PowerShell tools do not expose it as a parameter.
+   * model-facing shell tools do not expose it as a parameter.
    */
   env?: Record<string, string> | undefined
   /**
@@ -99,7 +99,7 @@ interface ShellExecSpec {
 }
 ```
 
-`stdin` and `env` are trusted in-process plugin inputs and are not exposed by `dsh-tool-bash` or `dsh-tool-pwsh`. The local executor scrubs ambient credentials before merging explicit caller-supplied env. See [the bash-stdin-env Agent Note](../../.agents/notes/implemented/architecture/2026-06-30-bash-stdin-env-trusted-plugin-api.md).
+`stdin` and `env` are trusted in-process plugin inputs and are not exposed by the shell tools. The local executor scrubs ambient credentials before merging explicit caller-supplied env. See [the bash-stdin-env Agent Note](../../.agents/notes/implemented/architecture/2026-06-30-bash-stdin-env-trusted-plugin-api.md).
 
 `stdoutMaxBytes` is also trusted-plugin-only. It lets a foreground consumer request complete stdout up to a bounded parser budget without changing stderr, background jobs, or the model-facing shell tools' ordinary output cap.
 
@@ -143,11 +143,14 @@ Each stream is a `CollectedOutput` — the (possibly truncated) text plus recove
 
 A sandbox-consuming executor exposes its configured mode fallback through `ShellExecutor.sandboxMode`. The tool layer asks [`@deepseek-ai/dsh-sandbox-policy`](../../packages/sandbox/sandbox-policy/README.md) to resolve each calling session's durable `sandbox/mode` override and immutable cwd into `ShellExecRequest.sandboxPolicy`; a user-approved strictly wider call replaces only the mode. The mode/root/enforcement vocabulary is owned by the [`@deepseek-ai/dsh-sandbox` seam](sandbox.md); modes govern file effects only.
 
-A sandboxed run reports its mode, conservative denial classification, and enforcement completeness. `runnerFailed` marks a sandbox runner failure before the command ran; foreground execution throws `SANDBOX_UNAVAILABLE`, while a settled background process has only its facts channel.
+Confined runs report their mode, conservative denial classification, and enforcement completeness. `danger-full-access` is unconfined: foreground results still carry `sandbox: { mode, denied: false }`, while background handles carry no sandbox facts. `runnerFailed` marks a sandbox runner failure before the command ran; foreground execution throws `SANDBOX_UNAVAILABLE`, while a settled background process has only its facts channel.
 
 ```ts type-equiv
 /**
- * Sandbox facts for one run, present iff a sandboxing executor handled it.
+ * Sandbox facts for one run. Foreground results from sandboxing executors carry
+ * these facts, including when the resolved mode is `danger-full-access`;
+ * background handles carry them only after confined process settlement.
+ * Background `danger-full-access` handles intentionally carry no sandbox facts.
  * Facts are reported independently of process exit status so callers can
  * distinguish command failures from policy denials and runner failures.
  */
@@ -167,7 +170,7 @@ The `SANDBOX_UNAVAILABLE` error code (owned by the [sandbox seam](sandbox.md)) i
 
 ## Background processes: `ShellProcess`
 
-`start()` returns a handle with no id or owner. `dsh-tool-bash` and `dsh-tool-pwsh` adapt it into `ctx.jobs.start()` hooks; the generic runtime then owns job identity and lifecycle. `done` resolves when the process closes and never rejects, reads remain valid after settlement, and sandbox facts are stamped before `done` resolves.
+`start()` returns a handle with no id or owner. The shell tools adapt it into `ctx.jobs.start()` hooks; the generic runtime then owns job identity and lifecycle. `done` resolves when the process closes and never rejects, reads remain valid after settlement, and sandbox facts are stamped before `done` resolves.
 
 ```ts type-equiv
 /**
@@ -219,7 +222,9 @@ interface ShellProcessRead {
 
 ## The service
 
-`ShellExecutor` owns `resolve`, foreground `run`, background-process `start`, and the `sandboxMode` capability fact. `dsh-bash-local` and `dsh-pwsh-local` own their command dialect, defaulting, timeout/abort classification, terminal environment, and background read merge; `dsh-bash-sandbox` and `dsh-pwsh-sandbox` add `ctx.sandbox` confinement while retaining those lifecycle mechanics. Process groups, bounded collectors, spill files, credential scrubbing, and disposal quiescence are the [subprocess service](subprocess.md)'s. `dsh-tool-bash` and `dsh-tool-pwsh` own their model-facing rendering and adapt background handles into the [generic job runtime](jobs.md). `dsh-shell` owns the sandbox classifiers shared by the Bash and PowerShell sandbox providers, and the exit-status contract shared by the shell tools: the exported `parseExitStatus`/`ParsedExitStatus` inverts the `[exit code: N]` / `[killed by signal: X]` markers `dsh-tool-bash`'s `renderResult` and `dsh-tool-pwsh`'s `renderPwshResult` append, and both tools' `presentResult` use it to split the rendered text into the terminal card's output body and its exit-status pill.
+`ShellExecutor` owns `resolve`, foreground `run`, background-process `start`, and the `sandboxMode` capability fact. `dsh-bash-local` and `dsh-pwsh-local` own command defaulting, argv construction, executable resolution, and environment policy; their shared one-shot spawn, deadline, output, background cursor, spawn-failure, kill lifecycle, and shell-agnostic sandbox settlement live in `dsh-shell-runtime`. Process groups, bounded collectors, spill files, credential scrubbing, and disposal quiescence are the [subprocess service](subprocess.md)'s. `dsh-shell` also owns the shell tools' shared pure result helpers: `projectShellForegroundResult`, `renderShellResult`, `renderShellProcessRead`, `SHELL_BACKGROUND_OUTPUT_PROPERTIES`, `shellProcessOutcome`, and `parseExitStatus`/`ParsedExitStatus`. These helpers define foreground projection, model-visible foreground/background result rendering, background output schema properties, background process outcome mapping, and terminal-card exit-status parsing. `dsh-tool-bash` and `dsh-tool-pwsh` keep model-facing registration, schema prose, approval and escalation routing, workdir policy, tool identity, job kind, prompt text, and dialect behavior while adapting background handles into the [generic job runtime](jobs.md).
+
+The persistent Bash and PowerShell tools share `dsh-persistent-tool-runtime` for owner-scoped PTY caching, first-call de-duplication, per-owner command serialization, lifecycle cleanup, scrollback paging, deadlines, and reset framing. The adapter packages keep dialect-specific marker strings, command wrappers, prompt setup, echo stripping, and output parsing so Bash and PowerShell behavior remains explicit.
 
 <!-- BEGIN GENERATED cordis-surface (gen-cordis-catalog.ts) — do not edit between markers -->
 
@@ -233,7 +238,7 @@ Generated from source by `scripts/gen-cordis-catalog.ts` (verified fresh by `pnp
 
 ### `ctx.shell` — `ShellExecutor` (abstract seam)
 
-Abstract shell execution service shared by Bash and PowerShell providers. Subclass, implement the abstract methods, and load the subclass as a plugin — it registers as `ctx.shell` (one implementation per context; loading a second throws, which is cordis' standard duplicate-service behavior).
+Abstract shell execution service. Subclass, implement the abstract methods, and load the subclass as a plugin — it registers as `ctx.shell` (one implementation per context; loading a second throws, which is cordis' standard duplicate-service behavior).
 
 Implementations must honor these semantics:
 

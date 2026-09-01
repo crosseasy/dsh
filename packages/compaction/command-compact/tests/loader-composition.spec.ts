@@ -20,13 +20,10 @@ import * as commandCompact from '@deepseek-ai/dsh-command-compact'
 import { Session, SessionId } from '@deepseek-ai/dsh-session'
 
 const COMPACTION_ID = CompactionId('loader-command-compact-test')
+const SUMMARY = [{ type: 'text' as const, text: 'loader summary' }]
 
 const RESULT: CompactionResult = {
-  compactionId: COMPACTION_ID,
-  startSeq: 1,
   summarySeq: 2,
-  endSeq: 3,
-  summary: [{ type: 'text', text: 'loader summary' }],
   shadowedRange: { start: 3, end: 8 },
   shadowedSeqs: [3, 5, 8],
   shadowedTokenCount: 99,
@@ -51,13 +48,13 @@ class LoaderCompactionEngine extends CompactionEngine {
     sourceCommandId?: Parameters<CompactionEngine['compactNow']>[2],
   ): Promise<CompactionResult | null> {
     const provenance = {
-      compactionId: RESULT.compactionId,
+      compactionId: COMPACTION_ID,
       ...sourceCommandId === undefined ? {} : { sourceCommandId },
     }
     agent.session.append('compaction/start', { ...provenance, turn: null })
     agent.session.append('compaction/summary', {
       ...provenance,
-      summary: RESULT.summary,
+      summary: SUMMARY,
       shadowedRange: RESULT.shadowedRange,
       shadowedSeqs: RESULT.shadowedSeqs,
       shadowedTokenCount: RESULT.shadowedTokenCount,
@@ -65,7 +62,7 @@ class LoaderCompactionEngine extends CompactionEngine {
       model: 'loader-test',
     })
     agent.session.append('compaction/end', { ...provenance, turn: null })
-    return Promise.resolve({ ...RESULT, ...provenance })
+    return Promise.resolve(RESULT)
   }
 }
 
@@ -153,7 +150,7 @@ describe('command-compact real Loader composition', () => {
         data: {
           compactionId: COMPACTION_ID,
           sourceCommandId: execution.commandId,
-          summary: RESULT.summary,
+          summary: SUMMARY,
           shadowedRange: RESULT.shadowedRange,
           shadowedSeqs: RESULT.shadowedSeqs,
           shadowedTokenCount: RESULT.shadowedTokenCount,

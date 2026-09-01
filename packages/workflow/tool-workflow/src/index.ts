@@ -176,6 +176,10 @@ function presentWorkflowResult(args: WorkflowCallArgs, result: { content: Conten
   return { card: 'generic' }
 }
 
+function isAborted(signal: AbortSignal): boolean {
+  return signal.aborted
+}
+
 /** A non-`completed` stop reason means the script did not finish cleanly. */
 function stopReasonError(result: WorkflowResult): string | undefined {
   switch (result.stopReason) {
@@ -281,23 +285,27 @@ export function apply(ctx: Context, config: Config): void {
       // Meta/body validation failures (META_INVALID/SCRIPT_PARSE) throw
       // synchronously here and become isError results via the registry — the
       // model sees the violation list and can correct the call.
+      if (isAborted(exec.signal)) throw new Error('workflow parent step already aborted')
       const run = ctx.workflowEngine.start({
         script: args.script,
         meta: args.meta,
         ...args.args !== undefined ? { args: args.args } : {},
         parent,
-        signal: exec.signal,
       })
       const recordsRun = exec.parent === undefined
       // The shipped worker-thread engine publishes member events from later
       // worker messages, after start() returns and this run record is active.
       if (recordsRun) recorder.start(parent.session, run)
 
-      // Bridge the tool's abort signal to the run: if the parent step is aborted while the
-      // script is in flight, cancel the whole run. The signal also enters the engine directly, but
-      // this local bridge preserves the tool contract even if an implementation ignores it.
-      const onAbort = (): void => { run.cancel('parent step aborted') }
+      // Bridge the tool's abort signal to the run after start() publishes the handle.
+      let cancellationForwarded = false
+      const onAbort = (): void => {
+        if (cancellationForwarded) return
+        cancellationForwarded = true
+        run.cancel('parent step aborted')
+      }
       exec.signal.addEventListener('abort', onAbort, { once: true })
+      if (isAborted(exec.signal)) onAbort()
 
       let result: WorkflowResult | undefined
       try {

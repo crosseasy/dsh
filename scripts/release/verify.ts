@@ -8,6 +8,7 @@
  */
 
 import { parseArgs } from 'node:util'
+import { curatedActivationEvidenceIssues } from '../verify-curated-activation-evidence.ts'
 import { isEntry } from './process.ts'
 import { releaseFamily, type PublishPlan, type ReleaseFamily, type ReleaseMember } from './families.ts'
 
@@ -71,7 +72,7 @@ function verifyTag(family: ReleaseFamily, members: readonly ReleaseMember[], ref
 }
 
 /** Run the verification for the family named by `--family`. */
-function main(): void {
+async function main(): Promise<void> {
   const { values } = parseArgs({
     options: { family: { type: 'string' } },
     allowPositionals: false,
@@ -79,6 +80,12 @@ function main(): void {
   if (values.family === undefined) throw new Error('usage: verify.ts --family <dsh|vendor>')
 
   const family = releaseFamily(values.family)
+  if (family.id === 'dsh') {
+    const activationIssues = await curatedActivationEvidenceIssues()
+    if (activationIssues.length > 0) {
+      throw new Error(`curated activation evidence is invalid:\n${activationIssues.join('\n')}`)
+    }
+  }
   const members = family.members(process.cwd())
   family.verifyVersions(members)
   // Resolve the publish order here, before the build: an install-edge cycle
@@ -107,4 +114,9 @@ function main(): void {
   )
 }
 
-if (isEntry(import.meta.url)) main()
+if (isEntry(import.meta.url)) {
+  void main().catch((error: unknown) => {
+    console.error(error instanceof Error ? error.message : String(error))
+    process.exitCode = 1
+  })
+}

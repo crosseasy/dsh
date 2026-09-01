@@ -14,12 +14,15 @@ import type {
 import SessionStore, { SessionId } from '@deepseek-ai/dsh-session'
 import type { SessionEvent, SessionEventMap } from '@deepseek-ai/dsh-session'
 import type { LlmRetryEventData } from '@deepseek-ai/dsh-llm-retry/types'
+import * as retry from '@deepseek-ai/dsh-llm-retry'
+import type { RetryInternals } from '@deepseek-ai/dsh-llm-retry/testing'
+import { apply as applyRetryForTesting } from '@deepseek-ai/dsh-llm-retry/testing'
 import SystemPrompt from '@deepseek-ai/dsh-system-prompt'
-import ToolRuntime, { defineContentToolFixture } from '@deepseek-ai/dsh-tools'
+import ToolRuntime from '@deepseek-ai/dsh-tools'
+import { defineContentToolFixture } from '@deepseek-ai/dsh-tools/testing'
 import AgentRegistry from '@deepseek-ai/dsh-agent'
 import type { Agent, RequestErrorAction } from '@deepseek-ai/dsh-agent'
 import AgentLoop from '@deepseek-ai/dsh-agent-loop'
-import * as retry from '../src/index.ts'
 
 type ScriptEntry = Error | Iterable<StreamChunk> | AsyncIterable<StreamChunk>
 
@@ -102,7 +105,7 @@ async function harness(
   adapter: ScriptedAdapter,
   policies: Readonly<Record<string, RetryPolicyConfig | undefined>> = { mock: normalConfig() },
   beforeRetry?: (ctx: Context) => void,
-  internals: retry.RetryInternals = {},
+  internals: RetryInternals = {},
 ): Promise<{ ctx: Context; retryFiber: Fiber; disposeAdapter: () => void }> {
   const ctx = new Context()
   await ctx.plugin(LlmRuntime)
@@ -113,7 +116,7 @@ async function harness(
   beforeRetry?.(ctx)
   adapter.configureRetryPolicies(policies)
   const retryFiber = await ctx.plugin(Object.assign((inner: Context) => {
-    retry.apply(inner, {}, internals)
+    applyRetryForTesting(inner, {}, internals)
   }, { inject: retry.inject }))
   await ctx.plugin(AgentLoop, { agents: [] })
   const disposeAdapter = ctx.llm.registerAdapter(['mock', 'other'], adapter)

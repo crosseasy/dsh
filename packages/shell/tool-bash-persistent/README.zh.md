@@ -2,7 +2,7 @@
 
 [English](README.md) | 中文
 
-模型可见的 `bash(command)`，底层复用一个按所有者隔离的 `ctx.terminals` shell。该包拥有工具约定和 shell 复用；PTY 后端与沙箱策略由部署选择。
+模型可见的 `bash(command)`，底层复用一个按所有者隔离的 `ctx.terminals` shell。该包拥有工具约定与 Bash 方言行为；[`dsh-persistent-tool-runtime`](../persistent-tool-runtime/README.zh.md) 拥有共享 shell 生命周期。PTY 后端与沙箱策略由部署选择。
 
 ## 配置
 

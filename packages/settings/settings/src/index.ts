@@ -8,12 +8,14 @@
 
 import { Context, Service } from '@deepseek-ai/cordis'
 import type z from '@deepseek-ai/schemastery'
-import { redactSecrets } from './redact.ts'
-import type { RedactedSecret } from './redact.ts'
+import { describeForWire as describeSettingsForWire } from './redact.ts'
+import type { RedactedSecret, WireDescriptionInput } from './redact.ts'
 import type { SettingsNamespace, SettingsUpdateSource } from './types.ts'
 
-export { redactSecrets } from './redact.ts'
-export type { RedactedSecret, RedactedValue } from './redact.ts'
+export { describeForWire, redactSecrets } from './redact.ts'
+export type {
+  RedactedSecret, RedactedValue, WireDescription, WireDescriptionInput,
+} from './redact.ts'
 export type { SettingsNamespace, SettingsUpdateSource } from './types.ts'
 
 const NAMESPACE_PATTERN = /^[a-z][a-z0-9-]*$/
@@ -85,18 +87,12 @@ export interface SettingsDescriptor {
   user?: unknown
   /** Owner's declared effect timing. */
   applies: SettingsApplies
-  /** Schema-declared secret positions; present only under `redactSecrets`. */
-  secrets?: RedactedSecret[]
 }
 
-/** Options for {@link SettingsProvider.describe}. */
-export interface SettingsDescribeOptions {
-  /**
-   * Strip `role('secret')` fields from `value`/`base`/`user` and enumerate
-   * them in each descriptor's `secrets`. Every wire surface MUST pass this;
-   * the verbatim default exists for same-process configuration UIs only.
-   */
-  redactSecrets?: boolean
+/** One descriptor proven safe for a wire settings surface. */
+export interface WireSettingsDescriptor extends SettingsDescriptor {
+  /** Schema-declared secret positions; values and defaults are absent. */
+  secrets: RedactedSecret[]
 }
 
 /** Owner-facing handle for one registered namespace. */
@@ -108,7 +104,8 @@ export interface SettingsScope<T> {
    * of one callback run asynchronously, one at a time, in commit order; a
    * rejection is contained and logged like a sync throw. After the disposer
    * returns, no further invocation starts — one already queued is skipped;
-   * one already started still settles, and service disposal waits for it.
+   * one already started still settles, and service or registration disposal
+   * waits for it. A disposed registration rejects new watchers.
    * @param callback - invoked after each commit with the next and previous values.
    * @returns the disposer removing this observer.
    */
@@ -326,19 +323,14 @@ interface SettingsRegistration {
   schema: z<unknown>
   base: unknown
   applies: SettingsApplies
+  /** Cleared by the registrant disposer; queued writes and watchers fail loud or skip. */
+  active: boolean
   /** Owner-supplied check for constraints the schema cannot express. */
   validate?: (value: unknown) => void
   resolved: unknown
-  /**
-   * Monotonic counter over this namespace's RAW user section — bumped by any
-   * change to what is stored, including one whose resolved value is
-   * unchanged (adding an override equal to the composition base). Editors
-   * carry it as `expectedRevision` to detect a concurrent write, and the
-   * document event carries it so another tab learns a field went from
-   * inherited to overridden.
-   */
-  revision: number
   watchers: Set<SettingsWatcher>
+  /** Watcher invocations that have started and must settle before owner disposal resolves. */
+  pendingTails: Set<Promise<void>>
 }
 
 /**
@@ -349,6 +341,11 @@ interface SettingsRegistration {
  */
 export abstract class SettingsProvider extends Service {
   private readonly registrations = new Map<SettingsNamespace, SettingsRegistration>()
+  /**
+   * Monotonic RAW-section counters for namespaces registered during this
+   * provider lifetime. Ownership changes and gaps do not reset a counter.
+   */
+  private readonly revisions = new Map<SettingsNamespace, number>()
   /** Latest published raw document; empty until the provider's first publish. */
   private document: Record<string, unknown> = {}
   /** Per-namespace write chains; settled tails, so a failure never poisons the queue. */
@@ -419,14 +416,23 @@ export abstract class SettingsProvider extends Service {
    * Durably store one namespace's merged user section.
    * @param ns - the namespace being written.
    * @param section - the complete merged user section to store.
+   * @param assertRevision - call after provider-side reconciliation and
+   * immediately before changing storage; it rejects a stale expected revision.
    */
-  protected abstract persist(ns: SettingsNamespace, section: Record<string, unknown>): Promise<void>
+  protected abstract persist(
+    ns: SettingsNamespace,
+    section: Record<string, unknown>,
+    assertRevision: () => void,
+  ): Promise<void>
 
   /**
    * Register a namespace schema and receive its owner scope. The registration
    * is an effect on the calling plugin's fiber: disposing that fiber removes
-   * the namespace and its observers. An invalid stored section fails the
-   * registration itself — the earliest point where the schema can judge it.
+   * the namespace and its observers, skips watcher calls that have not
+   * started, and waits for started watcher calls before resolving. A scope
+   * whose registration was disposed rejects later writes or watchers. An
+   * invalid stored section fails the registration itself — the earliest point
+   * where the schema can judge it.
    * @param ns - unique namespace; duplicate registration fails loud.
    * @param schema - schemastery schema resolving this namespace's value.
    * @param options - composition `base` layer and effect timing.
@@ -436,27 +442,42 @@ export abstract class SettingsProvider extends Service {
     if (this.registrations.has(ns)) {
       throw new Error(`settings namespace "${ns}" is already registered`)
     }
+    const resolved = deepFreeze(this.resolve(schema, options?.base, this.section(ns), options?.validate))
+    if (!this.revisions.has(ns)) this.revisions.set(ns, 0)
     const registration: SettingsRegistration = {
       ns,
       schema: schema as z<unknown>,
       base: options?.base,
       applies: options?.applies ?? 'live',
+      active: true,
       ...options?.validate === undefined
         ? {}
         : { validate: options.validate as (value: unknown) => void },
-      resolved: deepFreeze(this.resolve(schema, options?.base, this.section(ns), options?.validate)),
-      revision: 0,
+      resolved,
       watchers: new Set(),
+      pendingTails: new Set(),
     }
     this.ctx.effect(() => {
       this.registrations.set(ns, registration)
-      // TODO(settings-registration-quiescence): Deactivate every watcher and await
-      // its tail on disposal so callbacks cannot outlive the registrant fiber.
-      return () => this.registrations.delete(ns)
+      return async () => {
+        registration.active = false
+        for (const watcher of registration.watchers) watcher.active = false
+        registration.watchers.clear()
+        if (this.registrations.get(ns) === registration) {
+          this.registrations.delete(ns)
+        }
+        await Promise.allSettled(registration.pendingTails)
+      }
     }, `settings.register(${JSON.stringify(String(ns))})`)
     return {
       get: () => registration.resolved as T,
       watch: (callback) => {
+        if (!registration.active) {
+          throw new Error(`settings namespace "${ns}" registration is disposed`)
+        }
+        if (this.isStopped()) {
+          throw new Error(`settings service is disposed: "${ns}" cannot be watched`)
+        }
         const watcher: SettingsWatcher = { callback: callback, tail: Promise.resolve(), active: true }
         registration.watchers.add(watcher)
         return () => {
@@ -464,51 +485,82 @@ export abstract class SettingsProvider extends Service {
           registration.watchers.delete(watcher)
         }
       },
-      update: patch => this.update(ns, patch),
-      replace: section => this.replace(ns, section),
+      update: async patch => this.write(registration, patch, 'merge'),
+      replace: async section => this.write(registration, section, 'replace'),
+    }
+  }
+
+  /** Detach the optional layers shared by same-process and wire descriptions. */
+  private descriptorLayers(registration: SettingsRegistration): Omit<WireDescriptionInput, 'value'> {
+    let user: Record<string, unknown> | undefined
+    try {
+      user = this.section(registration.ns)
+    } catch {
+      // A malformed stored section already warned at publish and kept the
+      // last good resolved value; only that malformed shape can throw here,
+      // and describing it as "no user layer" keeps this read total.
+      user = undefined
+    }
+    const base = registration.base === undefined ? undefined : structuredClone(registration.base)
+    const detachedUser = user === undefined ? undefined : structuredClone(user)
+    return {
+      ...base === undefined ? {} : { base },
+      ...detachedUser === undefined ? {} : { user: detachedUser },
     }
   }
 
   /**
-   * Describe every registered namespace for configuration surfaces, including
-   * the composition `base` and raw user layers so a form can mark which fields
-   * the user overrode (presence in `user`) and what a reset returns to.
-   * @param options - redaction switch; wire surfaces must redact.
+   * Describe every registered namespace for same-process configuration
+   * consumers, including verbatim values and serialized schema metadata.
    * @returns one descriptor per registered namespace, in registration order.
    */
-  describe(options?: SettingsDescribeOptions): SettingsDescriptor[] {
+  describe(): SettingsDescriptor[] {
     return [...this.registrations.values()].map((registration) => {
-      let user: Record<string, unknown> | undefined
-      try {
-        user = this.section(registration.ns)
-      } catch {
-        // A malformed stored section already warned at publish and kept the
-        // last good resolved value; only that malformed shape can throw here,
-        // and describing it as "no user layer" keeps this read total.
-        user = undefined
-      }
-      const base = registration.base === undefined ? undefined : structuredClone(registration.base)
-      const detachedUser = user === undefined ? undefined : structuredClone(user)
-      const descriptor: SettingsDescriptor = {
+      return {
         ns: registration.ns,
         schema: registration.schema.toJSON(),
         value: registration.resolved,
-        revision: registration.revision,
-        ...base === undefined ? {} : { base },
-        ...detachedUser === undefined ? {} : { user: detachedUser },
+        revision: this.revisionOf(registration.ns),
+        ...this.descriptorLayers(registration),
         applies: registration.applies,
       }
-      if (options?.redactSecrets !== true) return descriptor
-      const schema = registration.schema as z<never>
-      const redacted = redactSecrets(schema, registration.resolved)
+    })
+  }
+
+  /**
+   * Describe every registered namespace for wire consumers through the only
+   * supported serialization path. The complete schema graph is checked before
+   * serialization; secrets are removed from values and schema defaults.
+   * @returns all descriptors in registration order.
+   * @throws a value-free error when a schema cannot be represented safely.
+   */
+  describeForWire(): WireSettingsDescriptor[]
+  /**
+   * Describe one registered namespace for wire consumers through the only
+   * supported serialization path. The complete schema graph is checked before
+   * serialization; secrets are removed from values and schema defaults.
+   * @param ns - namespace selecting one descriptor.
+   * @returns the selected descriptor, or `undefined` while unregistered.
+   * @throws a value-free error when the schema cannot be represented safely.
+   */
+  describeForWire(ns: SettingsNamespace): WireSettingsDescriptor | undefined
+  describeForWire(ns?: SettingsNamespace): WireSettingsDescriptor[] | WireSettingsDescriptor | undefined {
+    const registrations = ns === undefined
+      ? [...this.registrations.values()]
+      : [...this.registrations.values()].filter(registration => registration.ns === ns)
+    const descriptors = registrations.map((registration): WireSettingsDescriptor => {
+      const described = describeSettingsForWire(registration.schema as z<never>, {
+        value: registration.resolved,
+        ...this.descriptorLayers(registration),
+      })
       return {
-        ...descriptor,
-        value: redacted.value,
-        ...base === undefined ? {} : { base: redactSecrets(schema, base).value },
-        ...detachedUser === undefined ? {} : { user: redactSecrets(schema, detachedUser).value },
-        secrets: redacted.secrets,
+        ns: registration.ns,
+        ...described,
+        revision: this.revisionOf(registration.ns),
+        applies: registration.applies,
       }
     })
+    return ns === undefined ? descriptors : descriptors[0]
   }
 
   /**
@@ -532,7 +584,11 @@ export abstract class SettingsProvider extends Service {
    *   namespace that moved past it rejects with {@link SettingsConflictError}.
    */
   async update(ns: SettingsNamespace, patch: object, expectedRevision?: number): Promise<void> {
-    return this.write(ns, patch, 'merge', expectedRevision)
+    const registration = this.registrations.get(ns)
+    if (registration === undefined) {
+      throw new Error(`settings namespace "${ns}" is not registered`)
+    }
+    return this.write(registration, patch, 'merge', expectedRevision)
   }
 
   /**
@@ -546,7 +602,11 @@ export abstract class SettingsProvider extends Service {
    *   namespace that moved past it rejects with {@link SettingsConflictError}.
    */
   async replace(ns: SettingsNamespace, section: object, expectedRevision?: number): Promise<void> {
-    return this.write(ns, section, 'replace', expectedRevision)
+    const registration = this.registrations.get(ns)
+    if (registration === undefined) {
+      throw new Error(`settings namespace "${ns}" is not registered`)
+    }
+    return this.write(registration, section, 'replace', expectedRevision)
   }
 
   /**
@@ -571,20 +631,27 @@ export abstract class SettingsProvider extends Service {
         throw new TypeError(`settings mutate for "${ns}" op paths must be arrays of strings`)
       }
     }
-    return this.write(ns, ops, 'mutate', expectedRevision)
+    const registration = this.registrations.get(ns)
+    if (registration === undefined) {
+      throw new Error(`settings namespace "${ns}" is not registered`)
+    }
+    return this.write(registration, ops, 'mutate', expectedRevision)
   }
 
   /** Validate a write, then queue it on the namespace's serialized write chain. */
   private write(
-    ns: SettingsNamespace,
+    registration: SettingsRegistration,
     input: object,
     mode: 'merge' | 'replace' | 'mutate',
     expectedRevision?: number,
   ): Promise<void> {
+    const ns = registration.ns
     const verb = mode === 'merge' ? 'update' : mode === 'replace' ? 'replace' : 'mutate'
-    const registration = this.registrations.get(ns)
-    if (registration === undefined) {
-      throw new Error(`settings namespace "${ns}" is not registered`)
+    if (!registration.active) {
+      throw new Error(`settings namespace "${ns}" registration is disposed`)
+    }
+    if (this.registrations.get(ns) !== registration) {
+      throw new Error(`settings namespace "${ns}" registration is no longer current`)
     }
     if (this.isStopped()) {
       throw new Error(`settings service is disposed: "${ns}" cannot be written`)
@@ -613,7 +680,7 @@ export abstract class SettingsProvider extends Service {
       if (this.isStopped()) {
         throw new Error(`settings service was disposed before the queued "${ns}" ${verb} ran`)
       }
-      if (this.registrations.get(ns) !== registration) {
+      if (!registration.active || this.registrations.get(ns) !== registration) {
         throw new Error(`settings namespace "${ns}" registration was disposed before the queued ${verb} ran`)
       }
       // Every mode derives from the section as it stands NOW, at the front of
@@ -622,26 +689,44 @@ export abstract class SettingsProvider extends Service {
       // The revision check belongs HERE, not at call time: the queue orders
       // writes but cannot tell a fresh writer from one holding a snapshot
       // that a predecessor already superseded.
-      if (expectedRevision !== undefined && expectedRevision !== registration.revision) {
-        throw new SettingsConflictError(ns, expectedRevision, registration.revision)
+      const assertRevision = () => {
+        if (expectedRevision === undefined) return
+        const currentRevision = this.revisionOf(ns)
+        if (expectedRevision !== currentRevision) {
+          throw new SettingsConflictError(ns, expectedRevision, currentRevision)
+        }
       }
+      assertRevision()
       const section = mode === 'merge'
         ? mergeLayers(current, snapshot) as Record<string, unknown>
         : mode === 'replace'
           ? snapshot
           : (snapshot['ops'] as SettingsPathOp[]).reduce(applyPathOp, current)
       const next = deepFreeze(this.resolve(registration.schema, registration.base, section, registration.validate))
-      await this.persist(ns, section)
+      await this.persist(ns, section, assertRevision)
       // The write reached storage either way; the cache must say so. Commit
       // only when this registration is still the namespace owner — a fiber
       // disposed (or replaced) mid-persist must not receive the notification.
+      const beforeCommit = this.document[ns]
       this.document[ns] = section
-      // TODO(settings-replacement-resync): Re-resolve any replacement registration
-      // from this persisted section so an old in-flight write cannot leave it stale.
-      if (this.registrations.get(ns) === registration && !this.isStopped()) {
-        this.bumpRevision(registration, current, section)
+      if (this.isStopped()) return
+      this.bumpRevision(ns, beforeCommit, section)
+      const owner = this.registrations.get(ns)
+      if (owner === undefined) return
+      if (owner === registration) {
         this.commit(registration, next, 'update')
+        return
       }
+      if (!owner.active) return
+      let replacementNext: unknown
+      try {
+        replacementNext = deepFreeze(this.resolve(owner.schema, owner.base, section, owner.validate))
+      } catch (error) {
+        this.ctx.logger.warn('settings: keeping last good "%s" after invalid stored section', owner.ns)
+        this.ctx.logger.warn(error)
+        return
+      }
+      this.commit(owner, replacementNext, 'update')
     })
     this.writeQueues.set(ns, run)
     return run
@@ -649,36 +734,39 @@ export abstract class SettingsProvider extends Service {
 
   /**
    * Provider hook: commit a complete raw document observed in storage. Each
-   * registered namespace re-resolves; an invalid section keeps that
+   * tracked namespace advances its RAW revision, including during an ownership
+   * gap. Each registered namespace re-resolves; an invalid section keeps that
    * namespace's last good value and warns, other namespaces still commit.
    * @param doc - the detached raw document (unregistered sections preserved).
    * @param source - change origin; defaults to `provider`.
    */
   protected publish(doc: Record<string, unknown>, source: SettingsUpdateSource = 'provider'): void {
-    // Read every raw section BEFORE swapping the document, so the revision
-    // bump below compares what was stored with what now is — an external edit
-    // moves the revision exactly like an in-process write.
+    // Capture every tracked raw section before swapping the document.
     const before = new Map<SettingsNamespace, unknown>()
-    for (const registration of this.registrations.values()) {
-      try {
-        before.set(registration.ns, this.section(registration.ns))
-      } catch {
-        // A malformed stored section is not a readable "before"; treating it
-        // as absent still bumps against any well-formed replacement.
-        before.set(registration.ns, undefined)
-      }
+    for (const ns of this.revisions.keys()) {
+      before.set(ns, this.document[ns])
     }
     this.document = doc
+    for (const [ns, section] of before) {
+      this.bumpRevision(ns, section, this.document[ns])
+    }
     for (const registration of this.registrations.values()) {
-      let next: unknown
+      let section: Record<string, unknown> | undefined
       try {
-        next = deepFreeze(this.resolve(registration.schema, registration.base, this.section(registration.ns), registration.validate))
+        section = this.section(registration.ns)
       } catch (error) {
         this.ctx.logger.warn('settings: keeping last good "%s" after invalid stored section', registration.ns)
         this.ctx.logger.warn(error)
         continue
       }
-      this.bumpRevision(registration, before.get(registration.ns), this.section(registration.ns))
+      let next: unknown
+      try {
+        next = deepFreeze(this.resolve(registration.schema, registration.base, section, registration.validate))
+      } catch (error) {
+        this.ctx.logger.warn('settings: keeping last good "%s" after invalid stored section', registration.ns)
+        this.ctx.logger.warn(error)
+        continue
+      }
       this.commit(registration, next, source)
     }
   }
@@ -709,17 +797,23 @@ export abstract class SettingsProvider extends Service {
     return value
   }
 
+  /** Read one tracked namespace's provider-owned RAW revision. */
+  private revisionOf(ns: SettingsNamespace): number {
+    return this.revisions.get(ns) ?? 0
+  }
+
   /**
    * Advance a namespace's revision when its RAW section changed, and announce
-   * it. Deliberately independent of {@link commit}'s resolved-value equality:
-   * storing an override equal to the composition base leaves the resolved
-   * value alone but changes what the document says, which is exactly what a
-   * configuration surface must re-read.
+   * it while the namespace has an owner. Deliberately independent of
+   * {@link commit}'s resolved-value equality: storing an override equal to the
+   * composition base leaves the resolved value alone but changes what the
+   * document says, which is exactly what a configuration surface must re-read.
    */
-  private bumpRevision(registration: SettingsRegistration, before: unknown, after: unknown): void {
+  private bumpRevision(ns: SettingsNamespace, before: unknown, after: unknown): void {
     if (deepEqualJson(before, after)) return
-    registration.revision += 1
-    this.emitDocumentUpdated(registration.ns, registration.revision)
+    const revision = this.revisionOf(ns) + 1
+    this.revisions.set(ns, revision)
+    if (this.registrations.has(ns)) this.emitDocumentUpdated(ns, revision)
   }
 
   /** Contained fan-out of `settings/document-updated`, mirroring {@link commit}'s. */
@@ -759,15 +853,21 @@ export abstract class SettingsProvider extends Service {
       // start entirely; started invocations drain at service dispose.
       const segment = watcher.tail
         .then(() => {
-          if (!watcher.active || this.isStopped()) return
-          return watcher.callback(next as never, prev as never)
-        })
-        .then(() => undefined, (error: unknown) => {
-          this.warnWatcherFailure(registration.ns, error)
+          if (!registration.active || !watcher.active || this.isStopped()) return
+          const started = Promise.resolve()
+            .then(() => watcher.callback(next as never, prev as never))
+            .then(() => undefined, (error: unknown) => {
+              this.warnWatcherFailure(registration.ns, error)
+            })
+          this.pendingTails.add(started)
+          registration.pendingTails.add(started)
+          void started.then(() => {
+            this.pendingTails.delete(started)
+            registration.pendingTails.delete(started)
+          })
+          return started
         })
       watcher.tail = segment
-      this.pendingTails.add(segment)
-      void segment.then(() => this.pendingTails.delete(segment))
     }
     // Fan the event out one listener at a time (the plain emit stops at the
     // first throwing listener, starving the rest). Invariant violations are

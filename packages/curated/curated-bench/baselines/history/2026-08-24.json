@@ -1,0 +1,32 @@
+{
+  "schemaVersion": 1,
+  "kind": "curated-planning-history",
+  "evidenceKind": "planned",
+  "restorable": false,
+  "source": "docs/plugin/superpowers/05-安全供应链与风险.md#1-版本与供应链策略",
+  "createdAt": "2026-08-24",
+  "profile": "web-curated",
+  "candidateCount": 37,
+  "activeCount": 21,
+  "catalogRef": "packages/curated/curated-policy/policy/plugin-allowlist.yaml",
+  "profileBundles": [
+    "@deepseek-ai/dsh-base",
+    "@deepseek-ai/dsh-web-app",
+    "@deepseek-ai/dsh-curated-base"
+  ],
+  "migration": {
+    "from": [
+      {
+        "path": "locks/2026-08-24.json",
+        "kind": "curated-lock-snapshot",
+        "restoreCommand": "replace curated allowlist with this snapshot after a rollback-line trigger"
+      },
+      {
+        "path": "profiles/web-curated-2026-08-24.json",
+        "kind": "curated-profile-snapshot",
+        "restoreCommand": "restore this bundle list before reapplying the last accepted allowlist"
+      }
+    ],
+    "to": "history/2026-08-24.json"
+  }
+}

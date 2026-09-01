@@ -3,18 +3,17 @@
  * Scripted stand-in for the DeepSeek Harness SDK runtime, driven entirely by
  * env vars — no model, no network, no harness imports. Speaks the runtime's
  * newline-delimited JSON-RPC protocol on stdio: answers `initialize`,
- * `session/prompt` (streaming scripted `session.event` notifications, then
- * `session.finished`, then the response), and `shutdown`.
+ * `session/prompt` (returning the queued message id before later scripted
+ * `session.event` notifications), and `shutdown`.
  *
  * Script vocabulary (all optional):
  * - `FAKE_TEXT`: assistant text for each turn (default `hello from fake runtime`).
- * - `FAKE_STATUS`: the `session.finished` status (default `ok`).
- * - `FAKE_REASON_KIND`: the `session.finished` reason kind (default `completed`; `none` omits the reason).
+ * - `FAKE_REASON_KIND`: the `turn/end` reason kind (default `completed`).
  * - `FAKE_SUBAGENT`: also emit a child session (subagent.started + child event + subagent.finished).
  * - `FAKE_ECHO_CWD`: prefix the assistant text with the process cwd.
  * - `FAKE_ECHO_ENV`: comma-separated env names to echo as `name=value` lines in the assistant text.
- * - `FAKE_MALFORMED`: `initialize` returns `{}` (no serverInfo); `prompt` returns `{}` (no accepted).
- * - `FAKE_MALFORMED_PROMPT`: `initialize` is normal; only `prompt` returns `{}` (no accepted).
+ * - `FAKE_MALFORMED`: `initialize` returns `{}` (no serverInfo); `prompt` returns `{}` (no messageId).
+ * - `FAKE_MALFORMED_PROMPT`: `initialize` is normal; only `prompt` returns `{}` (no messageId).
  * - `FAKE_INIT_ERROR`: `initialize` answers a JSON-RPC error response with code 7.
  * - `FAKE_INIT_ERROR_ONCE_FILE`: fail `initialize` (code 7) only when this
  *   marker file does NOT exist yet, creating it — so the first runtime
@@ -24,8 +23,7 @@
  * - `FAKE_MALFORMED_EVENT`: the turn's `session.event` carries a number as
  *   the event; `FAKE_MALFORMED_MESSAGE`: assistant/message content is not an
  *   array; `FAKE_MESSAGE_WITHOUT_DATA`: assistant/message with no data
- *   member; `FAKE_MALFORMED_REASON`: `session.finished` reason is a bare
- *   string (wire-validation probes).
+ *   member (wire-validation probes).
  * - `FAKE_EMPTY_MESSAGE`: the turn streams a text chunk, then records an empty
  *   assistant/message for a usage-only max-tokens step.
  * - `FAKE_HANG_INIT`: never answer `initialize` (mid-handshake cancel probe).
@@ -34,7 +32,7 @@
  *   cancel-during-handshake window).
  * - `FAKE_HANG_PROMPT`: never answer `session/prompt` (for timeout/dispose tests).
  * - `FAKE_STREAM_THEN_MALFORMED`: stream a text chunk for the prompt, then
- *   answer `{}` (no accepted) — same-pipe ordering makes the chunk arrive
+ *   answer `{}` (no message id) — same-pipe ordering makes the chunk arrive
  *   before the protocol failure (partial-output retention probe).
  * - `FAKE_IGNORE_EOF` + `FAKE_SIGTERM_FILE`: keep running after stdin EOF; touch the file on SIGTERM (ladder probe).
  * - `FAKE_TRAP_SIGTERM`: with `FAKE_IGNORE_EOF`, survive SIGTERM too (SIGKILL-rung probe).
@@ -217,9 +215,9 @@ reader.on('line', (line) => {
         respond({})
         return
       }
+      respond({ messageId })
       runTurn(sessionId)
       notify('session.status', { sessionId, status: 'idle' })
-      respond({ messageId })
       return
     }
     case 'shutdown':

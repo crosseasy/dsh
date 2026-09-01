@@ -2,13 +2,13 @@
 
 [English](shell.md) | 中文
 
-shell 执行 seam 分为 Service Definition（[dsh-shell](../../packages/shell/shell)，`ctx.shell`）、Service Provider（[dsh-bash-local](../../packages/shell/bash-local)、[dsh-bash-sandbox](../../packages/shell/bash-sandbox)、[dsh-pwsh-local](../../packages/shell/pwsh-local) 与 [dsh-pwsh-sandbox](../../packages/shell/pwsh-sandbox)）和 Consumer（[dsh-tool-bash](../../packages/shell/tool-bash)，即 `bash` schema；[dsh-tool-pwsh](../../packages/shell/tool-pwsh)，即 `pwsh` schema）。通用后台任务的 job id、所有权与控制位于 [jobs.md](jobs.zh.md)；本 seam 返回一个不含任务概念的进程句柄。原始进程组机制封装在[子进程 seam](subprocess.zh.md)之后。
+shell 执行 seam 分为 Service Definition（[dsh-shell](../../packages/shell/shell)，`ctx.shell`）、Service Provider（[dsh-bash-local](../../packages/shell/bash-local)、[dsh-bash-sandbox](../../packages/shell/bash-sandbox)、[dsh-pwsh-local](../../packages/shell/pwsh-local) 与 [dsh-pwsh-sandbox](../../packages/shell/pwsh-sandbox)）和 Consumer（[dsh-tool-bash](../../packages/shell/tool-bash)，即 `bash` schema，以及 [dsh-tool-pwsh](../../packages/shell/tool-pwsh)，即 `pwsh` schema）。通用后台任务的 job id、所有权与控制位于 [jobs.md](jobs.zh.md)；本 seam 返回一个不含任务概念的进程句柄。原始进程组机制封装在[子进程 seam](subprocess.zh.md)之后。
 
 源码：[`packages/shell/shell/src/types.ts`](../../packages/shell/shell/src/types.ts)
 
 ## 受管 shell 环境命名空间
 
-`DSH_*` 变量是归 Harness 所有的子进程事实。面向模型的 Bash 与 PowerShell 工具通过 `ctx.shellEnv` 收集它们，再经由 `ShellExecRequest.dshEnv` 传递；子进程服务在合并当前快照之前会移除继承而来的 `DSH_*` 名称。`DshEnvironmentKey`／`DshEnvironment` 词汇归[子进程 seam](subprocess.zh.md)所有，由 `dsh-shell` 重导出。
+`DSH_*` 变量是归 Harness 所有的子进程事实。面向模型的 shell 工具通过 `ctx.shellEnv` 收集它们，再经由 `ShellExecRequest.dshEnv` 传递；子进程服务在合并当前快照之前会移除继承而来的 `DSH_*` 名称。`DshEnvironmentKey`／`DshEnvironment` 词汇归[子进程 seam](subprocess.zh.md)所有，由 `dsh-shell` 重导出。
 
 ## 请求与规格：`resolve()` 拆分
 
@@ -30,8 +30,8 @@ interface ShellExecRequest {
   /**
    * Foreground stdout capture budget in bytes. Absent uses the executor's
    * default output cap. Trusted in-process consumers use this when they must
-   * parse complete stdout up to their own bounded limit; the model-facing Bash
-   * and PowerShell tools do not expose it as a parameter.
+   * parse complete stdout up to their own bounded limit; the model-facing
+   * shell tools do not expose it as a parameter.
    */
   stdoutMaxBytes?: number | undefined
   /** Abort signal — implementations kill the command when it fires. */
@@ -40,9 +40,9 @@ interface ShellExecRequest {
    * Bytes to write to the command's stdin, then close it. Absent leaves stdin
    * closed/empty (the default for model-driven tool calls). Set by in-process
    * plugins (e.g. the hooks bridges, which write a hook command's JSON payload
-   * to its stdin); the model-facing Bash and PowerShell tools do not expose it
-   * as a parameter (a model that needs stdin uses the active shell's inline
-   * input or pipeline syntax).
+   * to its stdin); the model-facing shell tools do not expose it as a
+   * parameter (a model that needs stdin uses shell syntax like a heredoc or a
+   * pipe).
    */
   stdin?: string | undefined
   /**
@@ -50,7 +50,7 @@ interface ShellExecRequest {
    * scrub. Managed facts belong in {@link dshEnv}, which merges after this
    * map, so an entry here can never displace one. Set by in-process plugins
    * (the hooks bridges set `CLAUDE_PROJECT_DIR`, `CLAUDE_PLUGIN_ROOT`, …); the
-   * model-facing Bash and PowerShell tools do not expose it as a parameter.
+   * model-facing shell tools do not expose it as a parameter.
    */
   env?: Record<string, string> | undefined
   /**
@@ -99,7 +99,7 @@ interface ShellExecSpec {
 }
 ```
 
-`stdin` 和 `env` 是受信任的进程内插件输入，不由 `dsh-tool-bash` 或 `dsh-tool-pwsh` 暴露。本地执行器会先清除环境中的凭据，再合并调用方显式提供的 env。见 [bash-stdin-env Agent Note](../../.agents/notes/implemented/architecture/2026-06-30-bash-stdin-env-trusted-plugin-api.zh.md)。
+`stdin` 和 `env` 是受信任的进程内插件输入，不由 shell 工具暴露。本地执行器会先清除环境中的凭据，再合并调用方显式提供的 env。见 [bash-stdin-env Agent Note](../../.agents/notes/implemented/architecture/2026-06-30-bash-stdin-env-trusted-plugin-api.zh.md)。
 
 `stdoutMaxBytes` 同样仅供受信任插件使用。它让前台消费方能在有界解析预算内请求完整 stdout，而不会改变 stderr、后台任务或面向模型的 shell 工具的常规输出上限。
 
@@ -143,11 +143,14 @@ interface ShellRunResult {
 
 使用沙箱的执行器通过 `ShellExecutor.sandboxMode` 暴露其已配置的模式回退值。工具层请求 [`@deepseek-ai/dsh-sandbox-policy`](../../packages/sandbox/sandbox-policy/README.zh.md)，把每个调用会话的持久 `sandbox/mode` 覆盖值与不可变 cwd 解析为 `ShellExecRequest.sandboxPolicy`；经用户批准、严格更宽松的调用只替换模式。模式/root/enforcement 词汇归 [`@deepseek-ai/dsh-sandbox` 沙箱 seam](sandbox.zh.md) 所有；模式仅管辖文件效果。
 
-沙箱化运行会报告其模式、保守的拒绝分类与强制执行完整度。`runnerFailed` 标记命令运行前沙箱 runner 已失败；前台执行会抛出 `SANDBOX_UNAVAILABLE`，而已结束的后台进程只能通过其事实通道报告。
+受限运行会报告其模式、保守的拒绝分类与强制执行完整度。`danger-full-access` 不启用限制：前台结果仍携带 `sandbox: { mode, denied: false }`，后台句柄不携带沙箱事实。`runnerFailed` 标记命令运行前沙箱 runner 已失败；前台执行会抛出 `SANDBOX_UNAVAILABLE`，而已结束的后台进程只能通过其事实通道报告。
 
 ```ts type-equiv
 /**
- * Sandbox facts for one run, present iff a sandboxing executor handled it.
+ * Sandbox facts for one run. Foreground results from sandboxing executors carry
+ * these facts, including when the resolved mode is `danger-full-access`;
+ * background handles carry them only after confined process settlement.
+ * Background `danger-full-access` handles intentionally carry no sandbox facts.
  * Facts are reported independently of process exit status so callers can
  * distinguish command failures from policy denials and runner failures.
  */
@@ -167,7 +170,7 @@ interface ShellSandboxInfo {
 
 ## 后台进程：`ShellProcess`
 
-`start()` 返回不含 id 或所有者的句柄。`dsh-tool-bash` 与 `dsh-tool-pwsh` 将它适配为 `ctx.jobs.start()` 钩子；随后由通用运行时拥有任务标识与生命周期。`done` 在进程关闭时完成且绝不被拒绝；进程结束后仍可读取，并且沙箱事实会在 `done` 完成前写入。
+`start()` 返回不含 id 或所有者的句柄。shell 工具会将它适配为 `ctx.jobs.start()` 钩子；随后由通用运行时拥有任务标识与生命周期。`done` 在进程关闭时完成且绝不被拒绝；进程结束后仍可读取，并且沙箱事实会在 `done` 完成前写入。
 
 ```ts type-equiv
 /**
@@ -219,7 +222,9 @@ interface ShellProcessRead {
 
 ## 服务
 
-`ShellExecutor` 拥有 `resolve`、前台 `run`、后台进程 `start` 以及 `sandboxMode` 能力事实。`dsh-bash-local` 与 `dsh-pwsh-local` 分别拥有各自的命令方言、默认值补全、超时/中止分类、终端环境以及后台读取合并；`dsh-bash-sandbox` 与 `dsh-pwsh-sandbox` 在保留这些生命周期机制的同时增加 `ctx.sandbox` 约束。进程组、有界收集器、spill 文件、凭据清除与 dispose（资源释放）后完全停稳归[子进程服务](subprocess.zh.md)所有。`dsh-tool-bash` 与 `dsh-tool-pwsh` 分别拥有面向模型的渲染，并将后台句柄适配到[通用任务运行时](jobs.zh.md)。`dsh-shell` 拥有 Bash 与 PowerShell 沙箱提供方共享的沙箱分类器，以及 shell 工具共享的退出状态约定：导出的 `parseExitStatus`/`ParsedExitStatus` 是 `dsh-tool-bash` 的 `renderResult` 与 `dsh-tool-pwsh` 的 `renderPwshResult` 所追加的 `[exit code: N]` / `[killed by signal: X]` 标记的逆解析，两个工具的 `presentResult` 都用它把渲染文本拆分为 terminal 卡的输出正文与退出状态 pill。
+`ShellExecutor` 拥有 `resolve`、前台 `run`、后台进程 `start` 以及 `sandboxMode` 能力事实。`dsh-bash-local` 与 `dsh-pwsh-local` 拥有命令默认值补全、argv 构造、可执行文件解析和环境策略；二者共享的一次性 spawn、deadline、输出、后台游标、spawn 失败、kill 生命周期和与 shell 方言无关的 sandbox settlement 位于 `dsh-shell-runtime`。进程组、有界收集器、spill 文件、凭据清除与 dispose（资源释放）后完全停稳归[子进程服务](subprocess.zh.md)所有。`dsh-shell` 也拥有 shell 工具共享的纯结果 helper：`projectShellForegroundResult`、`renderShellResult`、`renderShellProcessRead`、`SHELL_BACKGROUND_OUTPUT_PROPERTIES`、`shellProcessOutcome` 和 `parseExitStatus`/`ParsedExitStatus`。这些 helper 定义前台投影、模型可见的前台／后台结果渲染、后台输出 schema 属性、后台进程结果映射和 terminal 卡退出状态解析。`dsh-tool-bash` 与 `dsh-tool-pwsh` 保留面向模型的注册、schema 文案、审批与升权路由、workdir 策略、工具身份、job kind、提示词文本和方言行为，同时将后台句柄适配到[通用任务运行时](jobs.zh.md)。
+
+持久 Bash 与 PowerShell 工具共用 `dsh-persistent-tool-runtime`，由它处理 owner 作用域 PTY 缓存、首次调用去重、同一 owner 命令串行化、生命周期清理、scrollback 分页、deadline 与 reset 文本框架。adapter 包仍保留方言专属的 marker 字符串、命令包装、prompt 初始化、回显剥离和输出解析，使 Bash 与 PowerShell 行为保持显式。
 
 <!-- BEGIN GENERATED cordis-surface (gen-cordis-catalog.ts) — do not edit between markers -->
 
@@ -233,7 +238,7 @@ Generated from source by `scripts/gen-cordis-catalog.ts` (verified fresh by `pnp
 
 ### `ctx.shell` — `ShellExecutor` (abstract seam)
 
-Abstract shell execution service shared by Bash and PowerShell providers. Subclass, implement the abstract methods, and load the subclass as a plugin — it registers as `ctx.shell` (one implementation per context; loading a second throws, which is cordis' standard duplicate-service behavior).
+Abstract shell execution service. Subclass, implement the abstract methods, and load the subclass as a plugin — it registers as `ctx.shell` (one implementation per context; loading a second throws, which is cordis' standard duplicate-service behavior).
 
 Implementations must honor these semantics:
 

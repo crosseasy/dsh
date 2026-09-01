@@ -15,7 +15,7 @@ from typing import Callable, TypeAlias, TypeVar
 from pydantic import BaseModel
 
 from .errors import JsonRpcError, TransportClosedError
-from .models import IncomingRequest, InitializeResponse, JsonObject, JsonValue, Notification
+from .models import InitializeResponse, JsonObject, JsonValue, Notification
 
 ModelT = TypeVar("ModelT", bound=BaseModel)
 NotificationFilter: TypeAlias = Callable[[Notification], bool]
@@ -48,7 +48,6 @@ class HarnessClient:
             str, tuple[queue.Queue[Notification | BaseException], NotificationFilter | None]
         ] = {}
         self._session_parents: dict[str, str] = {}
-        self._requests: queue.Queue[IncomingRequest | BaseException] = queue.Queue()
         self._stderr_lines: deque[str] = deque(maxlen=400)
         self._reader_thread: threading.Thread | None = None
         self._stderr_thread: threading.Thread | None = None
@@ -177,12 +176,6 @@ class HarnessClient:
             raise TypeError(f"{method} response must be a JSON object")
         return response_model.model_validate(result)
 
-    def notify(self, method: str, params: JsonObject | None = None) -> None:
-        message: JsonObject = {"jsonrpc": "2.0", "method": method}
-        if params is not None:
-            message["params"] = params
-        self._write_message(message)
-
     def next_notification(self) -> Notification:
         item = self._notifications.get()
         if isinstance(item, BaseException):
@@ -202,28 +195,6 @@ class HarnessClient:
     def subscribe_session_notifications(self, session_id: str) -> "NotificationSubscription":
         """Subscribe to a session and descendants discovered from subagent lifecycle edges."""
         return self.subscribe_notifications(self._notification_belongs_to_session_tree(session_id))
-
-    def next_request(self) -> IncomingRequest:
-        item = self._requests.get()
-        if isinstance(item, BaseException):
-            raise item
-        return item
-
-    def respond(self, request_id: str | int, result: JsonValue) -> None:
-        self._write_message({"jsonrpc": "2.0", "id": request_id, "result": result})
-
-    def respond_error(
-        self,
-        request_id: str | int,
-        *,
-        code: int,
-        message: str,
-        data: JsonValue | None = None,
-    ) -> None:
-        error: JsonObject = {"code": code, "message": message}
-        if data is not None:
-            error["data"] = data
-        self._write_message({"jsonrpc": "2.0", "id": request_id, "error": error})
 
     def _request_raw(
         self,
@@ -343,24 +314,22 @@ class HarnessClient:
     def _handle_message(self, message: object) -> None:
         if not isinstance(message, dict):
             return
-        msg_id = message.get("id")
-        method = message.get("method")
-        if isinstance(msg_id, (str, int)) and isinstance(method, str):
-            params = message.get("params")
-            self._requests.put(IncomingRequest(id=msg_id, method=method, payload=params if isinstance(params, dict) else {}))
+        if _is_json_rpc_request(message):
             return
-        if isinstance(msg_id, (str, int)):
+        if _is_json_rpc_response(message):
+            msg_id = message["id"]
             with self._lock:
                 waiter = self._responses.pop(str(msg_id), None)
             if waiter is None:
                 return
-            if isinstance(message.get("error"), dict):
+            if "error" in message:
                 err = message["error"]
                 waiter.put(JsonRpcError(_int_or_none(err.get("code")), str(err.get("message", "JSON-RPC error")), err.get("data")))
             else:
-                waiter.put(message.get("result"))
+                waiter.put(message["result"])
             return
-        if isinstance(method, str):
+        if _is_json_rpc_notification(message):
+            method = message["method"]
             params = message.get("params")
             notification = Notification(method=method, payload=params if isinstance(params, dict) else {})
             with self._lock:
@@ -394,7 +363,6 @@ class HarnessClient:
         for subscriber, _predicate in subscribers:
             subscriber.put(exc)
         self._notifications.put(exc)
-        self._requests.put(exc)
 
     def _runtime_closed_error(self, reason: str) -> TransportClosedError:
         diagnostics = self._runtime_diagnostics()
@@ -404,13 +372,14 @@ class HarnessClient:
         """Return available subprocess state for transport failures and timeouts."""
         proc = self._proc
         if (
-            proc is not None
-            and proc.poll() is not None
-            and self._stderr_thread is not None
+            self._stderr_thread is not None
             and self._stderr_thread.is_alive()
             and threading.current_thread() is not self._stderr_thread
         ):
-            self._stderr_thread.join(timeout=0.1)
+            for _ in range(5):
+                self._stderr_thread.join(timeout=0.1)
+                if self._stderr_lines or not self._stderr_thread.is_alive():
+                    break
 
         parts: list[str] = []
         if proc is not None:
@@ -551,6 +520,41 @@ class _SessionPromptResponse(BaseModel):
 
 class _ShutdownResponse(BaseModel):
     pass
+
+
+def _is_json_rpc_id(value: object) -> bool:
+    return isinstance(value, (str, int)) and not isinstance(value, bool)
+
+
+def _is_json_rpc_request(message: dict[object, object]) -> bool:
+    return (
+        _is_json_rpc_id(message.get("id"))
+        and isinstance(message.get("method"), str)
+        and "result" not in message
+        and "error" not in message
+    )
+
+
+def _is_json_rpc_response(message: dict[object, object]) -> bool:
+    if (
+        not _is_json_rpc_id(message.get("id"))
+        or "method" in message
+    ):
+        return False
+    has_result = "result" in message
+    has_error = "error" in message
+    return has_result != has_error and (
+        not has_error or isinstance(message["error"], dict)
+    )
+
+
+def _is_json_rpc_notification(message: dict[object, object]) -> bool:
+    return (
+        "id" not in message
+        and isinstance(message.get("method"), str)
+        and "result" not in message
+        and "error" not in message
+    )
 
 
 def _int_or_none(value: object) -> int | None:

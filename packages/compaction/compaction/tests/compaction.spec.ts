@@ -72,13 +72,9 @@ class StubCompactionEngine extends CompactionEngine {
       surfaceOp: { op: 'replace', start, end },
       sourceEventSeqs: [startEvent.seq, summaryEvent.seq, ...shadowedSeqs],
     })
-    const endEvent = session.append('compaction/end', { compactionId, turn: 0 })
+    session.append('compaction/end', { compactionId, turn: 0 })
     return {
-      compactionId,
-      startSeq: startEvent.seq,
       summarySeq: summaryEvent.seq,
-      endSeq: endEvent.seq,
-      summary,
       shadowedRange: { start, end },
       shadowedSeqs,
       shadowedTokenCount: 0,
@@ -136,15 +132,26 @@ describe('CompactionEngine seam', () => {
     // verify the runtime value is absent.
     const raw = startEvent as unknown as { surfaceOp?: unknown }
     expect(raw.surfaceOp).toBeUndefined()
-    expect(result.summary).toEqual([{ type: 'text', text: 'stub' }])
-    expect(result.summarySeq).toBeGreaterThan(result.startSeq)
-    expect(result.endSeq).toBeGreaterThan(result.summarySeq)
+    const summaryEvent = session.events.find(e => e.type === 'compaction/summary')
+    const endEvent = session.events.find(e => e.type === 'compaction/end')
+    expect(summaryEvent?.type === 'compaction/summary' && summaryEvent.data.summary)
+      .toEqual([{ type: 'text', text: 'stub' }])
+    const { summarySeq } = result
+    expect(summarySeq).toBe(summaryEvent?.seq)
+    expect(endEvent?.seq).toBeGreaterThan(summarySeq)
     expect(result.shadowedRange).toEqual({ start: original.seq, end: original.seq })
     expect(result.shadowedSeqs).toEqual([original.seq])
+    expect(result).not.toHaveProperty('compactionId')
+    expect(result).not.toHaveProperty('sourceCommandId')
+    expect(result).not.toHaveProperty('startSeq')
+    expect(result).not.toHaveProperty('endSeq')
+    expect(result).not.toHaveProperty('summary')
     const checkpoint = session.events.find(event => event.type === 'user/message'
       && isCompactCheckpointSource(event.data.source))
     expect(checkpoint?.type === 'user/message' && checkpoint.data.source)
-      .toEqual(compactCheckpointSource(result.compactionId))
+      .toEqual(summaryEvent?.type === 'compaction/summary'
+        ? compactCheckpointSource(summaryEvent.data.compactionId)
+        : undefined)
     expect(isCompactCheckpointSource({ kind: 'plugin', plugin: 'other' })).toBe(false)
     expect(isCompactCheckpointSource({ kind: 'user' })).toBe(false)
     expect(session.events.filter(e => e.type.startsWith('compaction/')).map(e => e.type))

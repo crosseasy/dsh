@@ -89,7 +89,12 @@ class MemorySettings extends SettingsProvider {
     return Promise.resolve(structuredClone(this.doc))
   }
 
-  protected persist(ns: SettingsNamespace, section: Record<string, unknown>): Promise<void> {
+  protected persist(
+    ns: SettingsNamespace,
+    section: Record<string, unknown>,
+    assertRevision: () => void,
+  ): Promise<void> {
+    assertRevision()
     this.doc[ns] = structuredClone(section)
     return Promise.resolve()
   }
@@ -196,6 +201,12 @@ const AdapterConfig = z.object({
   baseURL: z.string(),
 })
 
+type UnsafeSecretSchemaCase = readonly [
+  kind: string,
+  schema: z<never>,
+  doc: Record<string, unknown> | undefined,
+]
+
 async function harness(options?: {
   settings?: false | {
     doc?: Record<string, unknown>
@@ -296,6 +307,74 @@ describe('settings domain', () => {
     expect(view.user).toEqual({ baseURL: 'https://user' })
     expect(view.secrets).toEqual([{ path: ['apiKey'], set: true }])
     expect(JSON.stringify(value)).not.toContain('user-secret')
+  })
+
+  const unsafeSecretSchemaCases: UnsafeSecretSchemaCase[] = [
+    [
+      'union',
+      z.object({ token: z.union([z.string().role('secret'), z.number()]) }) as z<never>,
+      { token: 'union-secret-marker' },
+    ],
+    [
+      'intersection',
+      z.intersect([
+        z.object({ token: z.string().role('secret') }),
+        z.object({ endpoint: z.string() }),
+      ]) as z<never>,
+      { token: 'intersection-secret-marker', endpoint: 'https://example.test' },
+    ],
+    [
+      'transform',
+      z.object({
+        token: z.transform(
+          z.string().role('secret'),
+          value => `transform-callback-marker:${value}`,
+        ),
+      }) as z<never>,
+      undefined,
+    ],
+  ]
+
+  it.each(unsafeSecretSchemaCases)('refuses a namespace with a secret behind %s without returning sensitive metadata', async (_kind, schema, doc) => {
+    const ctx = await harness({
+      settings: doc === undefined ? {} : { doc: { 'llm-deepseek': doc } },
+    })
+    ctx.settings.register(NS, schema)
+    const api = createApiProxy(ctx, DEFAULTS)
+
+    const error = expectErr(await api.settings.describe(request({})))
+
+    expect(error.code).toBe('internal')
+    expect(error.message).toBe('settings include a namespace that cannot be represented safely')
+    const serialized = JSON.stringify(error)
+    expect(serialized).not.toContain('union-secret-marker')
+    expect(serialized).not.toContain('intersection-secret-marker')
+    expect(serialized).not.toContain('transform-callback-marker')
+  })
+
+  it('preflights wire safety before persistence and returns a value-free rejection', async () => {
+    const ctx = await harness()
+    const schema = z.object({
+      token: z.transform(
+        z.string().role('secret'),
+        (value) => {
+          throw new Error(`transform-callback-marker:${value}`)
+        },
+      ),
+    })
+    ctx.settings.register(NS, schema)
+    const api = createApiProxy(ctx, DEFAULTS)
+
+    const error = expectErr(await api.settings.update(request({
+      ns: 'llm-deepseek',
+      patch: { token: 'rejected-input-marker' },
+    })))
+
+    expect(error.code).toBe('settings-rejected')
+    expect(error.message).toBe('settings update was rejected')
+    expect(JSON.stringify(error)).not.toContain('rejected-input-marker')
+    expect(JSON.stringify(error)).not.toContain('transform-callback-marker')
+    expect((ctx.settings as MemorySettings).doc).toEqual({})
   })
 
   it('opens the provider-resolved document without accepting a browser path', async () => {
@@ -596,6 +675,7 @@ describe('settings domain', () => {
     expect(unknown.code).toBe('settings-rejected')
     expect(unknown.message).toContain('is not registered')
     expect(malformed.code).toBe(unknown.code)
+    expect(malformed.message).toBe(unknown.message)
   })
 
   it('maps a read-only provider refusal onto the same rejection', async () => {

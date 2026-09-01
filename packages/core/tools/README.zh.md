@@ -102,6 +102,10 @@ ctx.tools.register(defineTool({
 
 可选的 `isConcurrencySafe(args)` 接收经过软验证的类型化参数。只有确切的 `true` 才允许并发分发／主体执行；无效输入和所有其他结果仍为独占。选择并发的主体不得改变父级拥有的状态；共享状态竞态必须具有交换性，否则必须安全拒绝。[并行工具调用 Agent Note](../../../.agents/notes/implemented/feature/2026-07-10-parallel-tool-call-execution.zh.md) 规定完整安全约定。
 
+### 测试支持
+
+需要把呈现内容作为规范值的仓库测试，从 `@deepseek-ai/dsh-tools/testing` 导入 `defineContentToolFixture` 和 `ContentToolFixtureOptions`。包根入口保留为注册表、schema、执行和呈现约定的生产 API。
+
 ### 强制执行的原始 JSON Schema 子集
 
 `JsonSchemaNode` 是工具输出、Code Mode 生成、subagent 和工作流共享的原始 JSON Schema 对应类型。它允许任意 JSON 根、仅含注解且不施加约束的 JSON 节点，以及恰好匹配一个分支的 `oneOf`；注解必须保持为无损 JSON。`assertSupportedJsonSchema()` 拒绝不受支持的构造，而 `validateJsonSchemaValue()` 返回带路径的违规信息。subagent 和工作流通过 `assertObjectJsonSchema()` 与 `ObjectJsonSchema` 保留调用方定义的对象根要求，而不是依赖共享词汇的限制。

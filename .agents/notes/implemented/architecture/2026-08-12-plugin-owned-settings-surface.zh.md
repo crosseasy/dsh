@@ -54,7 +54,7 @@ Status: implemented
 
 在本仓库之外分发的插件无需改动这里即可从设置页配置：它在 Host 上注册自己的命名空间、在浏览器里把卡片注册在该键上，由分区把两者配对。卡片现在按卡片注册顺序出现，而不再依赖手工指定的 `order`。对本包注册的这几张卡它是稳定的——它们从同一个 generator 安装；对**跨插件**的卡片它并不稳定：包与包之间的 apply 顺序是无约束的（`packages/client/AGENTS.md`），因此多个外部卡片仍可能在不同次启动之间重排。要为它们定序，需要一个 section 可排序的显式键，而 keyed 注册今天并不携带。
 
-以下延后，且都大于本次改动：脱敏器对只能经由 union、intersection 或 transform 抵达的 `role('secret')` 原样返回（其自身的 `TODO(settings-wire-redaction)`），而 `schema.toJSON()` 会携带 secret 的默认值。该缺口早于本次改动，但服务每一个已注册命名空间，把它的影响面从本仓库内经审计的 schema 扩大到任意第三方 schema，因此协议应当拒绝服务它无法证明可安全脱敏的命名空间。同样延后的还有：对本次头号能力的组装态测试——用 overlay 挂载一个 fixture 插件（Host 半注册命名空间、`dsh.client` 半注册卡片）并在端到端断言。当前覆盖分别证明了两个半侧；已发卡片输出未变这一点，证明不了新路径。
+后续的 [Settings wire 快速失败决策](../bug-fix/2026-08-25-fail-closed-settings-wire-description.zh.md)关闭了脱敏前置条件：wire 会拒绝无法证明安全的命名空间、移除 secret 默认值，并在持久化前预检写入。[`apps/web/tests/plugin-config-overlay.e2e.ts`](../../../../apps/web/tests/plugin-config-overlay.e2e.ts)通过真实 Loader 启动 overlay fixture 插件：Host 半侧注册带 secret 默认值的命名空间，`dsh.client` 半侧注册 keyed card，HTTP 响应不包含 secret 值与默认值，浏览器则渲染该卡片。
 
 分区与其中的卡片都不再新增 `settings.describe` 读取：两者都从浏览器全局的镜像派生。它的失效通知在一个方向上不精确：协议通告的是文档提交与连接重置，而非注册行为，因此在镜像当前应答之后才被注册的命名空间，要等下一次提交或重连才会加入。
 

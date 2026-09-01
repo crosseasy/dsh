@@ -34,7 +34,7 @@ import {
   InvalidPresetIdError, PresetExistsError, PresetMountError,
   PresetNotWritableError, resolveSessionPreset, UnknownPresetError,
 } from '@deepseek-ai/dsh-agent-presets'
-import type { PresetBearingSession } from '@deepseek-ai/dsh-agent-presets'
+import type { PresetBearingSession, StandingPresetLease } from '@deepseek-ai/dsh-agent-presets'
 import type {} from '@deepseek-ai/dsh-tools'
 import type {
   ApiProxy, ConfigurableProviderView, CredentialView, GoalRef, HistoryEntry, HostFrame,
@@ -80,7 +80,7 @@ import type {} from '@deepseek-ai/dsh-skill'
 // service reads stay optional (`ctx.get`) so a composition without either
 // provider still serves every other domain.
 import { SettingsConflictError, settingsNamespace } from '@deepseek-ai/dsh-settings'
-import type { SettingsDescriptor, SettingsNamespace, SettingsPathOp } from '@deepseek-ai/dsh-settings'
+import type { SettingsNamespace, SettingsPathOp, WireSettingsDescriptor } from '@deepseek-ai/dsh-settings'
 import { credentialRef } from '@deepseek-ai/dsh-credentials'
 // Value edge: the rename impl narrows the title service's validation failure; the import also resolves `ctx.get('sessionTitle')`.
 import { SessionTitleInvalidError } from '@deepseek-ai/dsh-session-title'
@@ -651,6 +651,19 @@ interface PendingQuestion {
   reject: (error: UserQuestionError) => void
   signal?: AbortSignal
   onAbort?: () => void
+}
+
+/** Scope held for one presenter or skill-catalog read. */
+interface PresenterScopeLease {
+  /** Registry scope used for presenter or skill lookups. */
+  readonly scope: ScopeKey | undefined
+  /** Release any standing preset generation held for the read. */
+  release(): Promise<void>
+}
+
+/** No-op lease for live agents and global fallbacks. */
+function emptyPresenterScopeLease(scope?: ScopeKey): PresenterScopeLease {
+  return { scope, release: () => Promise.resolve() }
 }
 
 /** Validate one answer batch against the exact question request it resolves. */
@@ -1515,7 +1528,8 @@ export function createApiProxy(ctx: Context, defaults: ApiProxyDefaults): ApiPro
   }
 
   /**
-   * The registry view scope a transcript's presenters resolve in.
+   * The registry view scope a transcript's presenters resolve in, with any
+   * temporary standing-generation hold needed for a cold read.
    *
    * A live agent is that scope itself (its chain passes through its preset's
    * standing layer). A cold session resolves its preset from the LOG, and the
@@ -1532,26 +1546,27 @@ export function createApiProxy(ctx: Context, defaults: ApiProxyDefaults): ApiPro
    * made of.
    * @param sessionId - the transcript being read.
    * @param session - that session's header and log (attached or inspected).
-   * @returns the scope to pass to presenter lookups, or undefined for global.
+   * @returns the scope lease to pass to presenter lookups, or undefined scope for global.
    */
-  async function presenterScopeFor(
+  async function presenterScopeLeaseFor(
     sessionId: SessionId,
     session: PresetBearingSession,
-  ): Promise<ScopeKey | undefined> {
+  ): Promise<PresenterScopeLease> {
     const live = ctx.get('agents')?.get(sessionId)
-    if (live !== undefined) return live
+    if (live !== undefined) return emptyPresenterScopeLease(live)
     const presets = ctx.get('agentPresets')
-    if (presets === undefined) return undefined
+    if (presets === undefined) return emptyPresenterScopeLease()
     try {
       // An unrecorded preset (a log from before the roster existed) renders
       // through the DEFAULT preset's standing layer: that is the composition
       // an unnamed session composes today, and presenters are pure display,
       // so the worst a mismatch produces is the generic card it had anyway.
-      return await presets.standingKeyFor(resolveSessionPreset(session))
+      const lease: StandingPresetLease = await presets.acquireStanding(resolveSessionPreset(session))
+      return { scope: lease.key, release: () => lease.release() }
     } catch {
       // Swallows only the unknown/unusable-preset rejection from the roster:
       // a deleted or broken preset must degrade this read, never fail it.
-      return undefined
+      return emptyPresenterScopeLease()
     }
   }
 
@@ -1866,8 +1881,8 @@ export function createApiProxy(ctx: Context, defaults: ApiProxyDefaults): ApiPro
     return { code: 'internal', message: 'credentials service is absent: this deployment does not mount a credential provider (e.g. @deepseek-ai/dsh-credentials-local) in its composition', details: {} }
   }
 
-  /** Map one redacted settings descriptor to its wire view. */
-  function namespaceView(descriptor: SettingsDescriptor): SettingsNamespaceView {
+  /** Map one fail-closed settings descriptor to its wire view. */
+  function namespaceView(descriptor: WireSettingsDescriptor): SettingsNamespaceView {
     return {
       ns: String(descriptor.ns),
       schema: descriptor.schema,
@@ -1875,16 +1890,15 @@ export function createApiProxy(ctx: Context, defaults: ApiProxyDefaults): ApiPro
       ...descriptor.base === undefined ? {} : { base: descriptor.base },
       ...descriptor.user === undefined ? {} : { user: descriptor.user },
       applies: descriptor.applies,
-      secrets: (descriptor.secrets ?? []).map(secret => ({ path: [...secret.path], set: secret.set })),
+      secrets: descriptor.secrets.map(secret => ({ path: [...secret.path], set: secret.set })),
       revision: descriptor.revision,
     }
   }
 
   /**
    * Run one settings write (merge or wholesale replace) and acknowledge with
-   * the namespace's new redacted view. Every seam refusal — unknown or invalid
-   * namespace, read-only provider, schema validation, storage — becomes one
-   * `settings-rejected` carrying the seam's own message.
+   * the namespace's new redacted view. Except for revision conflicts, every
+   * refusal uses fixed text because schema and storage errors may echo input.
    */
   async function settingsWrite(
     request: RpcRequest<unknown>,
@@ -1895,7 +1909,10 @@ export function createApiProxy(ctx: Context, defaults: ApiProxyDefaults): ApiPro
   ): Promise<RpcResponse<SettingsNamespaceView>> {
     const settings = ctx.get('settings')
     if (settings === undefined) return err(request, settingsAbsent())
-    const rejected = (error: unknown): RpcResponse<SettingsNamespaceView> => {
+    const rejected = (
+      error?: unknown,
+      message = `settings ${mode} was rejected`,
+    ): RpcResponse<SettingsNamespaceView> => {
       // A stale writer is its own outcome, not a malformed request: the client
       // must re-read and re-apply rather than treat the write as invalid.
       if (error instanceof SettingsConflictError) {
@@ -1907,7 +1924,7 @@ export function createApiProxy(ctx: Context, defaults: ApiProxyDefaults): ApiPro
       }
       return err(request, {
         code: 'settings-rejected',
-        message: error instanceof Error ? error.message : String(error),
+        message,
         details: { ns },
       })
     }
@@ -1917,16 +1934,31 @@ export function createApiProxy(ctx: Context, defaults: ApiProxyDefaults): ApiPro
     } catch (error: unknown) {
       // A malformed name can address no registration, so it fails exactly as
       // an unregistered one does.
-      return rejected(error)
+      return rejected(error, 'settings namespace is not registered')
     }
     try {
+      // Preflight before schema validation or persistence can execute
+      // callback-bearing metadata or expose an input-bearing diagnostic.
+      if (settings.describeForWire(branded) === undefined) {
+        return rejected(undefined, 'settings namespace is not registered')
+      }
+      if (!settings.writable) return rejected(undefined, 'settings provider is read-only')
       if (mode === 'update') await settings.update(branded, section, expectedRevision)
       else if (mode === 'replace') await settings.replace(branded, section, expectedRevision)
       else await settings.mutate(branded, section as SettingsPathOp[], expectedRevision)
     } catch (error: unknown) {
       return rejected(error)
     }
-    const descriptor = settings.describe({ redactSecrets: true }).find(candidate => candidate.ns === branded)
+    let descriptor: WireSettingsDescriptor | undefined
+    try {
+      descriptor = settings.describeForWire(branded)
+    } catch {
+      return err(request, {
+        code: 'internal',
+        message: 'settings changed but its namespace cannot be represented safely',
+        details: {},
+      })
+    }
     if (descriptor === undefined) {
       // The write committed but the namespace vanished before this read: only
       // a concurrent registrant disposal can produce it.
@@ -2161,14 +2193,18 @@ export function createApiProxy(ctx: Context, defaults: ApiProxyDefaults): ApiPro
           // missing every preset-owned key; and an attached session keeps
           // appending, so awaiting between the two reads would pair events cut
           // at N with a baseline folded to N+1.
-          const scope = await presenterScopeFor(sessionId, sourceSession(source))
-          const cut = historyCutOf(source, beforeSeq === undefined)
-          const page = historyPage(ctx, cut.events, beforeSeq, maxMessages, scope)
-          return ok(request, {
-            events: page.events,
-            hasMore: page.hasMore,
-            ...cut.projections === undefined ? {} : { projections: cut.projections },
-          })
+          const lease = await presenterScopeLeaseFor(sessionId, sourceSession(source))
+          try {
+            const cut = historyCutOf(source, beforeSeq === undefined)
+            const page = historyPage(ctx, cut.events, beforeSeq, maxMessages, lease.scope)
+            return ok(request, {
+              events: page.events,
+              hasMore: page.hasMore,
+              ...cut.projections === undefined ? {} : { projections: cut.projections },
+            })
+          } finally {
+            await lease.release()
+          }
         } catch (error: unknown) {
           if (error instanceof SessionNotFound) {
             return err(request, { code: 'session-not-found', message: error.message, details: { sessionId } })
@@ -3141,9 +3177,9 @@ export function createApiProxy(ctx: Context, defaults: ApiProxyDefaults): ApiPro
         // The scope presenters resolve in — the live agent, else the recorded
         // preset's standing key, else the global layer — so a cold session's
         // '/' popup lists the catalog its composition actually serves.
-        const scope = await presenterScopeFor(sessionId, session)
+        const lease = await presenterScopeLeaseFor(sessionId, session)
         try {
-          const skills = (await skillRegistry.list({ cwd, scope })).filter(isUserInvocable)
+          const skills = (await skillRegistry.list({ cwd, scope: lease.scope })).filter(isUserInvocable)
           return ok(request, {
             skills: skills.map(skill => ({
               name: skill.name,
@@ -3154,6 +3190,8 @@ export function createApiProxy(ctx: Context, defaults: ApiProxyDefaults): ApiPro
           })
         } catch (error: unknown) {
           return err(request, { code: 'internal', message: `skill listing failed: ${String(error)}`, details: {} })
+        } finally {
+          await lease.release()
         }
       },
     },
@@ -3162,11 +3200,19 @@ export function createApiProxy(ctx: Context, defaults: ApiProxyDefaults): ApiPro
       describe(request) {
         const settings = ctx.get('settings')
         if (settings === undefined) return Promise.resolve(err(request, settingsAbsent()))
-        return Promise.resolve(ok(request, {
-          writable: settings.writable,
-          hasDocument: settings.documentPath !== undefined,
-          namespaces: settings.describe({ redactSecrets: true }).map(namespaceView),
-        }))
+        try {
+          return Promise.resolve(ok(request, {
+            writable: settings.writable,
+            hasDocument: settings.documentPath !== undefined,
+            namespaces: settings.describeForWire().map(namespaceView),
+          }))
+        } catch {
+          return Promise.resolve(err(request, {
+            code: 'internal',
+            message: 'settings include a namespace that cannot be represented safely',
+            details: {},
+          }))
+        }
       },
       async openDocument(request, signal) {
         const settings = ctx.get('settings')

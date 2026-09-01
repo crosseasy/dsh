@@ -38,6 +38,7 @@ apps/web/dist/
 .worktrees/
 worktrees/
 .agents/worktrees/
+.agents/notes/implemented/
 .typert-*/
 .superpowers/
 .trae/

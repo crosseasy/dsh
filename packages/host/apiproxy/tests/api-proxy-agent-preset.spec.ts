@@ -75,10 +75,10 @@ function roster(ids: readonly string[], userIds: readonly string[] = []): unknow
       if (!ids.includes(id)) return Promise.reject(new UnknownPresetError(id, ids))
       return Promise.resolve({ id, trust: 'system', path: `/presets/${id}.yml` })
     },
-    // The standing scope key a cold transcript read resolves presenters in.
-    standingKeyFor: (id?: string) => {
+    // The standing scope key a cold read leases while it resolves presenters.
+    acquireStanding: (id?: string) => {
       const wanted = id ?? ids[0] ?? ''
-      standingKeyRequests.push(wanted)
+      standingLeaseRequests.push(wanted)
       if (!ids.includes(wanted) || failingStandingKeys.has(wanted)) {
         return Promise.reject(new UnknownPresetError(wanted, ids))
       }
@@ -87,14 +87,26 @@ function roster(ids: readonly string[], userIds: readonly string[] = []): unknow
         key = { agentPreset: wanted }
         standingKeys.set(wanted, key)
       }
-      return Promise.resolve(key)
+      let released = false
+      return Promise.resolve({
+        presetId: wanted,
+        key,
+        release: () => {
+          if (!released) {
+            released = true
+            standingLeaseReleases.push(wanted)
+          }
+          return Promise.resolve()
+        },
+      })
     },
   }
 }
 
 /** Standing keys the roster double minted, and the ids readers asked for. */
 const standingKeys = new Map<string, object>()
-const standingKeyRequests: string[] = []
+const standingLeaseRequests: string[] = []
+const standingLeaseReleases: string[] = []
 /** Preset ids whose standing mount the double reports as unusable. */
 const failingStandingKeys = new Set<string>()
 
@@ -647,11 +659,31 @@ describe('skills over the layered host registry', () => {
       },
     } as never)
     ctx.sessions.create(SessionId('h2'), { meta: { cwd: '/workspace/cold', agentPreset: 'minimal' } })
+    standingLeaseRequests.length = 0
+    standingLeaseReleases.length = 0
 
     const response = await api.skills.list(request({ sessionId: SessionId('h2') }))
 
     expect(response.result).toMatchObject({ ok: true, value: { skills: [] } })
     expect(seen).toEqual([standingKeys.get('minimal')])
+    expect(standingLeaseRequests).toEqual(['minimal'])
+    expect(standingLeaseReleases).toEqual(['minimal'])
+  })
+
+  it('releases a cold session skill lease when listing fails', async () => {
+    const { api, ctx } = await harness(['standard', 'minimal'])
+    ctx.provide('skills', {
+      list: () => Promise.reject(new Error('catalog unavailable')),
+    } as never)
+    ctx.sessions.create(SessionId('h2b'), { meta: { cwd: '/workspace/cold', agentPreset: 'minimal' } })
+    standingLeaseRequests.length = 0
+    standingLeaseReleases.length = 0
+
+    const response = await api.skills.list(request({ sessionId: SessionId('h2b') }))
+
+    expect(response.result.ok).toBe(false)
+    expect(standingLeaseRequests).toEqual(['minimal'])
+    expect(standingLeaseReleases).toEqual(['minimal'])
   })
 
   it('serves the global view when the roster no longer supplies the recorded preset', async () => {
@@ -664,11 +696,15 @@ describe('skills over the layered host registry', () => {
       },
     } as never)
     ctx.sessions.create(SessionId('h3'), { meta: { cwd: '/workspace/cold', agentPreset: 'gone' } })
+    standingLeaseRequests.length = 0
+    standingLeaseReleases.length = 0
 
     const response = await api.skills.list(request({ sessionId: SessionId('h3') }))
 
     expect(response.result).toMatchObject({ ok: true, value: { skills: [] } })
     expect(seen).toEqual([undefined])
+    expect(standingLeaseRequests).toEqual(['gone'])
+    expect(standingLeaseReleases).toEqual([])
   })
 })
 
@@ -679,11 +715,13 @@ describe('session.history presenter scope', () => {
     // Cold: creation registered a live agent in this harness, so simulate the
     // cold path by asking for a session only persistence knows... the harness
     // has no persistence, so read the live one and assert no roster query.
-    standingKeyRequests.length = 0
+    standingLeaseRequests.length = 0
+    standingLeaseReleases.length = 0
     const live = await api.sessions.history(request({ sessionId: SessionId('p1') }))
     expect(live.result.ok).toBe(true)
     // A live agent IS the presenter scope; the roster is not consulted.
-    expect(standingKeyRequests).toEqual([])
+    expect(standingLeaseRequests).toEqual([])
+    expect(standingLeaseReleases).toEqual([])
   })
 
   it('resolves a switched session from the LOG, not its creation header', async () => {
@@ -700,11 +738,13 @@ describe('session.history presenter scope', () => {
       }),
     })
 
-    standingKeyRequests.length = 0
+    standingLeaseRequests.length = 0
+    standingLeaseReleases.length = 0
     const response = await api.sessions.history(request({ sessionId: SessionId('p4') }))
 
     expect(response.result.ok).toBe(true)
-    expect(standingKeyRequests).toEqual(['minimal'])
+    expect(standingLeaseRequests).toEqual(['minimal'])
+    expect(standingLeaseReleases).toEqual(['minimal'])
   })
 
   it('serves a COLD transcript whose standing mount is no longer usable', async () => {
@@ -717,11 +757,13 @@ describe('session.history presenter scope', () => {
     // The preset broke after the session ran: the roster rejects the mount.
     failingStandingKeys.add('standard')
     try {
-      standingKeyRequests.length = 0
+      standingLeaseRequests.length = 0
+      standingLeaseReleases.length = 0
       const response = await api.sessions.history(request({ sessionId: SessionId('p3') }))
       // Degraded, never failed: the roster WAS asked, and the transcript
       // still serves — with the generic cards a viewless entry renders.
-      expect(standingKeyRequests).toEqual(['standard'])
+      expect(standingLeaseRequests).toEqual(['standard'])
+      expect(standingLeaseReleases).toEqual([])
       expect(response.result.ok).toBe(true)
     } finally {
       failingStandingKeys.delete('standard')

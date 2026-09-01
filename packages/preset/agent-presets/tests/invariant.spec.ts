@@ -133,7 +133,11 @@ describe('agent-presets invariants', () => {
     // has no parent of its own, so a chain-length rule would reject the cold
     // read that resolves presenters in it. `context.agent` is what keeps this
     // check to agent assemblies.
-    const standing = await ctx.agentPresets.standingKeyFor('standard')
-    await expect(ctx.systemPrompt.assemble({ scope: standing })).resolves.toBeDefined()
+    const standing = await ctx.agentPresets.acquireStanding('standard')
+    try {
+      await expect(ctx.systemPrompt.assemble({ scope: standing.key })).resolves.toBeDefined()
+    } finally {
+      await standing.release()
+    }
   })
 })

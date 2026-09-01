@@ -8,7 +8,8 @@ import SessionStore, {
   type UserMessage,
 } from '@deepseek-ai/dsh-session'
 import SystemPrompt from '@deepseek-ai/dsh-system-prompt'
-import ToolRuntime, { defineContentToolFixture, type PostToolDecision, type PreToolDecision } from '@deepseek-ai/dsh-tools'
+import ToolRuntime, { type PostToolDecision, type PreToolDecision } from '@deepseek-ai/dsh-tools'
+import { defineContentToolFixture } from '@deepseek-ai/dsh-tools/testing'
 import AgentRegistry, {
   type Agent,
   type PreStepDecision,

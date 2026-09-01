@@ -16,7 +16,7 @@ An ordinary child failure produces an error naming the failed round and retainin
 
 ## Lifecycle and cancellation
 
-The caller's agent is the parent of every fresh child, preserving cwd and lineage without copying its conversation. `exec.signal` enters the workflow engine and is also bridged to `run.cancel()` for implementation independence. The tool awaits `run.result` and calls `run.dispose()` in `finally`, so a cancelled parent step waits for the engine's bounded termination and child quiescence before returning.
+The caller's agent is the parent of every fresh child, preserving cwd and lineage without copying its conversation. An already-aborted `exec.signal` prevents startup; after `start()` returns, the tool attaches an at-most-once bridge to `run.cancel()` and immediately rechecks for an abort during synchronous start. The bridge is detached before `run.dispose()` in `finally`, so a cancelled parent step waits for the engine's bounded termination and child quiescence before returning.
 
 ## Render intent
 

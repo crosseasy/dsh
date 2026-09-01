@@ -21,9 +21,67 @@ class BareProvider extends SettingsProvider {
     return Promise.resolve(structuredClone(this.doc))
   }
 
-  protected persist(ns: SettingsNamespace, section: Record<string, unknown>): Promise<void> {
+  protected persist(
+    ns: SettingsNamespace,
+    section: Record<string, unknown>,
+    assertRevision: () => void,
+  ): Promise<void> {
+    assertRevision()
     this.doc[ns] = structuredClone(section)
     return Promise.resolve()
+  }
+}
+
+interface Deferred {
+  promise: Promise<void>
+  resolve(): void
+}
+
+/** Provider fixture with one-shot persist blocking/failure controls for lifecycle races. */
+class ControlledPersistProvider extends SettingsProvider {
+  doc: Record<string, unknown>
+  persisted: Array<{ ns: SettingsNamespace; section: Record<string, unknown> }> = []
+  blockNextPersist = false
+  failNextPersist = false
+  publishNextPersist = false
+  blockedPersists: Array<Deferred> = []
+
+  constructor(ctx: ConstructorParameters<typeof SettingsProvider>[0], options?: { doc?: Record<string, unknown> }) {
+    super(ctx)
+    this.doc = structuredClone(options?.doc ?? {})
+  }
+
+  get writable(): boolean {
+    return true
+  }
+
+  protected load(): Promise<Record<string, unknown>> {
+    return Promise.resolve(structuredClone(this.doc))
+  }
+
+  protected async persist(
+    ns: SettingsNamespace,
+    section: Record<string, unknown>,
+    assertRevision: () => void,
+  ): Promise<void> {
+    if (this.failNextPersist) {
+      this.failNextPersist = false
+      throw new Error('controlled persist failed')
+    }
+    if (this.blockNextPersist) {
+      this.blockNextPersist = false
+      let resolve!: () => void
+      const promise = new Promise<void>((settled) => { resolve = settled })
+      this.blockedPersists.push({ promise, resolve })
+      await promise
+    }
+    assertRevision()
+    this.persisted.push({ ns, section: structuredClone(section) })
+    this.doc[ns] = structuredClone(section)
+    if (this.publishNextPersist) {
+      this.publishNextPersist = false
+      this.publish(structuredClone(this.doc))
+    }
   }
 }
 
@@ -526,6 +584,295 @@ describe('second review regressions', () => {
   })
 })
 
+describe('registration disposal lifecycle', () => {
+  it('waits for an already-started watcher before the registrant fiber disposal resolves', async () => {
+    const { ctx, provider } = await boot()
+    let scope: SettingsScope<ThemeConfig> | undefined
+    const fiber = ctx.plugin({
+      inject: ['settings'],
+      apply: (child: Context) => {
+        scope = child.settings.register(settingsNamespace('ui-theme'), ThemeSchema)
+      },
+    })
+    await fiber
+    let release: (() => void) | undefined
+    let finished = false
+    scope!.watch(async () => {
+      await new Promise<void>((resolve) => { release = resolve })
+      finished = true
+    })
+
+    provider.pushExternal({ 'ui-theme': { theme: 'light' } })
+    await vi.waitFor(() => { expect(release).toBeDefined() })
+    let disposed = false
+    const disposal = fiber.dispose().then(() => { disposed = true })
+    await new Promise(resolve => setTimeout(resolve, 15))
+    expect(disposed).toBe(false)
+    release!()
+    await disposal
+    expect(finished).toBe(true)
+  })
+
+  it('skips watcher invocations still queued when the registrant fiber disposes', async () => {
+    const { ctx, provider } = await boot()
+    let scope: SettingsScope<ThemeConfig> | undefined
+    const fiber = ctx.plugin({
+      inject: ['settings'],
+      apply: (child: Context) => {
+        scope = child.settings.register(settingsNamespace('ui-theme'), ThemeSchema)
+      },
+    })
+    await fiber
+    const seen: number[] = []
+    let release: (() => void) | undefined
+    scope!.watch(async (next) => {
+      seen.push(next.fontSize)
+      if (next.fontSize === 1) {
+        await new Promise<void>((resolve) => { release = resolve })
+      }
+    })
+
+    provider.pushExternal({ 'ui-theme': { fontSize: 1 } })
+    await vi.waitFor(() => { expect(release).toBeDefined() })
+    provider.pushExternal({ 'ui-theme': { fontSize: 2 } })
+    const disposal = fiber.dispose()
+    release!()
+    await disposal
+    await new Promise(resolve => setTimeout(resolve, 10))
+    expect(seen).toEqual([1])
+  })
+
+  it('resynchronizes a replacement registration after an old owner write persists', async () => {
+    const ctx = new Context()
+    const providerFiber = ctx.plugin(ControlledPersistProvider)
+    await providerFiber
+    const provider = ctx.settings as ControlledPersistProvider
+    const ns = settingsNamespace('ui-theme')
+    provider.blockNextPersist = true
+
+    let oldScope: SettingsScope<ThemeConfig> | undefined
+    const oldFiber = ctx.plugin({
+      inject: ['settings'],
+      apply: (child: Context) => {
+        oldScope = child.settings.register(ns, ThemeSchema)
+      },
+    })
+    await oldFiber
+    const oldWrite = oldScope!.update({ theme: 'light' })
+    await vi.waitFor(() => { expect(provider.blockedPersists).toHaveLength(1) })
+    await oldFiber.dispose()
+
+    let replacementScope: SettingsScope<ThemeConfig> | undefined
+    const replacementWatcher = vi.fn()
+    const replacementFiber = ctx.plugin({
+      inject: ['settings'],
+      apply: (child: Context) => {
+        replacementScope = child.settings.register(ns, ThemeSchema)
+        replacementScope.watch(replacementWatcher)
+      },
+    })
+    await replacementFiber
+    expect(replacementScope!.get()).toEqual({ theme: 'dark', fontSize: 14 })
+
+    provider.blockedPersists[0]!.resolve()
+    await oldWrite
+    await vi.waitFor(() => {
+      expect(replacementWatcher).toHaveBeenCalledWith(
+        { theme: 'light', fontSize: 14 },
+        { theme: 'dark', fontSize: 14 },
+      )
+    })
+    expect(replacementScope!.get()).toEqual({ theme: 'light', fontSize: 14 })
+    expect(ctx.settings.describe().find(d => d.ns === ns)!.revision).toBe(1)
+    await replacementFiber.dispose()
+    await providerFiber.dispose()
+  })
+
+  it('does not advance a replacement revision again when persist publishes the same section', async () => {
+    const ctx = new Context()
+    const providerFiber = ctx.plugin(ControlledPersistProvider)
+    await providerFiber
+    const provider = ctx.settings as ControlledPersistProvider
+    const ns = settingsNamespace('ui-theme')
+    provider.blockNextPersist = true
+    provider.publishNextPersist = true
+
+    let oldScope: SettingsScope<ThemeConfig> | undefined
+    const oldFiber = ctx.plugin({
+      inject: ['settings'],
+      apply: (child: Context) => {
+        oldScope = child.settings.register(ns, ThemeSchema)
+      },
+    })
+    await oldFiber
+    const oldWrite = oldScope!.update({ theme: 'light' })
+    await vi.waitFor(() => { expect(provider.blockedPersists).toHaveLength(1) })
+    await oldFiber.dispose()
+
+    let replacementScope: SettingsScope<ThemeConfig> | undefined
+    const replacementWatcher = vi.fn()
+    const documentEvents: Array<[string, number]> = []
+    ctx.on('settings/document-updated', (namespace, revision) => {
+      documentEvents.push([String(namespace), revision])
+    })
+    const replacementFiber = ctx.plugin({
+      inject: ['settings'],
+      apply: (child: Context) => {
+        replacementScope = child.settings.register(ns, ThemeSchema)
+        replacementScope.watch(replacementWatcher)
+      },
+    })
+    await replacementFiber
+
+    provider.blockedPersists[0]!.resolve()
+    await oldWrite
+    await vi.waitFor(() => {
+      expect(replacementWatcher).toHaveBeenCalledTimes(1)
+    })
+
+    expect(replacementScope!.get()).toEqual({ theme: 'light', fontSize: 14 })
+    expect({
+      revision: ctx.settings.describe().find(d => d.ns === ns)!.revision,
+      documentEvents,
+    }).toEqual({
+      revision: 1,
+      documentEvents: [['ui-theme', 1]],
+    })
+    await replacementFiber.dispose()
+    await providerFiber.dispose()
+  })
+
+  it('advances the replacement raw revision when an old write is incompatible with its schema', async () => {
+    const ctx = new Context()
+    const providerFiber = ctx.plugin(ControlledPersistProvider)
+    await providerFiber
+    const provider = ctx.settings as ControlledPersistProvider
+    const ns = settingsNamespace('ui-theme')
+    provider.blockNextPersist = true
+
+    let oldScope: SettingsScope<ThemeConfig> | undefined
+    const oldFiber = ctx.plugin({
+      inject: ['settings'],
+      apply: (child: Context) => {
+        oldScope = child.settings.register(ns, ThemeSchema)
+      },
+    })
+    await oldFiber
+    const oldWrite = oldScope!.update({ theme: 'light' })
+    await vi.waitFor(() => { expect(provider.blockedPersists).toHaveLength(1) })
+    await oldFiber.dispose()
+
+    const replacementSchema: z<{ theme: number }> = z.object({
+      theme: z.number().default(0),
+    })
+    let replacementScope: SettingsScope<{ theme: number }> | undefined
+    const replacementWatcher = vi.fn()
+    const resolvedEvents = recordUpdates(ctx)
+    const documentEvents: Array<[string, number]> = []
+    ctx.on('settings/document-updated', (namespace, revision) => {
+      documentEvents.push([String(namespace), revision])
+    })
+    const replacementFiber = ctx.plugin({
+      inject: ['settings'],
+      apply: (child: Context) => {
+        replacementScope = child.settings.register(ns, replacementSchema)
+        replacementScope.watch(replacementWatcher)
+      },
+    })
+    await replacementFiber
+
+    provider.blockedPersists[0]!.resolve()
+    await oldWrite
+
+    expect(provider.doc['ui-theme']).toEqual({ theme: 'light' })
+    expect(ctx.settings.describe().find(d => d.ns === ns)!.revision).toBe(1)
+    expect(documentEvents).toEqual([['ui-theme', 1]])
+    expect(replacementScope!.get()).toEqual({ theme: 0 })
+    expect(replacementWatcher).not.toHaveBeenCalled()
+    expect(resolvedEvents).toEqual([])
+    await replacementFiber.dispose()
+    await providerFiber.dispose()
+  })
+
+  it('keeps a failed old persist from poisoning replacement owner writes', async () => {
+    const ctx = new Context()
+    const providerFiber = ctx.plugin(ControlledPersistProvider)
+    await providerFiber
+    const provider = ctx.settings as ControlledPersistProvider
+    const ns = settingsNamespace('ui-theme')
+    provider.failNextPersist = true
+
+    let oldScope: SettingsScope<ThemeConfig> | undefined
+    const oldFiber = ctx.plugin({
+      inject: ['settings'],
+      apply: (child: Context) => {
+        oldScope = child.settings.register(ns, ThemeSchema)
+      },
+    })
+    await oldFiber
+    await expect(oldScope!.update({ theme: 'light' })).rejects.toThrow(/controlled persist failed/)
+    await oldFiber.dispose()
+
+    let replacementScope: SettingsScope<ThemeConfig> | undefined
+    const replacementFiber = ctx.plugin({
+      inject: ['settings'],
+      apply: (child: Context) => {
+        replacementScope = child.settings.register(ns, ThemeSchema)
+      },
+    })
+    await replacementFiber
+    await replacementScope!.update({ fontSize: 20 })
+    expect(replacementScope!.get()).toEqual({ theme: 'dark', fontSize: 20 })
+    expect(provider.doc['ui-theme']).toEqual({ fontSize: 20 })
+    await replacementFiber.dispose()
+    await providerFiber.dispose()
+  })
+
+  it('rejects a new watcher on a disposed registration scope', async () => {
+    const { ctx } = await boot()
+    let scope: SettingsScope<ThemeConfig> | undefined
+    const fiber = ctx.plugin({
+      inject: ['settings'],
+      apply: (child: Context) => {
+        scope = child.settings.register(settingsNamespace('ui-theme'), ThemeSchema)
+      },
+    })
+    await fiber
+    await fiber.dispose()
+    expect(() => scope!.watch(() => undefined)).toThrow(/registration is disposed/)
+  })
+
+  it('rejects writes through a disposed scope after a replacement registers the namespace', async () => {
+    const ctx = new Context()
+    const providerFiber = ctx.plugin(ControlledPersistProvider)
+    await providerFiber
+    const ns = settingsNamespace('ui-theme')
+
+    let oldScope: SettingsScope<ThemeConfig> | undefined
+    const oldFiber = ctx.plugin({
+      inject: ['settings'],
+      apply: (child: Context) => {
+        oldScope = child.settings.register(ns, ThemeSchema)
+      },
+    })
+    await oldFiber
+    await oldFiber.dispose()
+
+    let replacementScope: SettingsScope<ThemeConfig> | undefined
+    const replacementFiber = ctx.plugin({
+      inject: ['settings'],
+      apply: (child: Context) => {
+        replacementScope = child.settings.register(ns, ThemeSchema)
+      },
+    })
+    await replacementFiber
+    await expect(oldScope!.update({ theme: 'light' })).rejects.toThrow(/registration is disposed/)
+    expect(replacementScope!.get()).toEqual({ theme: 'dark', fontSize: 14 })
+    await replacementFiber.dispose()
+    await providerFiber.dispose()
+  })
+})
+
 describe('publish', () => {
   it('notifies watchers of an external change with source provider', async () => {
     const { ctx, provider } = await boot()
@@ -552,6 +899,63 @@ describe('publish', () => {
     provider.pushExternal({ 'ui-theme': { theme: 'light' } })
     expect(watcher).not.toHaveBeenCalled()
     expect(events).toEqual([])
+  })
+
+  it('advances raw state when an external section is incompatible with the schema', async () => {
+    const { ctx, provider } = await boot()
+    const ns = settingsNamespace('ui-theme')
+    const resolvedEvents = recordUpdates(ctx)
+    const documentEvents: Array<[string, number]> = []
+    ctx.on('settings/document-updated', (namespace, revision) => {
+      documentEvents.push([String(namespace), revision])
+    })
+    const scope = ctx.settings.register(ns, ThemeSchema)
+    const watcher = vi.fn()
+    scope.watch(watcher)
+    const openedRevision = ctx.settings.describe().find(d => d.ns === ns)!.revision
+
+    provider.pushExternal({ 'ui-theme': { fontSize: 'broken' } })
+
+    const descriptor = ctx.settings.describe().find(d => d.ns === ns)!
+    expect(descriptor.user).toEqual({ fontSize: 'broken' })
+    expect(descriptor.revision).toBe(1)
+    expect(documentEvents).toEqual([['ui-theme', 1]])
+    expect(scope.get()).toEqual({ theme: 'dark', fontSize: 14 })
+    expect(watcher).not.toHaveBeenCalled()
+    expect(resolvedEvents).toEqual([])
+    await expect(ctx.settings.update(ns, { fontSize: 18 }, openedRevision))
+      .rejects.toThrow(SettingsConflictError)
+  })
+
+  it('advances raw state when an external section is not an object', async () => {
+    const { ctx, provider } = await boot()
+    const ns = settingsNamespace('ui-theme')
+    const resolvedEvents = recordUpdates(ctx)
+    const documentEvents: Array<[string, number]> = []
+    ctx.on('settings/document-updated', (namespace, revision) => {
+      documentEvents.push([String(namespace), revision])
+    })
+    const scope = ctx.settings.register(ns, ThemeSchema)
+    const watcher = vi.fn()
+    scope.watch(watcher)
+
+    provider.pushExternal({ 'ui-theme': 'broken' })
+    expect(provider.doc['ui-theme']).toBe('broken')
+    expect(scope.get()).toEqual({ theme: 'dark', fontSize: 14 })
+    expect(watcher).not.toHaveBeenCalled()
+    expect(resolvedEvents).toEqual([])
+
+    provider.pushExternal({})
+    const descriptor = ctx.settings.describe().find(d => d.ns === ns)!
+    expect(descriptor.user).toBeUndefined()
+    expect(descriptor.revision).toBe(2)
+    expect(documentEvents).toEqual([
+      ['ui-theme', 1],
+      ['ui-theme', 2],
+    ])
+    expect(scope.get()).toEqual({ theme: 'dark', fontSize: 14 })
+    expect(watcher).not.toHaveBeenCalled()
+    expect(resolvedEvents).toEqual([])
   })
 
   it('keeps the last good value for an invalid section while other namespaces commit', async () => {
@@ -833,7 +1237,7 @@ describe('mutate (path-addressed writes)', () => {
     // rebuilds the section from what it holds. A wholesale replace of that
     // rebuild deletes the stored literal key; a path unset cannot.
     const ctx = await mounted({ keyed: { apiKey: 'sk-stored', baseURL: 'https://user', reasoning: 'high' } })
-    const redacted = ctx.settings.describe({ redactSecrets: true }).find(d => d.ns === KEYED)!
+    const redacted = ctx.settings.describeForWire().find(d => d.ns === KEYED)!
     expect(redacted.user).toEqual({ baseURL: 'https://user', reasoning: 'high' })
 
     await ctx.settings.mutate(KEYED, [{ op: 'unset', path: ['baseURL'] }])
@@ -1015,7 +1419,7 @@ describe('revision and conflict detection', () => {
     const documents: Array<[string, number]> = []
     ctx.on('settings/document-updated', (ns, revision) => { documents.push([String(ns), revision]) })
     settings.publish({ rev: { b: 'repaired by hand' } })
-    expect(documents).toEqual([['rev', 1]])
+    expect(documents).toEqual([['rev', 2]])
   })
 
   it('contains a throwing document listener and keeps the rest of the fan-out running', async () => {

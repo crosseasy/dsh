@@ -590,6 +590,36 @@ describe('LocalPtySession readiness and output', () => {
     expect((await next.done).waitReason).toBe('inferred_idle')
   })
 
+  it('releases a timed-out cancellation when the provider write later rejects', async () => {
+    vi.useFakeTimers()
+    const terminal = new FakeTerminal()
+    const inspector = new FakeInspector()
+    const session = makeSession(terminal, inspector, config())
+    await initialize(session, terminal)
+
+    const writeGate = Promise.withResolvers<undefined>()
+    terminal.write = async () => { await writeGate.promise }
+    const operation = session.startSend({ text: 'slow rejected write', submit: true })
+    await Promise.resolve()
+    await Promise.resolve()
+    expect(operation.cancel()).toBe(true)
+
+    await vi.advanceTimersByTimeAsync(100)
+    expect((await operation.done).waitReason).toBe('timeout')
+    expect(() => session.startSend({ text: 'must wait', submit: true })).toThrow(expect.objectContaining({
+      code: 'SEND_ACTIVE',
+    }))
+
+    writeGate.reject(new Error('write failed after timeout'))
+    await Promise.resolve()
+    await Promise.resolve()
+    expect(inspector.groups).toEqual([])
+
+    const next = session.startSend({ text: '', submit: false })
+    await vi.advanceTimersByTimeAsync(100)
+    expect((await next.done).waitReason).toBe('inferred_idle')
+  })
+
   it('retains the absolute timeout after cancellation while output stays active', async () => {
     vi.useFakeTimers()
     const terminal = new FakeTerminal()

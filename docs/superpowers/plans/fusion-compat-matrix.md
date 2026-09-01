@@ -111,7 +111,7 @@ Task 3 的 system-root 副本是 canonical Liangshen。dsh 的 preset roots 按 
 
 ## COMPAT records
 
-```ts
+```text
 COMPAT['@liustack/modlens'] = { compatibleDshVersion: '0.1.0-rc.7', pkgVersion: '3.21.1', status: 'ok', notes: 'runtime-modlens-rc7 PASS; Web 53101; Chrome CDP 9333 clean' }
 COMPAT['dsh-better-sidebar'] = { compatibleDshVersion: '0.1.0-rc.7', pkgVersion: '0.13.1', status: 'ok', notes: 'runtime-sidebar-rc7 PASS; Web 53102; Chrome CDP 9333 clean; node-pty explicitly allowed in the temporary profile' }
 COMPAT['@linxin666/dsh-client-ui-web-ui-settings'] = { compatibleDshVersion: '0.1.0-rc.7', pkgVersion: '0.2.2', status: 'ok', notes: 'runtime-webui-rc7 PASS; row ui-web-ui-settings' }

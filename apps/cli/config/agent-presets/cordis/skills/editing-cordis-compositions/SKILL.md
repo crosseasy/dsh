@@ -36,7 +36,7 @@ Read `cordis_inspect what:"api" name:"agentPresets"` for the current signatures 
 - `list()` — every preset with its `id`, `trust` (`system` for the shipped set, `user` for authored ones), and the absolute `path` of its composition file. This is how you locate any composition without knowing the install layout; the directory is that path's parent.
 - `read(id)` — one preset's composition text, without a file tool or a path.
 - `copy(from, id, name?)` — the only authoring write (see below).
-- `standingKeyFor(id)` — mount-validate one preset (see below).
+- `acquireStanding(id)` — mount-validate one preset and return a lease whose `key` is the registry view scope (see below). Release the lease in `finally`.
 
 ```js
 return {
@@ -49,11 +49,14 @@ return {
       parameters: { id: { type: 'string', required: true } },
       output: { schema: { type: 'string' }, render(_a, v) { return [{ type: 'text', text: v }] } },
       async execute(args) {
+        let lease
         try {
-          await ctx.agentPresets.standingKeyFor(args.id)
-          return 'mounted OK'
+          lease = await ctx.agentPresets.acquireStanding(args.id)
+          return `mounted OK: ${lease.key}`
         } catch (error) {
           return error.message
+        } finally {
+          await lease?.release()
         }
       },
     }))
@@ -104,14 +107,14 @@ Realms are for services a preset owns, not for every group. A host capability th
 
 ## Verifying a change
 
-**`standingKeyFor(id)` is the check.** It composes the preset's plugin subtree for real — the same mount a session start performs, minus the agent — and rejects the four ways a composition fails:
+**`acquireStanding(id)` is the check.** It composes the preset's plugin subtree for real — the same mount a session start performs, minus the agent — and returns a lease whose `key` is the registry view scope for that standing generation. Release that lease in a `finally` block. It rejects the four ways a composition fails:
 
 - a row whose package does not resolve (`Cannot find package …`);
 - a row whose config is invalid (`invalid config: $.<field> missing required value`);
 - a row that never activated (`N row(s) did not activate: <id>: waiting for <service>`);
 - a service published into the root realm, which arrives as one of two messages. A name the host does not supply lands in the root realm and the mount audit rejects it: `row(s) published process-global service(s) [<name>]; a preset service must sit behind an isolate realm or move to the host composition` — this is the shape a preset's own forgotten realm takes. A name the host already supplies collides before the audit: `service "<name>" has been registered at <Owner>`. Both name the offending service.
 
-It returns normally when the composition mounts. Run it as the final check on a finished edit rather than after every line: a successful mount installs a standing generation that lives until the process exits, while a failed one disposes its subtree and leaves nothing behind.
+It returns a lease when the composition mounts. Run it as the final check on a finished edit rather than after every line: a successful mount installs the current standing generation, releasing the lease ends the probe's holder, and a failed mount disposes its subtree and leaves nothing behind.
 
 **Do not treat the roster's `broken` field as validation.** `list()` reports `broken` from a shape check — the file parses in the loader's YAML dialect and holds named rows — which every failure above passes. It catches a damaged file, not an unusable composition.
 

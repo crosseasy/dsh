@@ -57,7 +57,7 @@ export interface WorkflowMeta {
 /**
  * Why a run settled. CLOSED union (engine-owned, consumers may exhaust):
  * `completed` = the script ran to its final `return`; `cancelled` = the run
- * was cancelled (caller `cancel()`/signal); `error` = the script threw, a
+ * holder cancelled the returned run; `error` = the script threw, a
  * fatal `WorkflowError` propagated, or the result failed materialization.
  */
 export type WorkflowStopReason = 'completed' | 'cancelled' | 'error'

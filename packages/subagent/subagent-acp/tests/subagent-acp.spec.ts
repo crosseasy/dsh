@@ -1,14 +1,16 @@
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 import { Context } from '@deepseek-ai/cordis'
 import Loader from '@deepseek-ai/cordis-plugin-loader'
+import { ClientSideConnection } from '@agentclientprotocol/sdk'
 import { chmodSync, existsSync, mkdtempSync, realpathSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
+import { PassThrough } from 'node:stream'
 import { fileURLToPath } from 'node:url'
 import SubagentRuntime from '@deepseek-ai/dsh-subagent'
 import type { Agent } from '@deepseek-ai/dsh-agent'
 import { MAX_TIMER_DELAY_MS } from '@deepseek-ai/dsh-timeout'
-import type { SubprocessOutcome } from '@deepseek-ai/dsh-subprocess'
+import type { SubprocessHandle, SubprocessOutcome } from '@deepseek-ai/dsh-subprocess'
 import * as acp from '../src/index.ts'
 import { acpStopReason, acpContentText, DEFAULT_DISPOSE_EOF_GRACE_MS, DEFAULT_DISPOSE_GRACE_MS, disposeAcpChild, startAcpRun, toAcpPrompt, type AcpRunSpec } from '../src/run.ts'
 import LocalSubprocessRuntime from '@deepseek-ai/dsh-subprocess-local'
@@ -385,6 +387,128 @@ describe('cwd resolution', () => {
 })
 
 describe('dsh-subagent-acp', () => {
+  it('keeps a completed result when cancellation follows the winning completion microtask', async () => {
+    const prompt = Promise.withResolvers<{ stopReason: 'end_turn' }>()
+    const stdin = new PassThrough()
+    const stdout = new PassThrough()
+    const child = {
+      pid: 1,
+      stdin,
+      stdout,
+      stderr: undefined,
+      collected: {},
+      done: Promise.resolve({ exitCode: 0, signal: null }),
+      terminate: vi.fn(),
+      waitForExit: vi.fn(() => {
+        stdout.end()
+        return Promise.resolve(true)
+      }),
+    } satisfies SubprocessHandle
+    const initialize = vi.spyOn(ClientSideConnection.prototype, 'initialize').mockResolvedValue({} as never)
+    const newSession = vi.spyOn(ClientSideConnection.prototype, 'newSession').mockResolvedValue({ sessionId: 'remote' })
+    const promptCall = vi.spyOn(ClientSideConnection.prototype, 'prompt').mockReturnValue(prompt.promise)
+    const cancel = vi.spyOn(ClientSideConnection.prototype, 'cancel').mockResolvedValue()
+    const controller = new AbortController()
+    const removeAbortListener = vi.spyOn(controller.signal, 'removeEventListener')
+
+    try {
+      const run = await startAcpRun(request('p', controller.signal), {
+        command: 'controlled-acp',
+        args: [],
+        cwd: process.cwd(),
+        permission: 'reject',
+        env: {},
+        disposeEofGraceMs: DEFAULT_DISPOSE_EOF_GRACE_MS,
+        disposeGraceMs: DEFAULT_DISPOSE_GRACE_MS,
+        spawn: () => child,
+      })
+      stdout.write(`${JSON.stringify({
+        jsonrpc: '2.0',
+        method: 'session/update',
+        params: {
+          sessionId: 'remote',
+          update: {
+            sessionUpdate: 'agent_message_chunk',
+            content: { type: 'text', text: 'completed output' },
+          },
+        },
+      })}\n`)
+      await new Promise<void>(resolve => setImmediate(resolve))
+
+      prompt.resolve({ stopReason: 'end_turn' })
+      queueMicrotask(() => {
+        queueMicrotask(() => { controller.abort() })
+      })
+
+      await expect(run.result).resolves.toEqual({
+        output: [{ type: 'text', text: 'completed output' }],
+        stopReason: 'completed',
+      })
+      expect(removeAbortListener).toHaveBeenCalledOnce()
+      expect(removeAbortListener).toHaveBeenCalledWith('abort', expect.any(Function))
+      await run.dispose()
+    } finally {
+      initialize.mockRestore()
+      newSession.mockRestore()
+      promptCall.mockRestore()
+      cancel.mockRestore()
+      stdin.destroy()
+      stdout.destroy()
+    }
+  })
+
+  it('memoizes repeated dispose while cancellation settles the result without child cooperation', async () => {
+    const prompt = Promise.withResolvers<{ stopReason: 'end_turn' }>()
+    const eofWait = Promise.withResolvers<boolean>()
+    const stdin = new PassThrough()
+    const stdout = new PassThrough()
+    const child = {
+      pid: 1,
+      stdin,
+      stdout,
+      stderr: undefined,
+      collected: {},
+      done: Promise.resolve({ exitCode: 0, signal: null }),
+      terminate: vi.fn(),
+      waitForExit: vi.fn((signal?: AbortSignal) => signal === undefined ? Promise.resolve(true) : eofWait.promise),
+    } satisfies SubprocessHandle
+    const initialize = vi.spyOn(ClientSideConnection.prototype, 'initialize').mockResolvedValue({} as never)
+    const newSession = vi.spyOn(ClientSideConnection.prototype, 'newSession').mockResolvedValue({ sessionId: 'remote' })
+    const promptCall = vi.spyOn(ClientSideConnection.prototype, 'prompt').mockReturnValue(prompt.promise)
+    const cancel = vi.spyOn(ClientSideConnection.prototype, 'cancel').mockResolvedValue()
+
+    try {
+      const run = await startAcpRun(request(), {
+        command: 'controlled-acp',
+        args: [],
+        cwd: process.cwd(),
+        permission: 'reject',
+        env: {},
+        disposeEofGraceMs: DEFAULT_DISPOSE_EOF_GRACE_MS,
+        disposeGraceMs: DEFAULT_DISPOSE_GRACE_MS,
+        spawn: () => child,
+      })
+
+      const disposal = run.dispose()
+      expect(run.dispose()).toBe(disposal)
+      expect(cancel).toHaveBeenCalledOnce()
+      expect(cancel).toHaveBeenCalledWith({ sessionId: 'remote' })
+      await expect(run.result).resolves.toEqual({ output: [], stopReason: 'aborted' })
+      expect(child.waitForExit).toHaveBeenCalledTimes(1)
+      eofWait.resolve(false)
+      await disposal
+      expect(child.terminate).toHaveBeenCalledOnce()
+      expect(child.waitForExit).toHaveBeenCalledTimes(2)
+    } finally {
+      initialize.mockRestore()
+      newSession.mockRestore()
+      promptCall.mockRestore()
+      cancel.mockRestore()
+      stdin.destroy()
+      stdout.destroy()
+    }
+  })
+
   it('drives child processes with parent-unique run ids and returns streamed output', async () => {
     const ctx = await setup({ MOCK_TEXT: 'hello from acp child', MOCK_STOP: 'end_turn', MOCK_SESSION_ID: 'acp-child-session' })
     const run = await ctx.subagents.start('acp', request('do X'))

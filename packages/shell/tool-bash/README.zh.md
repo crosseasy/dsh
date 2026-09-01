@@ -4,9 +4,9 @@
 
 模型侧 `bash` 工具，注册在 `ctx.shell` 执行器 seam 上。前台执行始终位于该 seam 之后；后台进程句柄会注册到通用 `ctx.jobs` 运行时，并通过 `job_output`、`job_list` 和 `job_kill` 控制；这些工具由 `@deepseek-ai/dsh-tool-jobs` 提供。
 
-需要加载执行器 Service Provider（例如 `@deepseek-ai/dsh-bash-local`）与 [`@deepseek-ai/dsh-shell-env`](../shell-env/README.zh.md) 注册表；在每个注入服务就绪之前，插件会保持等待状态（`inject: ['tools', 'bash', 'systemPrompt', 'bashEnv']`）。工具约定是 bash 方言——请挂载能解析 bash 的执行器。
+需要加载执行器 Service Provider（例如 `@deepseek-ai/dsh-bash-local`）与 [`@deepseek-ai/dsh-shell-env`](../shell-env/README.zh.md) 注册表；在每个注入服务就绪之前，插件会保持等待状态（`inject: ['tools', 'shell', 'systemPrompt', 'shellEnv']`）。工具约定是 bash 方言——请挂载能解析 bash 的执行器。
 
-包根只公开 Cordis 插件约定（`name`、`inject`、`Config`、`apply`）；结果渲染和后台进程适配仍保留在包内部。
+包根只公开 Cordis 插件约定（`name`、`inject`、`Config`、`apply`）。本包仍拥有工具注册、schema 文本、审批与升权路由、workdir／默认值策略、提示词文本、工具身份、job kind 和 bash 方言约定。前台投影、前台／后台结果渲染、后台读取渲染、后台输出 schema 属性与后台进程结果映射复用 `@deepseek-ai/dsh-shell` 的纯 helper。
 
 插件还会提供 `tool:bash` 提示词段落（顺序 105）：检查每个结果中的 `[exit code: N]` 标记，发现失败时先调查原因再继续。
 
@@ -30,11 +30,11 @@
 
 每次模型发起的前台或后台 bash 调用都会通过共享的 [`dsh-shell-env`](../shell-env/README.zh.md) 注册表收到新收集的一组可信 `DSH_*` 环境变量：`DSH_HOME`（Harness home 绝对路径）、`DSH_SHELL=1`、agent 的 `DSH_SESSION_ID`，以及当活跃持久化后端能定位时的 `DSH_SESSION_JSONL`。注册表约定——贡献方注册、重复键／未声明键的显式报错机制、内置项保留与贡献方示例——载于该包的 README。快照通过专用的 `ShellExecRequest.dshEnv` 通道传递；本地执行器会先删除继承的所有 `DSH_*` 再合并，因此嵌套 harness 和并发的父／子 agent 不会泄漏陈旧身份，且绝不修改 `process.env`。工具说明只教授通用 `$DSH_*` 约定，不会点名持久化专用变量，也不会添加永久的系统提示词段落。
 
-结果文本依次包含 stdout、可选的 `[stderr]` 段落和适用的沙箱拒绝、超时、信号、退出代码及截断标记。超时与最终退出状态分别报告；非零退出仍是由模型解释的结果，不会成为 `isError`。截断结果会链接安全的完整 spill 文件，或报告文件不可用。只有 spawn 错误和中止等基础设施故障才会产生 `isError`。
+结果文本依次包含 stdout、可选的 `[stderr]` 段落和适用的沙箱拒绝、超时、信号、退出代码及截断标记。共享的 `@deepseek-ai/dsh-shell` renderer 拥有该 marker 顺序和 spill 文案。超时与最终退出状态分别报告；非零退出仍是由模型解释的结果，不会成为 `isError`。截断结果会链接安全的完整 spill 文件，或报告文件不可用。只有 spawn 错误和中止等基础设施故障才会产生 `isError`。
 
 已完成前台进程的规范成功值为 `{ kind: 'foreground', ...ShellRunResult }`，已发布任务则为 `{ kind: 'background', jobId }`。Native renderer 保留上述文本，包括精确的 `started background job <id>`；程序化消费方使用带类型字段，无需解析这些字符串。执行器的流上限仍是 `ShellRunResult` 的采集限制，并携带其 spill 路径。
 
-当 `run_in_background` 为 true 时，此插件会在 spawn 前预检 `ctx.jobs.start()`，把调用方 agent 注册为持有者，并将返回的 `ShellProcess` 句柄适配为通用的取消／完成／增量输出钩子。任务运行时负责 job id、跨会话隔离、完成通知、等待和 dispose（资源释放）清理；此插件只把 bash 退出／沙箱事实映射为任务输出和结果详情。`enableRunInBackground: false` 会移除该参数，并在执行时拒绝强制后台调用。
+当 `run_in_background` 为 true 时，此插件会在 spawn 前预检 `ctx.jobs.start()`，把调用方 agent 注册为持有者，并将返回的 `ShellProcess` 句柄适配为通用的取消／完成／增量输出钩子。任务运行时负责 job id、跨会话隔离、完成通知、等待和 dispose（资源释放）清理；共享的 `@deepseek-ai/dsh-shell` helper 会渲染进程读取，并把 shell 退出／沙箱事实映射为任务输出和结果详情。`enableRunInBackground: false` 会移除该参数，并在执行时拒绝强制后台调用。
 
 ## UI 展示
 

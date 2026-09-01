@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest'
+import { describeForWire } from '@deepseek-ai/dsh-settings'
 import { assertServiceable, Config } from '../src/config.ts'
 
 /** Validate one hand-declared route, with the caller's fields layered onto it. */
@@ -85,5 +86,47 @@ describe('request image policy bounds', () => {
     expect(() => {
       assertServiceable(programmatic)
     }).toThrow(message)
+  })
+})
+
+describe('provider header schema', () => {
+  it('marks the complete header dictionary as secret-bearing', () => {
+    const providers = Config.dict?.['providers']
+    const headers = providers?.inner?.dict?.['headers']
+
+    expect(headers?.type).toBe('dict')
+    expect(headers?.meta.role).toBe('secret')
+    expect(routeWith({
+      headers: {
+        Authorization: 'Bearer route-secret',
+        'api-key': 'route-secret',
+      },
+    })).not.toThrow()
+  })
+
+  it.each([
+    ['omitted', {}, false],
+    ['empty', { headers: {} }, false],
+    ['non-empty', { headers: { 'x-private-header': 'private-header-value' } }, true],
+  ] as const)('reports %s headers without exposing their names or values', (_kind, profile, set) => {
+    const value = routeWith(profile)()
+    let wire: ReturnType<typeof describeForWire> | undefined
+    let errorText = ''
+    try {
+      wire = describeForWire(Config as never, { value })
+    } catch (error) {
+      errorText = String(error)
+    }
+
+    const observable = JSON.stringify({ wire, errorText })
+    expect(observable).not.toContain('x-private-header')
+    expect(observable).not.toContain('private-header-value')
+    expect(JSON.stringify(wire?.schema)).not.toContain('x-private-header')
+    expect(JSON.stringify(wire?.schema)).not.toContain('private-header-value')
+    expect(wire?.value).not.toHaveProperty('providers.acme-gateway.headers')
+    expect(wire?.secrets).toContainEqual({
+      path: ['providers', 'acme-gateway', 'headers'],
+      set,
+    })
   })
 })

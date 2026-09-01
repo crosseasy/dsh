@@ -1,3 +1,6 @@
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
 import { describe, expect, it, vi } from 'vitest'
 import {
   defaultConcurrency,
@@ -54,6 +57,55 @@ function withEnv<T>(name: string, value: string | undefined, action: () => T): T
   }
 }
 
+interface HygieneSmoke {
+  invocations: { script: string; built: boolean }[]
+  results: GateResult[]
+}
+
+async function runHygieneSmoke(
+  initialState: 'clean' | 'built',
+  unknownPackage = false,
+): Promise<HygieneSmoke> {
+  const fixtureRoot = mkdtempSync(join(tmpdir(), 'dsh-hygiene-smoke-'))
+  const artifact = join(fixtureRoot, 'built')
+  const unknown = join(fixtureRoot, 'unknown-package')
+  const log = join(fixtureRoot, 'invocations.jsonl')
+  const entrypoint = join(fixtureRoot, 'pnpm.mjs')
+  writeFileSync(entrypoint, String.raw`
+import { appendFileSync, existsSync, writeFileSync } from 'node:fs'
+const root = process.env.DSH_HYGIENE_SMOKE_ROOT
+if (root === undefined) throw new Error('missing DSH_HYGIENE_SMOKE_ROOT')
+const [operation, script] = process.argv.slice(2)
+if (operation !== 'run' || script === undefined) throw new Error('expected run <script>')
+const artifact = root + '/built'
+appendFileSync(root + '/invocations.jsonl', JSON.stringify({ script, built: existsSync(artifact) }) + '\n')
+if (script === 'build') {
+  await new Promise(resolve => setTimeout(resolve, 100))
+  writeFileSync(artifact, 'built\n')
+}
+if (['publint', 'verify-built-package-invariants', 'verify-node-next-types'].includes(script)
+  && !existsSync(artifact)) process.exitCode = 2
+if (script === 'constraints' && existsSync(root + '/unknown-package')) process.exitCode = 3
+`.trimStart())
+  if (initialState === 'built') writeFileSync(artifact, 'built\n')
+  if (unknownPackage) writeFileSync(unknown, 'unexpected\n')
+
+  try {
+    const gates = withPnpmEntrypoint(() => gatesForMode('hygiene'), entrypoint)
+      .map(subject => ({
+        ...subject,
+        env: { ...subject.env, DSH_HYGIENE_SMOKE_ROOT: fixtureRoot },
+      }))
+    const results = await runGates(gates, 4, runGate)
+    const invocations = readFileSync(log, 'utf8').trim().split('\n')
+      .filter(Boolean)
+      .map(line => JSON.parse(line) as { script: string; built: boolean })
+    return { invocations, results }
+  } finally {
+    rmSync(fixtureRoot, { recursive: true, force: true })
+  }
+}
+
 describe('gate graph validation', () => {
   it.each([
     'ci-primary',
@@ -84,11 +136,21 @@ describe('gate graph validation', () => {
     expect(ids).toContain('public-repository-links')
   })
 
+  it('keeps curated activation evidence in the documentation gate', () => {
+    const gate = withPnpmEntrypoint(() =>
+      gatesForMode('doc-sync').find(subject => subject.id === 'curated-activation-evidence'))
+
+    expect(gate).toMatchObject({
+      displayCommand: 'pnpm run verify-curated-activation-evidence',
+      args: ['/private/pnpm.cjs', 'run', 'verify-curated-activation-evidence'],
+    })
+  })
+
   it('keeps the hygiene aggregate aligned with the package script checks', () => {
     const ids = withPnpmEntrypoint(() => gatesForMode('hygiene').map(subject => subject.id))
 
     expect(ids).toEqual([
-      'rescope-vendor', 'knip', 'publint', 'constraints', 'dsh-package-licenses',
+      'build', 'rescope-vendor', 'knip', 'publint', 'constraints', 'dsh-package-licenses',
       'package-invariants', 'built-package-invariants', 'node-next-types',
       'optional-dependency-imports', 'client-packages', 'cordis-config',
       'runtime-closure', 'vendored-links',
@@ -97,6 +159,39 @@ describe('gate graph validation', () => {
       workers: 4,
       source: '8 available CPU(s), hygiene cap 4',
     })
+  })
+
+  it('builds before standalone hygiene artifact consumers', () => {
+    const subject = withPnpmEntrypoint(() => gatesForMode('hygiene'))
+
+    for (const id of ['publint', 'built-package-invariants', 'node-next-types']) {
+      expect(subject.find(item => item.id === id)?.needs).toEqual(['build'])
+    }
+  })
+
+  it('reaches the same successful conclusion from clean and built artifact states', async () => {
+    const clean = await runHygieneSmoke('clean')
+    const built = await runHygieneSmoke('built')
+    const outcomes = (smoke: HygieneSmoke) =>
+      smoke.results.map(result => [result.gate.id, result.status])
+
+    expect(outcomes(clean)).toEqual(outcomes(built))
+    expect(clean.results.every(result => result.status === 'passed')).toBe(true)
+    for (const script of ['publint', 'verify-built-package-invariants', 'verify-node-next-types']) {
+      expect(clean.invocations).toContainEqual({ script, built: true })
+    }
+  })
+
+  it('keeps an unexpected package directory as a standalone hygiene failure', async () => {
+    const smoke = await runHygieneSmoke('built', true)
+
+    expect(smoke.results.filter(result => result.status !== 'passed')).toEqual([
+      expect.objectContaining({
+        gate: expect.objectContaining({ id: 'constraints' }) as unknown,
+        status: 'failed',
+        exitCode: 3,
+      }),
+    ])
   })
 
   it('schedules the longest documentation leaves before short checks', () => {

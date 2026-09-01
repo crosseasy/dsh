@@ -1,0 +1,3 @@
+- insert:
+    - id: plugin-config-overlay-fixture
+      name: '@dsh-test/plugin-config-overlay'

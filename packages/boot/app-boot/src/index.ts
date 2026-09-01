@@ -11,8 +11,8 @@ import { readFileSync } from 'node:fs'
 import { parseEnv } from 'node:util'
 import { basename, dirname, isAbsolute, resolve } from 'node:path'
 import * as yaml from 'js-yaml'
-import { Context, type FiberState } from '@deepseek-ai/cordis'
-import Loader, { type Entry, type EntryOptions } from '@deepseek-ai/cordis-plugin-loader'
+import { Context, Service, type FiberState } from '@deepseek-ai/cordis'
+import Loader, { EntryGroup, EntryTree, type Entry, type EntryOptions } from '@deepseek-ai/cordis-plugin-loader'
 import Include, { applyEntryPatches, entryListSchema, type PatchOptions } from '@deepseek-ai/cordis-plugin-include'
 import Group from '@deepseek-ai/cordis-plugin-group'
 import { dshHomePath, resolveDshHome } from '@deepseek-ai/dsh-home-paths'
@@ -20,6 +20,15 @@ import { createLaunchEnvironmentSnapshot, type LaunchEnvironmentSnapshot } from 
 import type {} from '@deepseek-ai/cordis-plugin-hmr'
 // Side-effect type import: resolves `ctx.get('systemPrompt')` to the service.
 import type {} from '@deepseek-ai/dsh-system-prompt'
+
+const INTERNAL_DISABLE_DOTENV_ENV = 'DSH_INTERNAL_DISABLE_DOTENV'
+
+/**
+ * Optional UTF-8 reader for callers that already bound file bytes to validated storage.
+ * @param path - Absolute file path requested by the parser.
+ * @returns file text, or `undefined` when an optional file is absent.
+ */
+export type TextFileReader = (path: string) => string | undefined
 
 declare module '@deepseek-ai/cordis' {
   interface Context {
@@ -168,6 +177,8 @@ function readEnvLayer(
  * `.env` snapshot. The Harness home resolves before either file; both files
  * are checked before either is applied, and accepted values are materialized
  * without replacing inherited ones. The snapshot preserves which layer supplied each value.
+ * An internal smoke launch consumes `DSH_INTERNAL_DISABLE_DOTENV=1` and returns
+ * an inherited-only snapshot without reading either file.
  * @param binName - the diagnostic prefix on the diagnostics.
  * @param cwd - the invoking directory whose `.env` is the project layer.
  * @param warn - sink for the one-line misconfiguration diagnostics.
@@ -178,8 +189,13 @@ export function loadLayeredEnv(
   binName: string, cwd: string = process.cwd(),
   warn: (line: string) => void = line => void process.stderr.write(line),
 ): LaunchEnvironmentSnapshot {
+  const dotenvDisabled = process.env[INTERNAL_DISABLE_DOTENV_ENV] === '1'
+  Reflect.deleteProperty(process.env, INTERNAL_DISABLE_DOTENV_ENV)
   const home = resolveDshHome()
   const inherited = { ...process.env } as Record<string, string>
+  if (dotenvDisabled) {
+    return createLaunchEnvironmentSnapshot([{ source: 'process', values: inherited }])
+  }
   // Parse both layers first: a rejection must not leave one file applied.
   const project = readEnvLayer(binName, cwd, warn)
   const user = home === resolve(cwd) ? undefined : readEnvLayer(binName, home, warn)
@@ -206,21 +222,32 @@ const bootstrapIncludes = new WeakMap<Context, Entry>()
 // reference `process.env`.
 const userPatchesSchema = entryListSchema
 
-/** Options for live user patch-layer reconciliation. */
-export interface UserPatchWatchOptions {
+interface UserPatchWatchBase {
   /** Diagnostic prefix used by {@link loadOptionalPatches}. */
   binName: string
   /** Absolute path of the watched patch file (a profile's `cordis.patch.yml`). */
   filename: string
+}
+
+/**
+ * Options for live user patch-layer reconciliation. The default `watcher-read`
+ * mode loads `filename` and passes its patches to `compose`; `compose-read`
+ * delegates every file read to `compose`.
+ */
+export type UserPatchWatchOptions = UserPatchWatchBase & ({
+  /** Read `filename` in the watcher before composition. */
+  mode?: 'watcher-read'
   /**
-   * Compose the full patch list for a fresh user-layer generation —
-   * the same composition the app booted with, so a reload can interleave the
-   * new user patches between app-owned layers (bundle layers below,
-   * overlays above). Identity when omitted: the user layer
-   * is the whole patch list.
+   * Compose the full patch list for a fresh user-layer generation.
+   * Identity when omitted: the watched user layer is the whole patch list.
    */
   compose?: (userPatches: PatchOptions[]) => PatchOptions[]
-}
+} | {
+  /** Let `compose` own all reads needed for a fresh generation. */
+  mode: 'compose-read'
+  /** Read and compose the full patch list for a fresh user-layer generation. */
+  compose: () => PatchOptions[]
+})
 
 /**
  * Watch the user patch layer through Cordis HMR and transactionally reapply it to the boot include.
@@ -233,7 +260,7 @@ export async function watchUserPatches(
   ctx: Context,
   options: UserPatchWatchOptions,
 ): Promise<() => Promise<void>> {
-  const { binName, filename, compose = (patches: PatchOptions[]) => patches } = options
+  const { binName, filename } = options
   const hmr = ctx.get('hmr')
   if (hmr === undefined) throw new Error(`${binName}: user patch-layer watching requires the Cordis HMR service`)
   const entry = bootstrapIncludes.get(ctx)
@@ -243,8 +270,11 @@ export async function watchUserPatches(
     // updates the root Include's other options between refreshes (none exists
     // today) must not have them silently reverted by a user-layer reload.
     const { patches: _previousPatches, ...includeConfig } = entry.options.config as Include.Config
-    const userPatches = loadOptionalPatches(binName, filename) ?? []
-    const patches = compose(userPatches)
+    const patches = options.mode === 'compose-read'
+      ? options.compose()
+      : (options.compose ?? ((userPatches: PatchOptions[]) => userPatches))(
+        loadOptionalPatches(binName, filename) ?? [],
+      )
     await entry.update({
       config: {
         ...includeConfig,
@@ -273,12 +303,19 @@ export async function watchUserPatches(
  * loud at boot, never be silently skipped.
  * @param binName - the diagnostic prefix on the thrown error.
  * @param file - absolute path of the patch file.
+ * @param reader - optional source for already validated file bytes.
  * @returns the parsed patches, or `undefined` when the file does not exist.
  */
-export function loadOptionalPatches(binName: string, file: string): PatchOptions[] | undefined {
+export function loadOptionalPatches(
+  binName: string,
+  file: string,
+  reader?: TextFileReader,
+): PatchOptions[] | undefined {
   let content: string
   try {
-    content = readFileSync(file, 'utf8')
+    const loaded = reader === undefined ? readFileSync(file, 'utf8') : reader(file)
+    if (loaded === undefined) return undefined
+    content = loaded
   } catch (error) {
     if ((error as NodeJS.ErrnoException | null)?.code === 'ENOENT') return undefined
     throw new Error(`${binName}: failed to read patches ${file}: ${String(error)}`)
@@ -293,12 +330,19 @@ export function loadOptionalPatches(binName: string, file: string): PatchOptions
  * is a misconfiguration, not "no overlay".
  * @param binName - the diagnostic prefix on the thrown error.
  * @param file - absolute path of the overlay file.
+ * @param reader - optional source for already validated file bytes.
  * @returns the parsed patch list.
  */
-export function loadOverlayPatches(binName: string, file: string): PatchOptions[] {
+export function loadOverlayPatches(
+  binName: string,
+  file: string,
+  reader?: TextFileReader,
+): PatchOptions[] {
   let content: string
   try {
-    content = readFileSync(file, 'utf8')
+    const loaded = reader === undefined ? readFileSync(file, 'utf8') : reader(file)
+    if (loaded === undefined) throw new Error('file does not exist')
+    content = loaded
   } catch (error) {
     throw new Error(`${binName}: failed to read overlay ${file}: ${String(error)}`)
   }
@@ -307,12 +351,12 @@ export function loadOverlayPatches(binName: string, file: string): PatchOptions[
 /**
  * Parse one loader patch list: a top-level YAML array of
  * `@deepseek-ai/cordis-plugin-include` `PatchOptions` (id-targeted config overrides and
- * `insert` lists, `!!js` expressions allowed). Every invalid field or value throws,
- * because a patch file that cannot be applied at all is a misconfiguration; a
- * single patch whose target row is absent stays a per-entry Loader warning, so
- * one overlay shared across surfaces does not have to match every tree.
+ * `insert` lists, `!!js` expressions allowed). Malformed YAML, a non-array top
+ * level, or a non-mapping entry throws here; schema and application validation
+ * occur downstream. A patch whose target row is absent stays a per-entry Loader
+ * warning, so one overlay shared across surfaces does not have to match every tree.
  * @param binName - the diagnostic prefix on the thrown error.
- * @param file - the source path, quoted in errors.
+ * @param file - the source path; schema and entry diagnostics may include it, while malformed YAML parser diagnostics redact it.
  * @param content - the file's text.
  * @param label - what to call this list in errors (`patches`, `overlay`).
  * @returns the parsed patch list.
@@ -324,7 +368,11 @@ function parsePatchList(
   try {
     parsed = yaml.load(content, { schema: userPatchesSchema })
   } catch (error) {
-    throw new Error(`${binName}: failed to parse ${label} ${file}: ${String(error)}`)
+    const mark = (error as yaml.YAMLException).mark
+    const location = ` at line ${String(mark.line + 1)}, column ${String(mark.column + 1)}`
+    throw new Error(
+      `${binName}: failed to parse ${label} [REDACTED]: invalid YAML near [REDACTED]${location}`,
+    )
   }
   if (!Array.isArray(parsed)) {
     throw new Error(`${binName}: ${label} ${file} must be a top-level YAML array of loader patch entries`)
@@ -373,6 +421,7 @@ export interface ConfigDumpLayer {
  * @param absoluteConfigPath - the base config file `boot()` would include.
  * @param layers - overlay layers in application order (later wins).
  * @param warn - sink for skipped-patch diagnostics; defaults to stderr.
+ * @param root - optional descriptor-bound decoded UTF-8 root text used instead of a path read.
  * @returns the composed entry list rendered as a YAML document with
  * source comment separators.
  */
@@ -381,10 +430,12 @@ export function renderConfigDump(
   absoluteConfigPath: string,
   layers: ConfigDumpLayer[],
   warn: (line: string) => void = line => void process.stderr.write(`${line}\n`),
+  root?: BoundRootConfig,
 ): string {
+  root?.assertCurrent()
   let content: string
   try {
-    content = readFileSync(absoluteConfigPath, 'utf8')
+    content = root?.content ?? readFileSync(absoluteConfigPath, 'utf8')
   } catch (error) {
     throw new Error(`${binName}: failed to read config ${absoluteConfigPath}: ${String(error)}`)
   }
@@ -438,6 +489,7 @@ export function renderConfigDump(
     previous = composed
     previousWarnings = warnings
   }
+  root?.assertCurrent()
   return groupedDump(composed, provenance)
 }
 
@@ -473,12 +525,96 @@ function groupedDump(
 }
 
 /**
+ * Caller-owned descriptor-bound root text.
+ *
+ * The separately supplied config path remains the relative-resolution and
+ * diagnostic anchor and is not read. The caller keeps the underlying binding
+ * open until the promise returned by `mountRootInclude()` or `boot()` settles.
+ */
+export interface BoundRootConfig {
+  /** Exact decoded UTF-8 root configuration text. */
+  readonly content: string
+  /** Reject when the source identity no longer matches the captured bytes. */
+  readonly assertCurrent: () => void
+}
+
+function createBoundRootInclude(
+  absoluteConfigPath: string,
+  root: BoundRootConfig,
+  bareModuleBaseUrl: string | undefined,
+) {
+  const parsed = yaml.load(root.content, { schema: entryListSchema })
+  if (!Array.isArray(parsed)) throw new TypeError('bound root config must be a top-level array')
+  const entries = parsed as EntryOptions[]
+  return class BoundRootInclude extends EntryTree {
+    static inject = ['loader']
+    static readonly [EntryGroup.key] = true
+    private applyQueue: Promise<unknown> = Promise.resolve()
+
+    constructor(ctx: Context, public config: Include.Config) {
+      super(ctx)
+      this.enableLogs = config.enableLogs ?? ctx.fiber.entry?.parent.tree.enableLogs ?? false
+      this.ctx.baseUrl = pathToFileURL(dirname(absoluteConfigPath)).href + '/'
+      ctx.on('internal/update', async (config, _, next) => {
+        const nextConfig = config as Include.Config
+        if (nextConfig.path !== this.config.path) return next()
+        await this.enqueue(async () => {
+          await this.root.update(this.applyPatches(nextConfig.patches))
+          this.config = nextConfig
+        })
+      })
+    }
+
+    private enqueue<T>(task: () => Promise<T>): Promise<T> {
+      const run = this.applyQueue.then(task, task)
+      this.applyQueue = run.then(() => {}, () => {})
+      return run
+    }
+
+    private applyPatches(patches?: PatchOptions[]): EntryOptions[] {
+      return applyEntryPatches(structuredClone(entries), patches, (message, ...args) => {
+        this.ctx.root.logger('loader').warn(message, ...args as unknown[])
+      })
+    }
+
+    async* [Service.init]() {
+      yield async () => { await this.root.stop() }
+      root.assertCurrent()
+      await this.enqueue(() => this.root.update(this.applyPatches(this.config.patches)))
+    }
+
+    override import(name: string, getOuterStack?: () => string[]): unknown {
+      const specifier = isAbsolute(name) ? pathToFileURL(name).href : name
+      if (
+        bareModuleBaseUrl === undefined
+        || name.startsWith('.')
+        || name.startsWith('cordis:')
+      ) {
+        return super.import(specifier, getOuterStack)
+      }
+      const internal = this.ctx.loader.internal
+      /* v8 ignore next -- Node supplies the internal loader; this preserves the
+         original diagnostic for hypothetical embedders without it. */
+      if (internal === undefined) return super.import(specifier, getOuterStack)
+      return internal.import(specifier, bareModuleBaseUrl, {})
+    }
+
+    write(): void {
+      this.context.emit('loader/config-update')
+    }
+  }
+}
+
+/**
  * Mount and remember the exact root Include entry used by app boot and user patch-layer HMR.
  * @param ctx - context carrying an initialized Loader service.
  * @param absoluteConfigPath - absolute YAML or JSON configuration path.
  * @param patches - initial app and user patches, applied in order.
  * @param bareModuleBaseUrl - optional installed-host base for bare package
  * names; relative names continue to resolve beside the configuration file.
+ * @param root - optional descriptor-bound decoded UTF-8 root text; the path remains the
+ * relative-resolution anchor and is not read. Its binding must remain open until
+ * the returned promise settles.
  * @returns the created root Include entry, or `undefined` when a surface
  * disposed the whole tree (taking the Loader service with it) while the
  * transactional create was still settling entry lifecycle.
@@ -488,6 +624,7 @@ export async function mountRootInclude(
   absoluteConfigPath: string,
   patches: readonly PatchOptions[] = [],
   bareModuleBaseUrl?: string,
+  root?: BoundRootConfig,
 ): Promise<Entry | undefined> {
   ctx.loader.builtins.include = bareModuleBaseUrl === undefined
     ? Include
@@ -502,6 +639,11 @@ export async function mountRootInclude(
         return internal.import(specifier, bareModuleBaseUrl, {})
       }
     }
+  const rootBuiltin = 'dsh-bound-root-include'
+  if (root !== undefined) {
+    root.assertCurrent()
+    ctx.loader.builtins[rootBuiltin] = createBoundRootInclude(absoluteConfigPath, root, bareModuleBaseUrl)
+  }
   // `cordis:group` alongside it: a group row is how a composition gives one
   // `isolate` realm to a provider and its consumers together, and an agent
   // preset living outside this workspace cannot resolve `@deepseek-ai/cordis-plugin-group`
@@ -517,10 +659,18 @@ export async function mountRootInclude(
   }
   const rootInclude: EntryOptions = {
     id: 'include',
-    name: 'cordis:include',
+    name: root === undefined ? 'cordis:include' : `cordis:${rootBuiltin}`,
     config: includeConfig,
   }
   const includeId = await ctx.loader.create(rootInclude)
+  if (root !== undefined) {
+    try {
+      root.assertCurrent()
+    } catch (error) {
+      await ctx.loader.remove(includeId)
+      throw error
+    }
+  }
   const loader = ctx.get('loader')
   if (loader === undefined) return undefined
   const entry = loader.resolve(includeId)
@@ -748,6 +898,9 @@ export async function assertEntriesActivated(ctx: Context, binName: string): Pro
  * @param bareModuleBaseUrl - optional installed-host base for bare package
  * names; use it when the host, rather than the configuration project, owns the
  * complete plugin set.
+ * @param root - optional descriptor-bound decoded UTF-8 root text that replaces the file read;
+ * its path remains the resolution anchor, and its binding must remain open until
+ * the returned promise settles.
  * @returns the root context once every entry has started, or as soon as a
  * surface disposed the tree while startup was still in flight.
  * @throws a labelled error after disposing the partial context — `host
@@ -760,6 +913,7 @@ export async function boot(
   patches?: PatchOptions[],
   prepare?: (ctx: Context) => Promise<void> | void,
   bareModuleBaseUrl?: string,
+  root?: BoundRootConfig,
 ): Promise<Context> {
   const ctx = new Context()
   // Two failure labels: `prepare` runs before any config-tree entry mounts,
@@ -771,7 +925,7 @@ export async function boot(
     await ctx.plugin(Loader)
     await prepare?.(ctx)
     stage = 'plugin tree failed to load'
-    await mountRootInclude(ctx, absoluteConfigPath, patches, bareModuleBaseUrl)
+    await mountRootInclude(ctx, absoluteConfigPath, patches, bareModuleBaseUrl, root)
     // A surface can finish and dispose the whole tree while startup is still
     // in flight, before the last entry settles. The Loader service goes with
     // it, and the activation audit describes a live tree — reading `ctx.loader`

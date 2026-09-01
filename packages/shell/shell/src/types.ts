@@ -14,7 +14,10 @@ export { DSH_ENV_PREFIX } from '@deepseek-ai/dsh-subprocess'
 export type { CollectedOutput, DshEnvironment, DshEnvironmentKey } from '@deepseek-ai/dsh-subprocess'
 
 /**
- * Sandbox facts for one run, present iff a sandboxing executor handled it.
+ * Sandbox facts for one run. Foreground results from sandboxing executors carry
+ * these facts, including when the resolved mode is `danger-full-access`;
+ * background handles carry them only after confined process settlement.
+ * Background `danger-full-access` handles intentionally carry no sandbox facts.
  * Facts are reported independently of process exit status so callers can
  * distinguish command failures from policy denials and runner failures.
  */
@@ -44,8 +47,8 @@ export interface ShellExecRequest {
   /**
    * Foreground stdout capture budget in bytes. Absent uses the executor's
    * default output cap. Trusted in-process consumers use this when they must
-   * parse complete stdout up to their own bounded limit; the model-facing Bash
-   * and PowerShell tools do not expose it as a parameter.
+   * parse complete stdout up to their own bounded limit; the model-facing
+   * shell tools do not expose it as a parameter.
    */
   stdoutMaxBytes?: number | undefined
   /** Abort signal — implementations kill the command when it fires. */
@@ -54,9 +57,9 @@ export interface ShellExecRequest {
    * Bytes to write to the command's stdin, then close it. Absent leaves stdin
    * closed/empty (the default for model-driven tool calls). Set by in-process
    * plugins (e.g. the hooks bridges, which write a hook command's JSON payload
-   * to its stdin); the model-facing Bash and PowerShell tools do not expose it
-   * as a parameter (a model that needs stdin uses the active shell's inline
-   * input or pipeline syntax).
+   * to its stdin); the model-facing shell tools do not expose it as a
+   * parameter (a model that needs stdin uses shell syntax like a heredoc or a
+   * pipe).
    */
   stdin?: string | undefined
   /**
@@ -64,7 +67,7 @@ export interface ShellExecRequest {
    * scrub. Managed facts belong in {@link dshEnv}, which merges after this
    * map, so an entry here can never displace one. Set by in-process plugins
    * (the hooks bridges set `CLAUDE_PROJECT_DIR`, `CLAUDE_PLUGIN_ROOT`, …); the
-   * model-facing Bash and PowerShell tools do not expose it as a parameter.
+   * model-facing shell tools do not expose it as a parameter.
    */
   env?: Record<string, string> | undefined
   /**

@@ -401,6 +401,10 @@ function presentResult(args: RalphCallArgs, result: { content: ContentBlock[]; i
   return { card: 'generic' }
 }
 
+function isAborted(signal: AbortSignal): boolean {
+  return signal.aborted
+}
+
 /** Register the fixed Ralph tool and its explicit-ask usage policy. */
 export function apply(ctx: Context, config: Config): void {
   const resolved = resolveConfig(config)
@@ -444,6 +448,7 @@ export function apply(ctx: Context, config: Config): void {
       const maxRounds = resolveMaxRounds(args.maxRounds, resolved.maxRounds)
       void requireFreshProvider(ctx, resolved.subagentProvider)
 
+      if (isAborted(exec.signal)) throw new Error('Ralph parent step already aborted')
       const run: WorkflowRun = ctx.workflowEngine.start({
         script: RALPH_SCRIPT,
         meta: RALPH_META,
@@ -451,11 +456,15 @@ export function apply(ctx: Context, config: Config): void {
         subagentProvider: resolved.subagentProvider,
         maxTotalAgents: maxRounds,
         parent,
-        signal: exec.signal,
       })
-      const onAbort = (): void => { run.cancel('parent step aborted') }
+      let cancellationForwarded = false
+      const onAbort = (): void => {
+        if (cancellationForwarded) return
+        cancellationForwarded = true
+        run.cancel('parent step aborted')
+      }
       exec.signal.addEventListener('abort', onAbort, { once: true })
-      if (exec.signal.aborted) run.cancel('parent step aborted')
+      if (isAborted(exec.signal)) onAbort()
 
       try {
         const settled = await run.result

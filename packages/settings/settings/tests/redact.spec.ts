@@ -1,8 +1,37 @@
 import { describe, expect, it } from 'vitest'
 import { Context } from '@deepseek-ai/cordis'
 import z from '@deepseek-ai/schemastery'
-import { redactSecrets, settingsNamespace } from '../src/index.ts'
+import * as settingsModule from '../src/index.ts'
+import type { WireSettingsDescriptor } from '../src/index.ts'
 import { MemorySettings } from './memory.ts'
+
+const { redactSecrets, settingsNamespace } = settingsModule
+
+const describeForWire = (
+  schema: z<never>,
+  layers: { value: unknown; base?: unknown; user?: unknown },
+): {
+  schema: unknown
+  value: unknown
+  base?: unknown
+  user?: unknown
+  secrets: Array<{ path: string[]; set: boolean }>
+} => {
+  const module = settingsModule as typeof settingsModule & {
+    describeForWire(schema: z<never>, layers: {
+      value: unknown
+      base?: unknown
+      user?: unknown
+    }): {
+      schema: unknown
+      value: unknown
+      base?: unknown
+      user?: unknown
+      secrets: Array<{ path: string[]; set: boolean }>
+    }
+  }
+  return module.describeForWire(schema, layers)
+}
 
 const Profile = z.object({
   apiKey: z.string().role('secret'),
@@ -86,6 +115,33 @@ describe('redactSecrets', () => {
     expect(secrets).toEqual([{ path: ['blob'], set: true }])
   })
 
+  it('treats only an empty secret dict as unset', () => {
+    const SecretKinds = z.object({
+      scalar: z.string().role('secret'),
+      dict: z.dict(z.string()).role('secret'),
+      object: z.object({}).role('secret'),
+      array: z.array(z.string()).role('secret'),
+    })
+    const { secrets } = redactSecrets(SecretKinds as z<never>, {
+      scalar: '',
+      dict: {},
+      object: {},
+      array: [],
+    })
+    expect(secrets).toEqual([
+      { path: ['scalar'], set: true },
+      { path: ['dict'], set: false },
+      { path: ['object'], set: true },
+      { path: ['array'], set: true },
+    ])
+  })
+
+  it('treats a present malformed secret dict as set', () => {
+    const SecretDict = z.object({ dict: z.dict(z.string()).role('secret') })
+    const { secrets } = redactSecrets(SecretDict as z<never>, { dict: new Date(0) })
+    expect(secrets).toEqual([{ path: ['dict'], set: true }])
+  })
+
   it('drops a dict entry whose entire value is the secret', () => {
     const Tokens = z.object({ tokens: z.dict(z.string().role('secret')) })
     const { value, secrets } = redactSecrets(Tokens as z<never>, { tokens: { a: 'x', b: 'y' } })
@@ -96,10 +152,107 @@ describe('redactSecrets', () => {
     ])
   })
 
-  it('tolerates structural nodes missing their relation maps', () => {
-    expect(redactSecrets({ type: 'dict' } as never, { k: 'v' })).toEqual({ value: { k: 'v' }, secrets: [] })
-    expect(redactSecrets({ type: 'object' } as never, { k: 'v' })).toEqual({ value: { k: 'v' }, secrets: [] })
-    expect(redactSecrets({ type: 'array' } as never, ['v'])).toEqual({ value: ['v'], secrets: [] })
+  it.each([
+    [{ type: 'dict' }, { k: 'v' }],
+    [{ type: 'object' }, { k: 'v' }],
+    [{ type: 'array' }, ['v']],
+  ])('rejects structural nodes missing their relation metadata', (schema, value) => {
+    expect(() => redactSecrets(schema as never, value))
+      .toThrow('settings schema cannot be represented safely on the wire')
+  })
+})
+
+describe('describeForWire', () => {
+  it.each([
+    [
+      'union',
+      z.object({ token: z.union([z.string().role('secret'), z.number()]) }),
+      { token: 'union-secret' },
+      'union-secret',
+    ],
+    [
+      'intersection',
+      z.intersect([
+        z.object({ token: z.string().role('secret') }),
+        z.object({ endpoint: z.string() }),
+      ]),
+      { token: 'intersection-secret', endpoint: 'https://example.test' },
+      'intersection-secret',
+    ],
+    [
+      'transform',
+      z.object({
+        token: z.transform(
+          z.string().role('secret'),
+          value => `transform-callback-marker:${value}`,
+        ),
+      }),
+      { token: 'transform-secret' },
+      'transform-callback-marker',
+    ],
+  ])('rejects a secret behind %s without echoing sensitive data', (_kind, schema, value, forbidden) => {
+    let failure: unknown
+    try {
+      describeForWire(schema as z<never>, { value })
+    } catch (error) {
+      failure = error
+    }
+    expect(failure).toBeInstanceOf(Error)
+    expect((failure as Error).message).toBe('settings schema cannot be represented safely on the wire')
+    expect(String(failure)).not.toContain(forbidden)
+  })
+
+  it('strips secret values and defaults from nested object, dict, and array layers and schema', () => {
+    const schema = z.object({
+      providers: z.dict(z.object({
+        fallbacks: z.array(z.object({
+          token: z.string().role('secret').default('secret-default-marker'),
+          endpoint: z.string(),
+        })),
+      })),
+    })
+    const result = describeForWire(schema as z<never>, {
+      value: {
+        providers: {
+          acme: {
+            fallbacks: [{ token: 'resolved-secret-marker', endpoint: 'https://resolved.test' }],
+          },
+        },
+      },
+      base: {
+        providers: {
+          acme: {
+            fallbacks: [{ token: 'base-secret-marker', endpoint: 'https://base.test' }],
+          },
+        },
+      },
+      user: {
+        providers: {
+          acme: {
+            fallbacks: [{ token: 'user-secret-marker' }],
+          },
+        },
+      },
+    })
+
+    expect(result.value).toEqual({
+      providers: { acme: { fallbacks: [{ endpoint: 'https://resolved.test' }] } },
+    })
+    expect(result.base).toEqual({
+      providers: { acme: { fallbacks: [{ endpoint: 'https://base.test' }] } },
+    })
+    expect(result.user).toEqual({
+      providers: { acme: { fallbacks: [{}] } },
+    })
+    expect(result.secrets).toEqual([{
+      path: ['providers', 'acme', 'fallbacks', '0', 'token'],
+      set: true,
+    }])
+    const serialized = JSON.stringify(result)
+    expect(serialized).not.toContain('secret-default-marker')
+    expect(serialized).not.toContain('resolved-secret-marker')
+    expect(serialized).not.toContain('base-secret-marker')
+    expect(serialized).not.toContain('user-secret-marker')
   })
 })
 
@@ -123,7 +276,7 @@ describe('describe() layers and redaction', () => {
     expect(descriptor?.value).toEqual({ apiKey: 'entry-key', baseURL: 'https://user' })
     ;(descriptor?.user as Record<string, unknown>).baseURL = 'mutated'
     expect(ctx.settings.describe()[0]?.user).toEqual({ baseURL: 'https://user' })
-    expect(descriptor?.secrets).toBeUndefined()
+    expect(descriptor).not.toHaveProperty('secrets')
   })
 
   it('omits the layers when neither a base nor a user section exists', async () => {
@@ -148,7 +301,9 @@ describe('describe() layers and redaction', () => {
   it('redacts a descriptor that has neither base nor user layer', async () => {
     const ctx = await boot()
     ctx.settings.register(NS, Profile)
-    const [descriptor] = ctx.settings.describe({ redactSecrets: true })
+    const [descriptor] = (ctx.settings as typeof ctx.settings & {
+      describeForWire(): WireSettingsDescriptor[]
+    }).describeForWire()
     expect(descriptor).not.toHaveProperty('base')
     expect(descriptor).not.toHaveProperty('user')
     expect(descriptor?.secrets).toEqual([{ path: ['apiKey'], set: false }])
@@ -157,7 +312,9 @@ describe('describe() layers and redaction', () => {
   it('redacts every layer and enumerates secret slots under redactSecrets', async () => {
     const ctx = await boot({ adapter: { apiKey: 'user-key', baseURL: 'https://user' } })
     ctx.settings.register(NS, Profile, { base: { apiKey: 'entry-key' } })
-    const [descriptor] = ctx.settings.describe({ redactSecrets: true })
+    const [descriptor] = (ctx.settings as typeof ctx.settings & {
+      describeForWire(): WireSettingsDescriptor[]
+    }).describeForWire()
     expect(descriptor?.value).toEqual({ baseURL: 'https://user' })
     expect(descriptor?.base).toEqual({})
     expect(descriptor?.user).toEqual({ baseURL: 'https://user' })

@@ -14,7 +14,9 @@ import type {
 /**
  * What a caller asks for when starting a workflow run. `meta` and `args` are
  * plain JSON data by the seam contract. `parent` is required because every
- * `agent()` spawned by the script is attributed to that live Agent.
+ * `agent()` spawned by the script is attributed to that live Agent. The
+ * request has no cancellation signal: callers reject before `start()` or
+ * bridge later aborts to the returned {@link WorkflowRun.cancel}.
  */
 export interface WorkflowStartRequest {
   /** The plain-JS script body (top-level await allowed; ends with `return <json-value>`). */
@@ -29,8 +31,6 @@ export interface WorkflowStartRequest {
   maxTotalAgents?: number
   /** The agent on whose behalf the run executes (parent of every child). */
   parent: Agent
-  /** Cancels the run when aborted. */
-  signal?: AbortSignal
 }
 
 /**
@@ -42,8 +42,8 @@ export interface WorkflowRun {
   /** The validated meta block available before the script body runs. */
   readonly meta: WorkflowMeta
   readonly result: Promise<WorkflowResult>
-  /** Cancel the run and its children. */
+  /** Cancel the run and its children; idempotent, first reason wins, and settled runs ignore it. */
   cancel(reason?: string): void
-  /** Cancel if needed and await bounded settlement and cleanup. */
+  /** Cancel if needed, terminate engine-owned execution within its bound, and await child quiescence. */
   dispose(): Promise<void>
 }

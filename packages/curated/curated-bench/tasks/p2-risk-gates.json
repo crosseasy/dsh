@@ -1,0 +1,106 @@
+{
+  "schemaVersion": 1,
+  "evidenceKind": "planned",
+  "source": "docs/plugin/superpowers/03-实施路线图.md#p2--高能力场景包--故障注入--灰度",
+  "profiles": {
+    "web-coding": {
+      "orchestrator": "dsh-agent-team-gui",
+      "inactiveFallbacks": ["dsh-background-agents"],
+      "budgets": {
+        "maxConcurrentAgents": 4,
+        "maxDelegationDepth": 2,
+        "maxTaskTokens": 120000,
+        "taskTimeoutMs": 1800000
+      },
+      "browserAutomation": "dsh-computer-use"
+    },
+    "web-research": {
+      "visionRouter": {
+        "anonymousFallback": false,
+        "requiredCredentialMode": "provider-key-or-disabled"
+      },
+      "office": {
+        "provider": "dsh-univer-office",
+        "buildTimeBudgetMs": 600000,
+        "rssBudgetMiB": 2048,
+        "fidelityTasks": ["docx-roundtrip", "xlsx-formula-preservation", "pptx-layout-preservation"]
+      }
+    },
+    "web-enterprise": {
+      "externalChannels": {
+        "dsh-feishu": {
+          "active": false,
+          "requiredBeforeActivation": ["threat-model", "credential-review", "egress-approval"]
+        }
+      }
+    }
+  },
+  "failureInjection": [
+    { "id": "search-timeout", "capability": "web-search", "acceptableRuntimeOutcomes": ["fail-closed", "recovered"], "status": "pending", "runtimeOutcome": null },
+    { "id": "model-429", "capability": "llm-fallbacks", "acceptableRuntimeOutcomes": ["fail-closed", "recovered"], "status": "pending", "runtimeOutcome": null },
+    { "id": "browser-crash", "capability": "browser-computer-use", "acceptableRuntimeOutcomes": ["fail-closed", "recovered"], "status": "pending", "runtimeOutcome": null },
+    { "id": "sqlite-lock", "capability": "memory", "acceptableRuntimeOutcomes": ["fail-closed", "recovered"], "status": "pending", "runtimeOutcome": null },
+    { "id": "permission-denied-file", "capability": "permission-policy", "acceptableRuntimeOutcomes": ["fail-closed", "recovered"], "status": "pending", "runtimeOutcome": null },
+    { "id": "illegal-patch", "capability": "profile-composition", "acceptableRuntimeOutcomes": ["fail-closed"], "status": "pending", "runtimeOutcome": null },
+    { "id": "network-offline", "capability": "supply-chain-monitoring", "acceptableRuntimeOutcomes": ["fail-closed", "recovered"], "status": "pending", "runtimeOutcome": null },
+    { "id": "plugin-init-exception", "capability": "multi-agent-orchestration", "acceptableRuntimeOutcomes": ["fail-closed", "recovered"], "status": "pending", "runtimeOutcome": null }
+  ],
+  "abComparisons": [
+    {
+      "id": "memento-vs-mneme",
+      "status": "pending",
+      "capability": "memory",
+      "primary": "dsh-memento",
+      "alternative": "dsh-mneme",
+      "scale": { "days": 7, "facts": 200, "conflictUpdates": 20, "deleteRequests": 20, "repetitionsPerTask": 5 },
+      "statistics": { "mean": true, "p50": true, "p95": true, "failureDistribution": true },
+      "nonCompensableThresholds": ["security-correctness-below-95", "data-loss-detected", "rollback-impossible", "startup-failure-rate-above-1", "critical-success-rate-drop"]
+    },
+    {
+      "id": "computer-use-vs-tabbit",
+      "status": "pending",
+      "capability": "browser-computer-use",
+      "primary": "dsh-computer-use",
+      "alternative": "dsh-tabbit",
+      "scale": { "webTasks": 50, "repetitionsPerTask": 5 },
+      "statistics": { "mean": true, "p50": true, "p95": true, "failureDistribution": true },
+      "nonCompensableThresholds": ["security-correctness-below-95", "data-loss-detected", "rollback-impossible", "startup-failure-rate-above-1", "critical-success-rate-drop"]
+    },
+    {
+      "id": "mcp-panel-vs-mcp-manager",
+      "status": "pending",
+      "capability": "mcp-management",
+      "primary": "dsh-mcp-panel",
+      "alternative": "dsh-mcp-manager",
+      "scale": { "scenarios": ["oauth", "static-token", "service-error", "profile-write", "rollback"], "repetitionsPerTask": 5 },
+      "statistics": { "mean": true, "p50": true, "p95": true, "failureDistribution": true },
+      "nonCompensableThresholds": ["security-correctness-below-95", "data-loss-detected", "rollback-impossible", "startup-failure-rate-above-1", "critical-success-rate-drop"]
+    },
+    {
+      "id": "cost-meter-vs-tokenledger",
+      "status": "pending",
+      "capability": "cost-metering",
+      "primary": "dsh-cost-meter",
+      "alternative": "TokenLedger",
+      "scale": { "input": "fixed-request-log", "repetitionsPerTask": 5, "subsets": ["pricing", "cache-tokens", "timezone", "quota"] },
+      "statistics": { "mean": true, "p50": true, "p95": true, "failureDistribution": true },
+      "nonCompensableThresholds": ["security-correctness-below-95", "data-loss-detected", "rollback-impossible", "startup-failure-rate-above-1", "critical-success-rate-drop"]
+    }
+  ],
+  "canary": {
+    "status": "pending",
+    "durationDays": [3, 7],
+    "minimumTasks": 100,
+    "rolloutPercentages": [10, 30, 100],
+    "rollbackLines": [
+      "security-correctness-below-95",
+      "data-loss-detected",
+      "rollback-impossible",
+      "startup-failure-rate-above-1",
+      "critical-success-rate-drop",
+      "first-token-p95-regression",
+      "prompt-schema-token-regression",
+      "cost-regression-without-success-gain"
+    ]
+  }
+}

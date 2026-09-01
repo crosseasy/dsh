@@ -1,0 +1,10 @@
+{
+  "schemaVersion": 2,
+  "kind": "curated-profile-snapshot",
+  "profile": "web-curated",
+  "bundles": [
+    "@deepseek-ai/dsh-base",
+    "@deepseek-ai/dsh-web-app",
+    "@deepseek-ai/dsh-curated-base"
+  ]
+}

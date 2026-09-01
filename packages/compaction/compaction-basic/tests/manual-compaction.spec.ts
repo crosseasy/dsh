@@ -400,7 +400,11 @@ describe('compactNow transaction and failure classification', () => {
     const result = await compact.compactNow(agent, SIGNAL, commandId)
 
     expect(result).not.toBeNull()
-    expect(result?.sourceCommandId).toBe(commandId)
+    expect(result).not.toHaveProperty('compactionId')
+    expect(result).not.toHaveProperty('sourceCommandId')
+    expect(result).not.toHaveProperty('startSeq')
+    expect(result).not.toHaveProperty('endSeq')
+    expect(result).not.toHaveProperty('summary')
     expect(flushes()).toBe(1)
     expect(session.events.filter(event => event.type === 'turn/start').at(-1)?.data.turn).toBe(7)
     const start = session.events.findLast(event => event.type === 'compaction/start')
@@ -410,7 +414,8 @@ describe('compactNow transaction and failure classification', () => {
         && isCompactCheckpointSource(event.data.source),
     )
     const end = session.events.findLast(event => event.type === 'compaction/end')
-    const correlated = { compactionId: result?.compactionId, sourceCommandId: commandId }
+    if (start?.type !== 'compaction/start') throw new Error('expected compaction start')
+    const correlated = { compactionId: start.data.compactionId, sourceCommandId: commandId }
     expect(start?.data).toEqual({ ...correlated, turn: null })
     expect(summaryEvent?.data.sourceCommandId).toBe(commandId)
     expect(checkpoint?.data.source).toMatchObject(correlated)
@@ -684,7 +689,7 @@ describe('compactNow transaction and failure classification', () => {
     expect(result).not.toBeNull()
     expect(session.events.some(event => event.type === 'turn/start')).toBe(false)
     expect(session.events.find(event => event.type === 'compaction/start')?.data)
-      .toEqual({ compactionId: result?.compactionId, turn: null })
+      .toMatchObject({ turn: null })
   })
 
   it('classifies a durability failure after the standalone bracket committed', async () => {

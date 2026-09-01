@@ -1,0 +1,7 @@
+# Curated Activation Evidence
+
+English | [中文](README.zh.md)
+
+This repository-owned directory is the only location from which `runtimeActivationEvidence` may reference activation records and result artifacts. The [`verify-curated-activation-evidence`](../../../../scripts/verify-curated-activation-evidence.ts) gate accepts only tracked stage-zero regular blobs here. Each active candidate supplies a map whose keys exactly equal `targetProfiles`; every profile value contains JSON records for `keyless-assembled-snapshot`, `install`, `enable`, `restart`, and `disable-or-uninstall`, and all five records name that map key, follow the operation schema, and bind separate result artifacts by SHA-256. Record `command` arrays and artifact `command.argv` arrays contain the exact executed argv without secret values; the gate rejects secret-bearing forms, including URL userinfo in scheme URLs, option-assigned URLs, and schemeless `user:pass@host:port` values, without including argument text in its diagnostics. Each replay uses a private credential-free home, a 50-second deadline, and a 1 MiB limit for each output stream. On POSIX, timeout or output overflow terminates the isolated process group and waits for it to disappear before deleting that home; Windows rejects an active replay before spawn until a Job Object-backed runner can prove tree quiescence. A catalog with no active candidates starts no replay process.
+
+Package-authored evidence or sidecars, ignored or untracked files, symlinks, and files below `.git` or `node_modules` cannot authorize activation.

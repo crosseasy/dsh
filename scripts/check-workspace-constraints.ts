@@ -10,6 +10,7 @@ import { join, relative, resolve } from 'node:path'
 import { pathToFileURL } from 'node:url'
 import { hasTypertRemoteNavigation, isForbiddenPublicationFile } from './publication-payload.ts'
 import { collectProjectReferenceFaceViolations } from './project-reference-faces.ts'
+import { isLocalWorkspaceArtifactDirectory, unknownManifestlessPackageEntries } from './workspace-residue.ts'
 
 const root = resolve(import.meta.dirname, '..')
 // vendor/* is single-level; packages/<group>/<pkg> nests one level deeper
@@ -55,7 +56,6 @@ const experimentalPackageNamePrefix = '@deepseek-ai/dsh-experimental-'
 /** Directories whose packages this repository publishes: one release member each. */
 const releaseMemberDirectory = /^(?:packages\/(?!experimental\/)[^/]+\/[^/]+|apps\/[^/]+|vendor\/[^/]+)$/
 
-const localArtifactDirs = new Set(['node_modules'])
 const appPackageFiles: Readonly<Record<string, readonly string[]>> = {
   '@deepseek-ai/dsh': ['lib/*.js', 'config'],
   // The Web build emits sourcemaps for browser debugging; publishing them is
@@ -116,13 +116,13 @@ function packageDirs(base: string, depth: number): string[] {
   if (depth === 1) {
     return readdirSync(join(root, base), { withFileTypes: true })
       .filter(entry => entry.isDirectory())
-      .filter(entry => !localArtifactDirs.has(entry.name))
+      .filter(entry => !isLocalWorkspaceArtifactDirectory(entry.name))
       .filter(entry => existsSync(join(root, base, entry.name, 'package.json')))
       .map(entry => `${base}/${entry.name}`)
   }
   return readdirSync(join(root, base), { withFileTypes: true })
     .filter(entry => entry.isDirectory())
-    .filter(entry => !localArtifactDirs.has(entry.name))
+    .filter(entry => !isLocalWorkspaceArtifactDirectory(entry.name))
     .flatMap(group => packageDirs(`${base}/${group.name}`, depth - 1))
 }
 
@@ -167,6 +167,20 @@ const packageFileExtras: Readonly<Record<string, readonly string[]>> = {
   '@deepseek-ai/dsh-session-persistence-sqlite': ['resources/sql/**/*.sql'],
   '@deepseek-ai/dsh-skill-badge': ['assets'],
   '@deepseek-ai/dsh-subprocess-local': ['scripts/ensure-spawn-helper.mjs'],
+  '@deepseek-ai/dsh-curated-policy': [
+    'policy/plugin-allowlist.yaml',
+    'policy/capability-conflicts.yaml',
+    'policy/permission-rules.yaml',
+  ],
+  '@deepseek-ai/dsh-curated-scripts': [
+    'lib/bin.js',
+    'lib/staging-worker.js',
+  ],
+  '@deepseek-ai/dsh-curated-bench': [
+    'manifests/**/*.json',
+    'tasks/**/*.json',
+    'baselines/**/*.json',
+  ],
 }
 
 function sameStringList(actual: readonly string[] | undefined, expected: readonly string[]): boolean {
@@ -185,7 +199,11 @@ function expectedDshPackageFiles(manifest: PackageManifest): readonly string[] {
     // Every package publishes its invariant ownership companion as a separate
     // bundle; the package-invariant gate validates the companion itself.
     'lib/invariant.js',
-    ...manifest.bin ? ['lib/bin.js'] : [],
+    ...typeof manifest.bin === 'string'
+      ? [manifest.bin.replace(/^\.\//u, '')]
+      : manifest.bin
+        ? [...new Set(Object.values(manifest.bin).map(path => path.replace(/^\.\//u, '')))]
+        : [],
     ...manifest.exports?.['./worker'] ? ['lib/worker.cjs'] : [],
     // UI plugin packages ship their browser bundle beside the node lib
     // (single-artifact ruling: dist/ retired, ./client resolves lib/client.js).
@@ -285,11 +303,10 @@ function checkWorkspace({ dir, manifest }: WorkspaceManifest): string[] {
     // package, and the repository field is how a consumer finds the source of
     // the package it installed.
     //
-    // Access is per release sequence, not per scope: the vendored framework and
-    // the Landlock packages publish publicly because outside consumers install
-    // them, while the dsh family stays restricted until its own sequence goes
-    // public. A mixed scope is why no publish path passes `--access` — one flag
-    // cannot serve both, so each packed manifest decides
+    // Access belongs to each manifest, not the scope or release family. Every
+    // current release member is public so its complete install closure remains
+    // available without scope credentials. No publish path passes `--access`,
+    // because that would override the packed manifest
     // ([rationale](../.agents/notes/implemented/process/2026-08-13-public-vendor-and-native-sequences.md)).
     if (manifest.private === true) {
       errors.push(`${label}: release member must not set "private": true`)
@@ -387,12 +404,12 @@ function checkWorkspace({ dir, manifest }: WorkspaceManifest): string[] {
 }
 
 /**
- * Enforce `packages/<group>/<pkg>`: groups are open-named containers without a
- * package.json, and packages may be neither flat nor more deeply nested.
+ * Enforce package hierarchy while allowing generated residue from deleted packages.
+ * @param packagesRoot - absolute packages directory to inspect.
+ * @returns one error per hierarchy or unknown-residue violation.
  */
-function checkHierarchyShape(): string[] {
+export function checkHierarchyShape(packagesRoot = join(root, 'packages')): string[] {
   const errors: string[] = []
-  const packagesRoot = join(root, 'packages')
   for (const group of readdirSync(packagesRoot, { withFileTypes: true })) {
     if (!group.isDirectory()) continue
     const groupRel = join('packages', group.name)
@@ -402,10 +419,13 @@ function checkHierarchyShape(): string[] {
     }
     for (const pkg of readdirSync(join(packagesRoot, group.name), { withFileTypes: true })) {
       if (!pkg.isDirectory()) continue
-      if (localArtifactDirs.has(pkg.name)) continue
+      if (isLocalWorkspaceArtifactDirectory(pkg.name)) continue
+      const packageDirectory = join(packagesRoot, group.name, pkg.name)
       const pkgRel = join(groupRel, pkg.name)
-      if (!existsSync(join(packagesRoot, group.name, pkg.name, 'package.json'))) {
-        errors.push(`${pkgRel}: expected a package here (no package.json found) — the hierarchy is exactly packages/<group>/<pkg>, no deeper nesting`)
+      if (!existsSync(join(packageDirectory, 'package.json'))) {
+        const unknown = unknownManifestlessPackageEntries(readdirSync(packageDirectory))
+        if (unknown.length === 0) continue
+        errors.push(`${pkgRel}: expected a package here (no package.json found) — unknown entries remain: ${unknown.join(', ')}`)
       }
     }
   }

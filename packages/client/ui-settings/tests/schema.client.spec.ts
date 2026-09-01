@@ -1,6 +1,7 @@
 import { Context } from '@deepseek-ai/cordis'
 import Schema from '@deepseek-ai/schemastery'
 import { describe, expect, it } from 'vitest'
+import * as settingsModule from '@deepseek-ai/dsh-settings'
 import type { SchemaNode } from '../src/client/schema.ts'
 import { SettingsSchemaService } from '../src/client/schema.ts'
 
@@ -19,6 +20,36 @@ describe('SettingsSchemaService validation', () => {
       throw 'plain-string failure'
     }) as unknown as SchemaNode
     expect(service.validate(hostile, {})).toBe('plain-string failure')
+  })
+
+  it('rehydrates a callback-free wire schema whose nested secret defaults were removed', () => {
+    const schema = Schema.object({
+      providers: Schema.dict(Schema.object({
+        tokens: Schema.array(Schema.string().role('secret').default('client-secret-default')),
+        mode: Schema.union(['fast', 'careful']),
+      })),
+    })
+    const describeForWire = (
+      schema: Schema,
+      layers: { value: unknown },
+    ): { schema: unknown; value: unknown } => (settingsModule as typeof settingsModule & {
+      describeForWire(
+        schema: Schema,
+        layers: { value: unknown },
+      ): { schema: unknown; value: unknown }
+    }).describeForWire(schema, layers)
+
+    const described = describeForWire(schema, {
+      value: { providers: { acme: { tokens: ['client-secret-value'], mode: 'fast' } } },
+    })
+    const serialized = JSON.stringify(described)
+    const root = service.rehydrate(described.schema)
+
+    expect(serialized).not.toContain('client-secret-default')
+    expect(serialized).not.toContain('client-secret-value')
+    expect(service.validate(root, described.value)).toBeUndefined()
+    expect(service.nodeAtPath(root, ['providers', 'acme', 'tokens', '0'])?.meta.default)
+      .toBeUndefined()
   })
 })
 

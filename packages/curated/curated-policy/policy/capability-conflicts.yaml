@@ -1,0 +1,38 @@
+schemaVersion: 1
+source: docs/plugin/superpowers/02-插件矩阵与择优.md#4-能力域互斥表capability-conflicts-的种子
+rules:
+  - capability: web-search
+    defaultProvider: dsh-web-search-pro
+    fallbacks: [dsh-free-web-search]
+    rule: not-simultaneous
+    reason: 不同时注册两组搜索工具。
+  - capability: memory
+    defaultProvider: dsh-memento
+    fallbacks: [dsh-mneme]
+    rule: not-simultaneous
+    reason: 不同时启用两套自动记忆注入。
+  - capability: mcp-management
+    defaultProvider: dsh-mcp-panel
+    fallbacks: [dsh-mcp-manager]
+    rule: not-simultaneous
+    reason: 不同时写同一 MCP 配置。
+  - capability: browser-computer-use
+    defaultProvider: dsh-computer-use
+    fallbacks: [dsh-tabbit]
+    rule: one-active-provider
+    reason: 同 profile 只启用一种浏览器控制。
+  - capability: multi-agent-orchestration
+    defaultProvider: dsh-agent-team-gui
+    fallbacks: [dsh-background-agents]
+    rule: one-active-provider
+    reason: 同 profile 只启用一种主编排器。
+  - capability: context-compression
+    defaultProvider: dsh-context
+    fallbacks: [dsh-context-doctor]
+    rule: not-long-running-together
+    reason: 不与多个自动压缩插件长期并存。
+  - capability: desktop-client
+    defaultProvider: null
+    fallbacks: [martty, deepseek-harness-desktop]
+    rule: one-active-provider
+    reason: 不同时部署两个桌面壳。

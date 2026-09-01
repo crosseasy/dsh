@@ -1,50 +1,26 @@
 /**
- * Local PowerShell Service Provider for the bash capability seam. Each command runs
- * as `pwsh -NoLogo -NoProfile -NonInteractive -Command <command>` in a managed
- * process spawned through `ctx.subprocess`; the executor owns command
- * defaulting, deadlines and cause classification, the model-friendly terminal
- * environment, and the model-facing stdout/stderr merge for background reads.
- *
- * The command string is passed as ONE argv element to `-Command`: PowerShell
- * itself parses the text, and no intermediate shell exists, so there is no
- * shell-quoting layer to escape (the `bash -c` string domain has no
- * equivalent here). Native Win32 paths (`C:\...`) pass through unchanged.
- *
+ * Local `ctx.shell` provider that runs each command as non-interactive PowerShell.
+ * Commands are passed as one `-Command` argv element and parsed by PowerShell.
  * @module @deepseek-ai/dsh-pwsh-local
  */
 
-/* jscpd:ignore-start -- this executor mirrors dsh-bash-local call-for-call by
-   design (see this package's README), so the two import the same seam surface */
 import { Context } from '@deepseek-ai/cordis'
 import z from '@deepseek-ai/schemastery'
-import { SHELL_SETTINGS_NAMESPACE, ShellExecutor } from '@deepseek-ai/dsh-shell'
-import type { ShellExecRequest, ShellExecSpec, ShellProcess, ShellProcessRead, ShellRunResult, CollectedOutput } from '@deepseek-ai/dsh-shell'
-import type { SubprocessCollect, SubprocessHandle, SubprocessOutputReader, SubprocessSpawnSpec } from '@deepseek-ai/dsh-subprocess'
+import { SHELL_SETTINGS_NAMESPACE } from '@deepseek-ai/dsh-shell'
+import type { ShellExecRequest, ShellExecSpec, ShellProcess, ShellRunResult } from '@deepseek-ai/dsh-shell'
+import { assertServiceableOneShotShellConfig, OneShotShellExecutor, oneShotShellSettings as projectOneShotShellSettings, resolveOneShotShellRequest } from '@deepseek-ai/dsh-shell-runtime'
+import type { OneShotShellSettings } from '@deepseek-ai/dsh-shell-runtime'
 import { installSettingsSection } from '@deepseek-ai/dsh-settings'
-import { clampTimeout, deadline, MAX_TIMER_DELAY_MS, timeoutOf } from '@deepseek-ai/dsh-timeout'
-/* jscpd:ignore-end */
 import { resolvePwshPath } from './resolve.ts'
 
-/* jscpd:ignore-start -- deliberate call-for-call mirror of dsh-bash-local (Agent Note: pwsh-tool-and-executor). */
-/**
- * Model-friendly environment overrides for PowerShell: disable colors and
- * pagers that would garble tool output. `TERM=dumb` is a POSIX concept and is
- * deliberately absent; `NO_COLOR` is honored by modern pwsh renderers.
- */
+/** Model-friendly PowerShell env defaults; `TERM=dumb` is deliberately absent. */
 export const ENV_OVERRIDES = {
   NO_COLOR: '1',
   PAGER: 'cat',
   GIT_PAGER: 'cat',
 } as const
 
-/**
- * UTF-8 output pinning prepended to every command. The subprocess collector
- * decodes output bytes as UTF-8, but Windows PowerShell 5.1 (the last-resort
- * executable fallback) writes the console/OEM code page by default, which
- * garbles non-ASCII output; pwsh 7 defaults to UTF-8 and is unaffected. The
- * statements ride on line 1 after `; ` separators so PowerShell error line
- * numbers stay accurate.
- */
+/** UTF-8 output pinning prepended to every command before caller text. */
 export const ENCODING_PREAMBLE =
   '[Console]::OutputEncoding = [System.Text.UTF8Encoding]::new($false); $OutputEncoding = [System.Text.UTF8Encoding]::new($false); '
 
@@ -68,66 +44,29 @@ export interface Config {
   maxSpillBytes?: number
   /** Grace period for kill escalation and inherited pipes; at most `MAX_TIMER_DELAY_MS`. */
   graceMs?: number
-  /**
-   * Explicit pwsh executable. When omitted, well-known Windows install
-   * locations and PATH entries are probed in order (PowerShell 7 install,
-   * PATH entries such as the Microsoft Store install, then Windows
-   * PowerShell 5.1), falling back to a bare `pwsh` resolved through PATH.
-   */
+  /** Explicit pwsh executable; absent probes well-known Windows locations and PATH. */
   pwshPath?: string
 }
 
 /** The shape after schemastery applied the defaults (cwd/pwshPath have none). */
 type ResolvedConfig = Required<Omit<Config, 'cwd' | 'pwshPath'>> & Pick<Config, 'cwd' | 'pwshPath'>
 
-// Resolution lives in its own dependency-free module so the repository's
-// coverage-gate probe shares the exact definition the suites use.
+// Tests and coverage probes share this dependency-free resolver.
 export { candidatePwshPaths, resolvePwshPath } from './resolve.ts'
 
-/** Project a settled collect-mode reader into the final CollectedOutput shape. */
-function finalOutput(reader: SubprocessOutputReader): CollectedOutput {
-  const read = reader.readFrom(0)
-  return {
-    text: read.text,
-    truncated: read.lossy,
-    ...read.spillPath !== undefined ? { spillPath: read.spillPath } : {},
-  }
-}
-
-function assertPositiveFinite(name: string, value: number): void {
-  if (!Number.isFinite(value) || value <= 0) {
-    throw new Error(`pwsh-local: ${name} must be a positive finite number`)
-  }
-}
-
 /**
- * Reject a resolved section this executor could not run with. The schema
- * expresses neither "positive and finite" nor the timer bound `graceMs` has to
- * fit, so a stored value is refused where it is written instead of failing at
- * the next command.
- * @param config - the resolved section, schema-valid by construction.
- * @throws Error naming the field that cannot be used.
+ * Reject resolved settings values that cannot safely drive Node timers or byte caps.
+ * @param config - Resolved plugin configuration from the Cordis config schema or settings layer.
  */
 export function assertServiceablePwshConfig(config: Config): void {
-  const resolved = config as ResolvedConfig
-  assertPositiveFinite('timeoutMs', resolved.timeoutMs)
-  assertPositiveFinite('maxTimeoutMs', resolved.maxTimeoutMs)
-  assertPositiveFinite('maxOutputBytes', resolved.maxOutputBytes)
-  assertPositiveFinite('maxSpillBytes', resolved.maxSpillBytes)
-  assertPositiveFinite('graceMs', resolved.graceMs)
-  if (resolved.graceMs > MAX_TIMER_DELAY_MS) {
-    throw new Error(`pwsh-local: graceMs must be no greater than ${MAX_TIMER_DELAY_MS}`)
-  }
+  assertServiceableOneShotShellConfig('pwsh-local', config as ResolvedConfig)
 }
 
-/**
- * Local PowerShell executor over `ctx.subprocess`. Bounded output, spill
- * files, and process-tree termination are the subprocess service's mechanics;
- * this executor supplies their configured budgets per spawn.
- */
-export class PwshLocalExecutor extends ShellExecutor {
+/** Local PowerShell executor over `ctx.subprocess`; one-shot lifecycle lives in `dsh-shell-runtime`. */
+export class PwshLocalExecutor extends OneShotShellExecutor {
   static inject = ['subprocess']
 
+  /* jscpd:ignore-start -- Adapter-owned public config surface mirrored intentionally. */
   static Config: z<Config> = z.object({
     cwd: z.string(),
     timeoutMs: z.number().default(120_000),
@@ -137,17 +76,15 @@ export class PwshLocalExecutor extends ShellExecutor {
     graceMs: z.number().default(DEFAULT_GRACE_MS),
     pwshPath: z.string(),
   })
+  /* jscpd:ignore-end */
 
-  /** The currently authoritative config: the settings section, or the composition entry. */
   private source: () => ResolvedConfig
 
-  /** The declared executable the current {@link pwshPath} was resolved from. */
   private declaredPwshPath: string | undefined
 
-  /** The pwsh executable resolved from the current config. */
   private resolvedPwshPath: string
 
-  /** Validated config (schemastery applied the defaults before construction). */
+  /** Resolved plugin configuration currently used for new command requests. */
   get config(): ResolvedConfig {
     return this.source()
   }
@@ -158,8 +95,11 @@ export class PwshLocalExecutor extends ShellExecutor {
   }
 
   constructor(ctx: Context, config: Config) {
-    super(ctx)
-    // Schemastery fills these fields before construction; the type does not encode that step.
+    super(ctx, {
+      // The shell executor seam keeps the backend timeout identity shared across dialects.
+      timeoutCode: 'BASH_TIMEOUT',
+      droppedCollectMessage: 'pwsh-local: subprocess implementation dropped a requested collect stream',
+    })
     const entry = config as ResolvedConfig
     assertServiceablePwshConfig(entry)
     this.source = () => entry
@@ -170,8 +110,6 @@ export class PwshLocalExecutor extends ShellExecutor {
       setSource: (current) => {
         this.source = current as () => ResolvedConfig
       },
-      // Probing the filesystem is the one fact derived from the source: every
-      // other field is read through the getter at each command.
       onChange: () => {
         const declared = this.source().pwshPath
         if (declared === this.declaredPwshPath) return
@@ -181,183 +119,27 @@ export class PwshLocalExecutor extends ShellExecutor {
     })
   }
 
-  /**
-   * Resolve a request into a fully-specified spec: fill `workdir` from
-   * `config.cwd` (else `process.cwd()`), and `timeoutMs` from
-   * `config.timeoutMs`, capped at `config.maxTimeoutMs`.
-   */
+  /** Resolve command defaults and caps before execution. */
   resolve(request: ShellExecRequest): ShellExecSpec {
-    const timeoutMs = clampTimeout(
-      request.timeoutMs,
-      this.config.timeoutMs,
-      this.config.maxTimeoutMs,
-      'pwsh-local: request.timeoutMs',
-    )
-    const stdoutMaxBytes = request.stdoutMaxBytes ?? this.config.maxOutputBytes
-    assertPositiveFinite('request.stdoutMaxBytes', stdoutMaxBytes)
-    return {
-      command: request.command,
-      workdir: request.workdir ?? this.config.cwd ?? process.cwd(),
-      timeoutMs,
-      stdoutMaxBytes,
-      ...request.signal ? { signal: request.signal } : {},
-      ...request.stdin !== undefined ? { stdin: request.stdin } : {},
-      ...request.env !== undefined ? { env: request.env } : {},
-      ...request.dshEnv !== undefined ? { dshEnv: request.dshEnv } : {},
-      sandboxPolicy: request.sandboxPolicy,
-    }
+    return resolveOneShotShellRequest('pwsh-local', this.config, request)
   }
 
-  /**
-   * The pwsh invocation argv for one resolved spec — the argv-level seam a
-   * confining subclass wraps through `ctx.sandbox.confine` (the pwsh twin of
-   * `dsh-bash-local`'s `runArgv`/`startArgv` hooks; see
-   * `@deepseek-ai/dsh-pwsh-sandbox`).
-   */
+  /** Return the exact pwsh invocation argv; sandboxing subclasses may wrap it. */
   protected argv(spec: ShellExecSpec): string[] {
     return [this.pwshPath, '-NoLogo', '-NoProfile', '-NonInteractive', '-Command', `${ENCODING_PREAMBLE}${spec.command}`]
-  }
-
-  /** Map one resolved spec plus its argv onto a fully-specified subprocess spawn. */
-  private spawnSpec(
-    spec: ShellExecSpec,
-    stdoutMaxBytes: number,
-    signal: AbortSignal | undefined,
-    argv: readonly string[],
-  ): SubprocessSpawnSpec {
-    const collect = (maxBytes: number): SubprocessCollect =>
-      ({ maxBytes, spill: { maxBytes: this.config.maxSpillBytes } })
-    return {
-      argv: [...argv],
-      cwd: spec.workdir,
-      stdio: {
-        stdin: spec.stdin !== undefined ? { data: spec.stdin } : 'ignore',
-        stdout: collect(stdoutMaxBytes),
-        stderr: collect(this.config.maxOutputBytes),
-      },
-      graceMs: this.config.graceMs,
-      signal,
-      env: { ...ENV_OVERRIDES, ...spec.env, ...spec.dshEnv },
-    }
-  }
-
-  /** The collect-mode readers the executor itself requested (present by construction). */
-  private static collected(handle: SubprocessHandle): { stdout: SubprocessOutputReader; stderr: SubprocessOutputReader } {
-    const { stdout, stderr } = handle.collected
-    /* v8 ignore start -- collect dispositions expose both readers by the seam contract; defensive. */
-    if (stdout === undefined || stderr === undefined) {
-      throw new Error('pwsh-local: subprocess implementation dropped a requested collect stream')
-    }
-    /* v8 ignore stop */
-    return { stdout, stderr }
   }
 
   async run(spec: ShellExecSpec): Promise<ShellRunResult> {
     return this.runArgv(spec, this.argv(spec))
   }
 
-  /** Foreground run of an exact argv (the confining subclass re-wraps it). */
-  protected async runArgv(spec: ShellExecSpec, argv: readonly string[]): Promise<ShellRunResult> {
-    // One deadline combines timeout and upstream cancellation; disposal clears its timer.
-    using d = deadline(spec.signal, spec.timeoutMs, 'BASH_TIMEOUT')
-    const handle = this.ctx.subprocess.spawn(this.spawnSpec(spec, spec.stdoutMaxBytes, d.signal, argv))
-    const outcome = await handle.done
-    const collected = PwshLocalExecutor.collected(handle)
-    // Only this executor's timeout reason counts as timedOut; outer deadlines count as aborts.
-    const timedOut = timeoutOf(d.signal, 'BASH_TIMEOUT') !== undefined
-    const aborted = d.signal.aborted && !timedOut
-    return {
-      ...outcome,
-      timedOut,
-      aborted,
-      timeoutMs: spec.timeoutMs,
-      stdout: finalOutput(collected.stdout),
-      stderr: finalOutput(collected.stderr),
-    }
-  }
-
   start(spec: ShellExecSpec): ShellProcess {
     return this.startArgv(spec, this.argv(spec))
   }
 
-  /** Background start of an exact argv (the confining subclass re-wraps it). */
-  protected startArgv(spec: ShellExecSpec, argv: readonly string[]): ShellProcess {
-    // Background runs ignore timeoutMs; callers stop them through kill() or spec.signal.
-    const running = this.ctx.subprocess.spawn(this.spawnSpec(spec, this.config.maxOutputBytes, spec.signal, argv))
-    const collected = PwshLocalExecutor.collected(running)
-
-    // A spawn failure produces no process output, so the subprocess service has nothing
-    // to buffer; the note is delivered exactly once through the read path.
-    let spawnFailureNote: string | undefined
-    const consumeSpawnFailure = (): string => {
-      const note = spawnFailureNote ?? ''
-      spawnFailureNote = undefined
-      return note
-    }
-
-    let stdoutOffset = 0
-    let stderrOffset = 0
-    const proc: ShellProcess = {
-      status: 'running',
-      exitCode: null,
-      signal: null,
-      done: running.done.then((outcome) => {
-        // Any signal termination is killed, including a command signaling itself.
-        if (proc.status === 'running') {
-          proc.status = spec.signal?.aborted === true || outcome.signal !== null ? 'killed' : 'completed'
-        }
-        proc.exitCode = outcome.exitCode
-        proc.signal = outcome.signal
-        this.onProcessDone(proc, collected.stderr.readFrom(0).text, false)
-      }, (error: unknown) => {
-        // Background spawn failures settle as killed and surface through the read path.
-        proc.status = 'killed'
-        spawnFailureNote = `spawn failed: ${String(error)}`
-        this.onProcessDone(proc, spawnFailureNote, true, error)
-      }),
-      readOutput: (): ShellProcessRead => {
-        const out = collected.stdout.readFrom(stdoutOffset)
-        const err = collected.stderr.readFrom(stderrOffset)
-        stdoutOffset = out.nextOffset
-        stderrOffset = err.nextOffset
-
-        // A failed spawn never produced process output, so the note and real
-        // stderr text are mutually exclusive.
-        const errText = err.text.length > 0 ? err.text : consumeSpawnFailure()
-        // Single newline between sections: stdout chunks usually end with one
-        // already; add it only when missing.
-        const separator = out.text.length > 0 && !out.text.endsWith('\n') ? '\n' : ''
-        const delta = out.text
-          + (errText.length > 0 ? `${separator}[stderr]\n${errText}` : '')
-        return {
-          delta,
-          lossy: out.lossy || err.lossy,
-          ...out.spillPath !== undefined ? { stdoutSpillPath: out.spillPath } : {},
-          ...err.spillPath !== undefined ? { stderrSpillPath: err.spillPath } : {},
-        }
-      },
-      kill: (): boolean => {
-        if (proc.status !== 'running') return false
-        proc.status = 'killed'
-        running.terminate()
-        return true
-      },
-    }
-    return proc
+  protected oneShotShellSettings(spec: ShellExecSpec): OneShotShellSettings {
+    return projectOneShotShellSettings(ENV_OVERRIDES, this.config, spec)
   }
-
-  /**
-   * Settlement hook for subclasses that attach execution facts to a process.
-   * The base implementation is intentionally empty. Mirrored from
-   * `dsh-bash-local` (whose sandboxing subclass consumes the same hook); the
-   * pwsh-confining consumer is `@deepseek-ai/dsh-pwsh-sandbox`.
-   * @param _proc - the settled process handle.
-   * @param _stderr - the process's retained stderr tail used by subclasses for settlement classification.
-   * @param _spawnFailed - whether the spawn rejected before any process existed.
-   * @param _spawnError - the spawn rejection, when `_spawnFailed`.
-   */
-  protected onProcessDone(_proc: ShellProcess, _stderr: string, _spawnFailed: boolean, _spawnError?: unknown): void {}
 }
-/* jscpd:ignore-end */
 
 export default PwshLocalExecutor

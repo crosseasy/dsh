@@ -5,11 +5,11 @@ import { Context } from '@deepseek-ai/cordis'
 import { CallId } from '@deepseek-ai/dsh-llm'
 import SystemPrompt from '@deepseek-ai/dsh-system-prompt'
 import ToolRuntime, {
-  defineContentToolFixture,
   type ToolDefinition,
   type ToolExecutionInput,
   type ToolExecutionMode,
 } from '@deepseek-ai/dsh-tools'
+import { defineContentToolFixture } from '@deepseek-ai/dsh-tools/testing'
 
 const testToolSignal = new AbortController().signal
 

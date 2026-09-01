@@ -51,7 +51,7 @@ interface SettingsRegisterOptions<T> {
 
 `validate` runs after the schema admits a value, so it sees defaults and the composition base exactly as the owner will. `dsh-llm-pi-ai` uses it to refuse a provider profile it could not serve at the write that produced it, rather than storing one that would disable every route in its namespace.
 
-`applies` is a UI hint, not a mechanism: a `restart` owner simply never watches, so its value is read once at construction and configuration surfaces can badge the pending change.
+`applies` is a UI hint, not a mechanism: a `restart` owner simply never watches, so its value is read once at construction and configuration surfaces can badge the pending change. Disposing the registrant fiber marks the owner scope inactive, removes the namespace if it is still current, skips queued watcher calls, and waits for watcher calls that already started.
 
 ```ts type-equiv
 /** When a namespace's changes take effect for its owner. */
@@ -60,7 +60,7 @@ type SettingsApplies = 'live' | 'restart'
 
 ## Owner scope
 
-The scope is the owner-facing handle. `update` merges a sparse patch over the user section only (never into `base`); `replace` sets the section wholesale, which is the removal/reset path — keys absent from the replacement re-inherit `base` and schema defaults. Writes to one namespace are serialized in call order, and resolved values are deep-frozen snapshots.
+The scope is the owner-facing handle. `update` merges a sparse patch over the user section only (never into `base`); `replace` sets the section wholesale, which is the removal/reset path — keys absent from the replacement re-inherit `base` and schema defaults. Writes to one namespace are serialized in call order, resolved values are deep-frozen snapshots, and a scope whose registration was disposed rejects later writes or watchers.
 
 ```ts type-equiv
 /** Owner-facing handle for one registered namespace. */
@@ -72,7 +72,8 @@ interface SettingsScope<T> {
    * of one callback run asynchronously, one at a time, in commit order; a
    * rejection is contained and logged like a sync throw. After the disposer
    * returns, no further invocation starts — one already queued is skipped;
-   * one already started still settles, and service disposal waits for it.
+   * one already started still settles, and service or registration disposal
+   * waits for it. A disposed registration rejects new watchers.
    * @param callback - invoked after each commit with the next and previous values.
    * @returns the disposer removing this observer.
    */
@@ -95,7 +96,7 @@ interface SettingsScope<T> {
 
 ## Descriptors
 
-`describe()` serializes every registered namespace for configuration surfaces: the schemastery `toJSON()` envelope drives schema-rendered forms, the resolved value fills them, and the detached `base`/`user` layers let a form mark user-overridden fields by presence. `describe({ redactSecrets: true })` — mandatory on every wire surface — strips `role('secret')` fields from all three layers and enumerates their `{path, set}` slots so a page can render write-only inputs without ever receiving a secret.
+`describe()` returns verbatim descriptors to same-process consumers. Wire consumers use `describeForWire(ns?)`, which proves the complete schema graph safe before serializing it, strips `role('secret')` fields from the resolved, `base`, and `user` layers and from schema defaults, and enumerates `{path, set}` slots. A secret under a union or intersection, any transform, or an unsupported schema node rejects with a value-free error; selecting one namespace lets a write preflight before persistence.
 
 ```ts type-equiv
 /** One registered namespace as surfaced to configuration UIs. */
@@ -120,12 +121,21 @@ interface SettingsDescriptor {
   user?: unknown
   /** Owner's declared effect timing. */
   applies: SettingsApplies
-  /** Schema-declared secret positions; present only under `redactSecrets`. */
-  secrets?: RedactedSecret[]
 }
 ```
 
-A caller that holds only the redacted descriptor cannot safely rebuild a section, so removals travel as path ops instead. Each descriptor also carries a `revision` over the raw section; a write may send it back as `expectedRevision`, and one that no longer matches is refused rather than applied over the writer that landed first.
+A wire descriptor adds the required secret-position sidecar after the schema and layers pass that proof.
+
+```ts type-equiv
+/** One descriptor proven safe for a wire settings surface. */
+interface WireSettingsDescriptor extends SettingsDescriptor {
+  /** Schema-declared secret positions; values and defaults are absent. */
+  secrets: RedactedSecret[]
+}
+```
+
+A caller that holds only the wire descriptor cannot safely rebuild a section, so removals travel as path ops instead. Each descriptor also carries a `revision` over the raw section; a write may send it back as `expectedRevision`, and one that no longer matches is refused rather than applied over the writer that landed first.
+
 ```ts type-equiv
 /**
  * One path-addressed edit to a namespace's user section. Path mutation exists
@@ -140,21 +150,9 @@ type SettingsPathOp =
   | { op: 'unset'; path: readonly string[] }
 ```
 
-```ts type-equiv
-/** Options for {@link SettingsProvider.describe}. */
-interface SettingsDescribeOptions {
-  /**
-   * Strip `role('secret')` fields from `value`/`base`/`user` and enumerate
-   * them in each descriptor's `secrets`. Every wire surface MUST pass this;
-   * the verbatim default exists for same-process configuration UIs only.
-   */
-  redactSecrets?: boolean
-}
-```
-
 ## Change commits
 
-Every committed change — an in-process write or an externally observed provider edit — emits `settings/updated (ns, next, prev, source)` after the new value is authoritative, and never when the resolved value is deep-equal. The source tag separates the two entry paths.
+Every committed change — an in-process write or an externally observed provider edit — emits `settings/updated (ns, next, prev, source)` after the new value is authoritative, and never when the resolved value is deep-equal. The source tag separates the two entry paths. If a disposed owner started a write that reaches storage after a replacement owner registered the same namespace, the replacement owner re-resolves from the committed raw section, advances its revision, and receives watcher notifications under its own lifecycle rules; a section the replacement rejects follows the provider-publish last-good warning behavior.
 
 ```ts type-equiv
 /** Origin of one committed settings change. */
@@ -187,8 +185,11 @@ prepareDocument(): Promise<string | undefined>
 /**
  * Register a namespace schema and receive its owner scope. The registration
  * is an effect on the calling plugin's fiber: disposing that fiber removes
- * the namespace and its observers. An invalid stored section fails the
- * registration itself — the earliest point where the schema can judge it.
+ * the namespace and its observers, skips watcher calls that have not
+ * started, and waits for started watcher calls before resolving. A scope
+ * whose registration was disposed rejects later writes or watchers. An
+ * invalid stored section fails the registration itself — the earliest point
+ * where the schema can judge it.
  * @param ns - unique namespace; duplicate registration fails loud.
  * @param schema - schemastery schema resolving this namespace's value.
  * @param options - composition `base` layer and effect timing.
@@ -197,13 +198,30 @@ prepareDocument(): Promise<string | undefined>
 register<T>(ns: SettingsNamespace, schema: z<T>, options?: SettingsRegisterOptions<T>): SettingsScope<T>
 
 /**
- * Describe every registered namespace for configuration surfaces, including
- * the composition `base` and raw user layers so a form can mark which fields
- * the user overrode (presence in `user`) and what a reset returns to.
- * @param options - redaction switch; wire surfaces must redact.
+ * Describe every registered namespace for same-process configuration
+ * consumers, including verbatim values and serialized schema metadata.
  * @returns one descriptor per registered namespace, in registration order.
  */
-describe(options?: SettingsDescribeOptions): SettingsDescriptor[]
+describe(): SettingsDescriptor[]
+
+/**
+ * Describe every registered namespace for wire consumers through the only
+ * supported serialization path. The complete schema graph is checked before
+ * serialization; secrets are removed from values and schema defaults.
+ * @returns all descriptors in registration order.
+ * @throws a value-free error when a schema cannot be represented safely.
+ */
+describeForWire(): WireSettingsDescriptor[]
+
+/**
+ * Describe one registered namespace for wire consumers through the only
+ * supported serialization path. The complete schema graph is checked before
+ * serialization; secrets are removed from values and schema defaults.
+ * @param ns - namespace selecting one descriptor.
+ * @returns the selected descriptor, or `undefined` while unregistered.
+ * @throws a value-free error when the schema cannot be represented safely.
+ */
+describeForWire(ns: SettingsNamespace): WireSettingsDescriptor | undefined
 
 /**
  * Read one registered namespace's resolved value.

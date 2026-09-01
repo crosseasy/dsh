@@ -41,7 +41,7 @@ export function apply(ctx: Context, config: Config) {
 }
 ```
 
-字段上的 `role('secret')` 让它的值不出现在任何响应里；卡片把这类字段写进 `update`/`mutate` 载荷，或改为经 `credentials` 领域寻址一个凭据引用。`applies: 'restart'` 告诉配置表层：拥有方要到下次启动才会对变更生效。
+字段上的 `role('secret')` 让它的值与默认值不出现在任何响应里；卡片把这类字段写进 `update`/`mutate` 载荷，或改为经 `credentials` 领域寻址一个凭据引用。暴露于 wire 的 schema 应把 secret 叶节点直接放在 `object`、`dict` 或 `array` 下：由 union 或 intersection 隐藏的 secret、任何 transform 或不受支持的 schema 节点，都会让 `settings.describe` 和写入在持久化前失败。`applies: 'restart'` 告诉配置表层：拥有方要到下次启动才会对变更生效。
 
 ## 2. 注册卡片（浏览器半侧）
 

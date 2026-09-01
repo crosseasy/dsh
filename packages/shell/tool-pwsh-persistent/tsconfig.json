@@ -10,6 +10,7 @@
     { "path": "../../../vendor/schemastery" },
     { "path": "../../core/agent" },
     { "path": "../../core/tools" },
+    { "path": "../persistent-tool-runtime" },
     { "path": "../../terminal/terminal" },
     { "path": "../../runtime-diagnostics/invariants" },
     { "path": "../../util/timeout" }

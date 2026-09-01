@@ -2,7 +2,7 @@
 
 English | [中文](README.zh.md)
 
-Model-facing `bash(command)` backed by one owner-scoped `ctx.terminals` shell. The package owns the tool contract and shell reuse; deployments select the PTY backend and sandbox policy.
+Model-facing `bash(command)` backed by one owner-scoped `ctx.terminals` shell. The package owns the tool contract and Bash dialect behavior; [`dsh-persistent-tool-runtime`](../persistent-tool-runtime/README.md) owns the shared shell lifecycle. Deployments select the PTY backend and sandbox policy.
 
 ## Config
 

@@ -1,0 +1,20 @@
+- id: search-a
+  name: plugin-a
+  config:
+    curated:
+      candidateId: plugin-a
+      profile: web-curated
+      active: true
+      capability: web-search
+      resources:
+        toolNames: [web_search]
+- id: search-b
+  name: plugin-b
+  config:
+    curated:
+      candidateId: plugin-b
+      profile: web-curated
+      active: true
+      capability: web-search
+      resources:
+        toolNames: [web_search]

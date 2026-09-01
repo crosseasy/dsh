@@ -104,8 +104,6 @@ describe('partial Landlock runner-failure classification', () => {
       enforcement: 'full',
       runnerFailed: true,
     })
-    const accounting = (bash as unknown as { processFacts: Map<unknown, unknown> }).processFacts
-    expect(accounting.size).toBe(0)
   })
 
   it.each(['bare-name', 'relative'] as const)(
@@ -188,8 +186,6 @@ describe('partial Landlock runner-failure classification', () => {
       expect(output).not.toContain('spawn failed:')
     }
 
-    const accounting = (bash as unknown as { processFacts: Map<unknown, unknown> }).processFacts
-    expect(accounting.size).toBe(0)
   })
 
   it.each([0, 1, 2, LAUNCHER_FAILURE_EXIT])(

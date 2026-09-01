@@ -1,0 +1,42 @@
+{
+  "scope": "full_file",
+  "range": "current worktree specified paths including untracked files",
+  "files": 93,
+  "current_lines": 47699,
+  "changed_files": 31,
+  "added_lines": 5413,
+  "deleted_lines": 567,
+  "changed_lines": 5980,
+  "groups": [
+    {
+      "group": 1,
+      "name": "策略目录、安装锁与激活证据",
+      "files": 15,
+      "current_lines": 11067
+    },
+    {
+      "group": 2,
+      "name": "Profile 物化与启动准入",
+      "files": 17,
+      "current_lines": 7491
+    },
+    {
+      "group": 3,
+      "name": "插件安装与 curated 命令运行时",
+      "files": 22,
+      "current_lines": 22933
+    },
+    {
+      "group": 4,
+      "name": "Benchmark、snapshot 与回滚判定",
+      "files": 27,
+      "current_lines": 5842
+    },
+    {
+      "group": 5,
+      "name": "Base bundle 与 curated 包组拓扑",
+      "files": 12,
+      "current_lines": 366
+    }
+  ]
+}

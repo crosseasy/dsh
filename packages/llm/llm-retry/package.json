@@ -26,6 +26,10 @@
       "types": "./lib/types/types.d.ts",
       "default": "./lib/types/types.js"
     },
+    "./testing": {
+      "types": "./lib/types/testing.d.ts",
+      "default": "./lib/types/testing.js"
+    },
     "./package.json": "./package.json"
   },
   "files": [

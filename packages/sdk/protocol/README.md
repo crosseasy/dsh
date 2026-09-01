@@ -2,11 +2,11 @@
 
 English | [中文](README.zh.md)
 
-The shared wire protocol for the DeepSeek Harness SDK runtime: one newline-delimited JSON-RPC 2.0 transport class plus the named request, result, and notification types both wire ends speak. The package root enumerates the protocol consumer interface; source modules are not exported as deep imports. The server side is the [`dsh-sdk-jsonrpc-server`](../server/README.md) plugin; clients are [`dsh-sdk-client`](../client/README.md) (TypeScript) and the [Python SDK](../../../python/README.md) (which mirrors these shapes but does not import them). A pure library — no plugin, no Config, no registration.
+The shared wire protocol for the DeepSeek Harness SDK runtime: directional newline-delimited JSON-RPC 2.0 transports plus the named request, result, and notification types both wire ends speak. The package root enumerates the protocol consumer interface; source modules are not exported as deep imports. The server side is the [`dsh-sdk-jsonrpc-server`](../server/README.md) plugin; clients are [`dsh-sdk-client`](../client/README.md) (TypeScript) and the [Python SDK](../../../python/README.md) (which mirrors these types but does not import them). A pure library — no plugin, no Config, no registration.
 
 ## Transport
 
-`JsonRpcLineTransport` frames JSON-RPC 2.0 over caller-owned byte streams, one compact JSON frame per `\n`-terminated line. Frames with `id` and `method` are requests, `id` alone is a response, `method` alone is a notification; malformed JSON lines are ignored. `start()` attaches stream listeners, `close()` detaches them and rejects pending requests without destroying the streams. Missing request handlers answer `-32601`; handler rejections answer `-32603` with the error message. An error response rejects the pending `request()` with `JsonRpcResponseError`, which preserves the wire `code` and optional `data`. `JsonRpcTransportPeer` is the outbound surface (request/notify) the server class is typed against.
+`JsonRpcLineServerTransport` and `JsonRpcLineClientTransport` share one frame parser and writer over caller-owned byte streams, with one compact JSON frame per `\n`-terminated line. The server accepts requests and sends responses or notifications; direction-external responses and client notifications are ignored. The client sends requests or notifications and accepts responses or notifications; server requests are ignored and cannot settle a pending request. Malformed JSON lines are ignored. `start()` attaches stream listeners, while `close()` detaches them and rejects client requests without destroying the streams. Missing server handlers answer `-32601`; handler rejections answer `-32603` with the error message. An error response rejects the correlated client `request()` with `JsonRpcResponseError`, preserving the wire `code` and optional `data`.
 
 ## Wire types
 
@@ -36,4 +36,4 @@ None; this package neither assembles nor sends a provider request.
 
 - **No protocol-version negotiation** — the handshake carries only `serverInfo.version` (`0.0.1`, unvalidated by clients); pre-release stance, no compatibility promise.
 - **No cancel or session-close methods** — a client abandons a turn by closing the runtime process; see the [`dsh-sdk-jsonrpc-server` README](../server/README.md).
-- **Server→client requests are dead capability** — the transport supports them, but the server never sends one; the Python SDK's responder surface exists for future approval flows.
+- **No server→client requests** — both SDK clients ignore that direction and expose no response API; adding an interactive request requires an explicit protocol design.

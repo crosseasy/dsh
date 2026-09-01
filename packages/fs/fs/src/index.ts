@@ -15,7 +15,6 @@ import type {
   FsEditOutcome,
   FsEditRequest,
   FsInfo,
-  FsPathInfo,
   FsObservation,
   FsTarget,
   FsVersion,
@@ -35,7 +34,6 @@ export type {
   FsErrorCode,
   FsInfo,
   FsObservation,
-  FsPathInfo,
   FsTarget,
   FsWriteIntent,
   FsWriteOutcome,
@@ -150,22 +148,6 @@ export abstract class FileSystem extends Service {
    * @returns metadata only, never content; undefined for an absent target.
    */
   abstract stat(target: FsTarget, signal?: AbortSignal): Promise<FsInfo | undefined>
-
-  /**
-   * Return path metadata without following the final path component when it is a
-   * symbolic link. This is intentionally path-shaped, not target-shaped:
-   * {@link resolve} follows symlinks to produce the stable identity used by
-   * normal reads/writes, while `lstat` lets a consumer reject the path itself
-   * before that follow happens.
-   *
-   * `opts.cwd` follows {@link resolve}'s cwd rules. `undefined` means the path is
-   * absent.
-   * @param path - the path to inspect; relative paths resolve against `opts.cwd`.
-   * @param opts - `cwd` overrides the backend's default base for relative paths.
-   * @param signal - aborts the metadata round-trip.
-   * @returns metadata only, never content; undefined for an absent path.
-   */
-  abstract lstat(path: string, opts?: { cwd?: string }, signal?: AbortSignal): Promise<FsPathInfo | undefined>
 
   /**
    * Read the whole regular text file as a single decoded string.
