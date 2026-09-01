@@ -5,25 +5,17 @@
  */
 
 import type { SessionEvent } from '@deepseek-ai/dsh-session'
-import type { CommandId } from '@deepseek-ai/dsh-commands'
-import type { PlanProjection } from './types.ts'
+import type { PlanProjection, PlanUnitState } from './types.ts'
 
 /** Projection state for the logged plan-mode lifecycle. */
-export interface PlanProjectionState {
-  /** The committed mode currently in force. */
-  active: boolean
-  /** The last successful selection not yet committed by `plan/mode`; null when none stands. */
-  wanted: boolean | null
-  /** The latest plan command awaiting its paired settlement. */
-  running: { commandId: CommandId; wanted: boolean } | null
-}
+export type PlanProjectionState = PlanUnitState
 
 /**
  * Initial state for the plan projection fold.
  * @returns inactive plan projection state with no pending command.
  */
 export function initialPlanProjectionState(): PlanProjectionState {
-  return { active: false, wanted: null, running: null }
+  return { active: false, wanted: null, running: null, activeAtLastHeader: null }
 }
 
 /**
@@ -46,6 +38,9 @@ export function applyPlanProjectionEvent(state: PlanProjectionState, event: Sess
   }
   if (event.type === 'plan/mode') {
     return { ...state, active: event.data.active, wanted: null }
+  }
+  if (event.type === 'request/header') {
+    return { ...state, activeAtLastHeader: state.active }
   }
   return state
 }

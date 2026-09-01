@@ -1,9 +1,24 @@
+---
+description: "Shared one-shot shell executor runtime for local Bash and PowerShell adapters backed by subprocesses."
+kind: "package-library"
+---
+
 # @deepseek-ai/dsh-shell-runtime
 
 English | [中文](README.zh.md)
 
+## Summary
+
 Private helper package for one-shot shell executors backed by `ctx.subprocess`. It supplies the shared foreground and background process lifecycle used by `dsh-bash-local` and `dsh-pwsh-local`, plus the shell-agnostic sandbox settlement used by their sandboxing adapters; it does not register `ctx.shell` itself.
 
+## Table of Contents
+
+- [API Contract](#api-contract)
+- [Model Experience](#model-experience)
+- [Known Limitations and Deferred Work](#known-limitations-and-deferred-work)
+- [Dev Note](#dev-note)
+
+<a id="api-contract"></a>
 ## API Contract
 
 `OneShotShellExecutor` extends the `dsh-shell` Service Definition base and keeps `runArgv()` / `startArgv()` as protected hooks for executor subclasses. An adapter passes an exact argv, resolved cwd, stdin, explicit env, output budgets, spill budget, grace period, timeout identity, and dropped-collector diagnostic. The runtime owns shared request defaulting and caps, subprocess spawn construction, collect-reader validation, foreground timeout/abort classification, final stdout/stderr projection, background read cursors, spawn-failure single-delivery, and kill settlement.
@@ -14,6 +29,7 @@ Private helper package for one-shot shell executors backed by `ctx.subprocess`. 
 
 The runtime resolves only shell-agnostic request fields. Bash keeps `bash -c`, `TERM=dumb`, its public config schema, and its diagnostic prefix in `dsh-bash-local`; PowerShell keeps executable probing, `ENCODING_PREAMBLE`, its public config schema, and the absence of `TERM=dumb` in `dsh-pwsh-local`. Sandboxing adapters keep policy resolution and provider dialect data while delegating settlement to this package.
 
+<a id="model-experience"></a>
 ## Model Experience
 
 ### One-shot shell lifecycle
@@ -32,6 +48,18 @@ No direct invalidation; this package contributes no system-prompt section or too
 
 ## Known Limitations and Deferred Work
 
+<a id="known-limitations-and-deferred-work"></a>
+
 - The runtime only supports collect-mode subprocess execution for one-shot commands.
 - It does not cover persistent PTY sessions; those use [`dsh-persistent-tool-runtime`](../persistent-tool-runtime/README.md).
 - It does not own sandbox policy, provider selection, or dialect signatures; sandboxing adapters pass those per-call facts into `OneShotSandboxSettlement`.
+
+<a id="dev-note"></a>
+### Dev Note
+
+<details>
+<summary>Working context for maintainers - click to expand</summary>
+
+None.
+
+</details>

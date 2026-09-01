@@ -6,7 +6,7 @@
 
 import { Context } from '@deepseek-ai/cordis'
 import { constants as bufferConstants } from 'node:buffer'
-import { isAbsolute, relative, sep } from 'node:path'
+import { isAbsolute, relative, resolve, sep } from 'node:path'
 import { pathToFileURL } from 'node:url'
 import z from '@deepseek-ai/schemastery'
 import { FileSystem, FsError, FsVersion } from '@deepseek-ai/dsh-fs'
@@ -110,6 +110,10 @@ export class LocalFileSystem extends FileSystem {
 
   override processPath(target: FsTarget): string {
     return String(target.targetKey)
+  }
+
+  override processPathFromHostPath(hostPath: string): string | undefined {
+    return isAbsolute(hostPath) ? resolve(hostPath) : undefined
   }
 
   override fileUrl(target: FsTarget): string {

@@ -98,6 +98,11 @@ function usageOf(event: SessionEvent): TokenUsage | undefined {
  * @returns the next state, or `state` when the event is irrelevant.
  */
 export function applyTokenUsageProjectionEvent(state: TokenUsageState, event: SessionEvent): TokenUsageState {
+  if (event.type === 'llm/retry-started') {
+    return state.last?.turn === event.data.turn && state.last.step === event.data.step
+      ? { ...state, last: null }
+      : state
+  }
   let turn: number
   let step: number
   let usage: TokenUsage

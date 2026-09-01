@@ -8,9 +8,15 @@ import { Context } from '@deepseek-ai/cordis'
 import z from '@deepseek-ai/schemastery'
 import { SHELL_SETTINGS_NAMESPACE } from '@deepseek-ai/dsh-shell'
 import type { ShellExecRequest, ShellExecSpec, ShellProcess, ShellRunResult } from '@deepseek-ai/dsh-shell'
-import { assertServiceableOneShotShellConfig, OneShotShellExecutor, oneShotShellSettings as projectOneShotShellSettings, resolveOneShotShellRequest } from '@deepseek-ai/dsh-shell-runtime'
+import {
+  assertServiceableOneShotShellConfig,
+  OneShotShellExecutor,
+  oneShotShellSettings as projectOneShotShellSettings,
+  resolveOneShotShellRequest,
+} from '@deepseek-ai/dsh-shell-runtime'
 import type { OneShotShellSettings } from '@deepseek-ai/dsh-shell-runtime'
-import { installSettingsSection } from '@deepseek-ai/dsh-settings'
+import type {} from '@deepseek-ai/dsh-settings'
+/* jscpd:ignore-end */
 import { resolvePwshPath } from './resolve.ts'
 
 /** Model-friendly PowerShell env defaults; `TERM=dumb` is deliberately absent. */
@@ -105,17 +111,21 @@ export class PwshLocalExecutor extends OneShotShellExecutor {
     this.source = () => entry
     this.declaredPwshPath = entry.pwshPath
     this.resolvedPwshPath = resolvePwshPath(entry.pwshPath)
-    installSettingsSection(ctx, SHELL_SETTINGS_NAMESPACE, PwshLocalExecutor.Config, entry, {
-      validate: assertServiceablePwshConfig,
-      setSource: (current) => {
-        this.source = current as () => ResolvedConfig
-      },
-      onChange: () => {
-        const declared = this.source().pwshPath
-        if (declared === this.declaredPwshPath) return
-        this.declaredPwshPath = declared
-        this.resolvedPwshPath = resolvePwshPath(declared)
-      },
+    ctx.inject(['settings'], (settingsCtx) => {
+      settingsCtx.settings.installSection(ctx, SHELL_SETTINGS_NAMESPACE, PwshLocalExecutor.Config, entry, {
+        validate: assertServiceablePwshConfig,
+        setSource: (current) => {
+          this.source = current as () => ResolvedConfig
+        },
+        // Probing the filesystem is the one fact derived from the source: every
+        // other field is read through the getter at each command.
+        onChange: () => {
+          const declared = this.source().pwshPath
+          if (declared === this.declaredPwshPath) return
+          this.declaredPwshPath = declared
+          this.resolvedPwshPath = resolvePwshPath(declared)
+        },
+      })
     })
   }
 

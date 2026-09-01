@@ -30,7 +30,7 @@ Harness consumers reference the Landlock entry as `workspace:^` rather than `wor
 
 ## Alternatives considered
 
-**Keep the dsh family restricted while publishing only curated, vendored, and native dependencies publicly.** Rejected because `@deepseek-ai/dsh` also depends on many non-curated dsh packages. A public CLI with any restricted direct or transitive dependency is not anonymously installable, while a restricted CLI exposes no public installation path for the curated integration it carries.
+**Flip the whole scope public at once.** Rejected: it would make a dsh release public as a side effect of a manifest change rather than a deliberate release decision. Opening the two dependency sequences first keeps every published package installable at each step and is a precondition for opening dsh.
 
 **Keep everything restricted and grant a read-only team instead.** `npm access grant read-only <org:team> <package>` is per-package with no scope wildcard, so covering the set means one grant per package plus a standing reconciliation job for every package added afterwards. It also only reaches organization members, which does not serve an installable public artifact.
 

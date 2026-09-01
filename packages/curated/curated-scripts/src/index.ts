@@ -559,14 +559,14 @@ const RESOURCE_LABELS = {
 const WATERFALL_LISTENER_PATTERN = /^(?:agent\/pre-step|agent\/request|tools\/pre-execute):next$/u
 const PROFILE_NAME_PATTERN = /^[a-z0-9][a-z0-9-]*$/u
 const INSTALLATION_OWNED_PROFILE_BUNDLES = new Set([
-  ...Object.values(PROFILE_TEMPLATES).flat(),
+  ...Object.values(PROFILE_TEMPLATES).flatMap(template => template.bundles),
   '@deepseek-ai/dsh-curated-base',
 ])
 const PNPMFILE_NAMES = ['.pnpmfile.cjs', '.pnpmfile.js', '.pnpmfile.mjs'] as const
 const SHIPPED_SMOKE_PROFILE_TEMPLATES: Readonly<Record<string, SmokeProfileTemplate>> = Object.freeze(
-  Object.fromEntries(Object.entries(PROFILE_TEMPLATES).map(([profile, bundles]) => [
+  Object.fromEntries(Object.entries(PROFILE_TEMPLATES).map(([profile, template]) => [
     profile,
-    Object.freeze({ bundles: Object.freeze([...bundles]) }),
+    Object.freeze({ bundles: Object.freeze([...template.bundles]) }),
   ])),
 )
 const SMOKE_PROFILE_TEMPLATES = {
@@ -3774,7 +3774,7 @@ function assertBenchmarkProfileTemplate(
 ): void {
   const expected = isCuratedProfileName(profile)
     ? CURATED_PROFILE_TEMPLATES[profile].bundles
-    : PROFILE_TEMPLATES[profile]
+    : PROFILE_TEMPLATES[profile]?.bundles
   if (expected === undefined) throw new Error(`${label} profile must name a shipped or curated profile template`)
   const bundles = assertBenchmarkProfileSnapshotBundles(snapshot, `${label} snapshot`)
   if (!sameOrderedStrings(bundles, expected)) {

@@ -673,7 +673,7 @@ async function verifyPetApplyRegistrationMutation(
  * @returns A promise that settles after the Pet route passes all four authorization states.
  */
 export async function verifyFusionExternalAuthorization(options: VerificationOptions): Promise<void> {
-  healProfilesModuleFallback(options.installAnchor, dirname(dirname(options.profile)))
+  await healProfilesModuleFallback({ installAnchor: options.installAnchor, home: dirname(dirname(options.profile)) })
   const pairingTokens = new Set<string>()
   await verifyPetApplyRegistrationMutation(
     options.profile,

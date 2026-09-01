@@ -1,8 +1,27 @@
+---
+description: "Curated plugin policy, profile, benchmark, and command packages for governed third-party profile admission."
+kind: "package-group"
+---
+
 # Curated Packages
 
 English | [中文](README.zh.md)
 
-`packages/curated/` is the package-group container for the curated plugin layer.
+## Summary
+
+`packages/curated/` is the package-group container for the curated plugin layer. The cross-package contracts live in the [curated subsystem page](../../docs/subsystems/curated.md).
+
+## Table of Contents
+
+- [Packages](#packages)
+- [Governance Boundary](#governance-boundary)
+- [Profile Tiers](#profile-tiers)
+- [Model Experience](#model-experience)
+- [Known Limitations and Deferred Work](#known-limitations-and-deferred-work)
+- [Dev Note](#dev-note)
+
+<a id="packages"></a>
+## Packages
 
 - `curated-base`: Defines the base curated bundle that inserts curated policy and benchmark services into profiles.
 - `curated-policy`: Owns curated plugin policy data and policy behavior for the curated layer.
@@ -12,10 +31,12 @@ English | [中文](README.zh.md)
 
 All five packages are public members of the DSH release family. `@deepseek-ai/dsh` installs `curated-base` and `curated-profiles`; the release order publishes policy and benchmark assets before their consumers, then publishes the user-facing curated command package after `dsh` and its other runtime dependencies.
 
+<a id="governance-boundary"></a>
 ## Governance Boundary
 
 The curated group is a composition and admission layer. It does not modify `packages/core/agent-loop`, the session wire format, or the shipped `web` and `headless` profile templates. Third-party candidates are recorded as pinned audit facts and profile bundle names; this repository does not vendor their source or execute their install lifecycle scripts during curated admission checks.
 
+<a id="profile-tiers"></a>
 ## Profile Tiers
 
 The intended `web-curated` baseline has 12 candidates. Web search, memento, MCP panel, checkpoint rewind, LSP actions, and LoongSuite telemetry are static/install qualification candidates, but none has a keyless assembled runnable snapshot of its pinned artifact, so the runtime-active count is zero. Web search also lacks its required `@anweat/dsh-browser` bundle/runtime dependency. The other six target candidates retain their artifact, compatibility, or safety rejections.
@@ -26,6 +47,7 @@ Profile materialization writes an empty profile patch while no third-party candi
 
 Rejected and fallback candidates remain in the allowlist with audit evidence and stay out of active profile templates. The inactive pool covers the named search, memory, MCP, browser, context, cost, import/edit, review, notification, and desktop alternatives used by conflict policy and A/B assets; `dsh-llm-fallbacks` and `dsh-feishu` stay inactive until their recorded rejection reasons are resolved.
 
+<a id="model-experience"></a>
 ## Model Experience
 
 ### Curated package group
@@ -44,6 +66,13 @@ No direct cache effect; any profile bundle that registers prompt sections or too
 
 ## Known Limitations and Deferred Work
 
+<a id="known-limitations-and-deferred-work"></a>
+
 - **Managed-profile admission**: mandatory launcher admission checks curated template, manifest, package-manager, and user-layer composition before startup or config dump. The four managed profile files must be ordinary files; all are checked before any is read or written, and missing files use exclusive creation. An existing curated `.npmrc` must exactly equal the generated `ignore-scripts=true` file, and a curated manifest cannot contain a `pnpm` field. Observed verification additionally requires a managed profile, validates both lockfiles against each catalog-owned runtime closure digest, rejects patched package state, and hashes the direct candidate tree. It does not detect arbitrary post-install rewrites of transitive dependency files that leave both lockfiles unchanged. Standalone artifact roots remain metadata-only.
 - **No bundled third-party source**: curated profiles name third-party bundles, but this repository does not vendor them or make them available without a profile installation step.
 - **External evidence remains pending**: every selected active candidate, including a consumer that names a required runtime bundle, must own `runtimeActivationEvidence` keyed by exactly its `targetProfiles`; every profile value binds the real pinned artifact's keyless assembled snapshot and install, enable, restart, and disable-or-uninstall records to that map key, checked-in paths, and SHA-256 values, with every declared runtime bundle present. The repository documentation and DSH release gates return only redacted policy diagnostics before reading evidence when catalog policy fails. Otherwise they parse every profile's records, bind them to the candidate, map key, current profile composition digest, artifact identities, operation, and successful observed command result, require a Git-tracked candidate/profile/operation snapshot command and replay it, redact key/value secrets, Authorization values, and scheme URL userinfo in candidate, profile, and path identifiers, reject secret-bearing record or artifact argv including URL userinfo and secret query parameters without echoing arguments, and verify each separately referenced artifact through a bounded stable descriptor read. Ordinary candidate IDs and snapshot paths containing `authorization` remain valid. Each keyless assembled record also proves waterfall delegation and zero duplicate token injection or external requests. E3/E4, Chrome browser regression, search, memory, MCP, A/B workloads, fault injection, and canaries remain pending.
+
+<a id="dev-note"></a>
+## Dev Note
+
+None.

@@ -1,9 +1,27 @@
+---
+description: "供注册模型可见 Bash 与 PowerShell 工具的包共享的持久 shell 工具运行时。"
+kind: "package-library"
+---
+
 # @deepseek-ai/dsh-persistent-tool-runtime
 
 [English](README.md) | 中文
 
+## 概述
+
 由 `ctx.terminals` 支撑的持久 shell 工具私有辅助包。它根据调用方提供的 `PersistentShellDialect` 注册一个模型可见工具，并拥有 owner 作用域 PTY 缓存、首次调用去重、同 owner 命令串行化、owner/插件清理、scrollback 分页、命令 deadline、reset 处理和通用文本结果包装。
 
+## 目录
+
+- [Config](#config)
+- [API Contract](#api-contract)
+- [Owner-Scoped PTY Lifecycle](#owner-scoped-pty-lifecycle)
+- [Output, Timeout, and Reset Behavior](#output-timeout-and-reset-behavior)
+- [模型体验](#model-experience)
+- [已知限制与暂缓事项](#known-limitations-and-deferred-work)
+- [开发备注](#dev-note)
+
+<a id="config"></a>
 ## Config
 
 本包没有 Cordis 插件配置。调用方把 `PersistentShellDialect` 传给 `registerPersistentShellTool()`。
@@ -28,6 +46,7 @@ dialect 提供所有 shell 专属 hook 和模型可见字符串：工具名和�
 
 `timeoutMs` 适用于单次命令执行。timeout 会返回带通用 timeout 通知的有界部分输出，reset PTY，并追加 `resetMessage`。初始化失败、send 失败、命令 abort 和观察到 shell 退出也会清理缓存 PTY；shell 退出会返回最佳部分捕获，加上 `[shell exited: code N]`、`[shell killed by signal: SIG]` 或 `[shell exited]`，然后追加 `resetMessage`。
 
+<a id="model-experience"></a>
 ## Model Experience
 
 ### Persistent shell tool results
@@ -46,7 +65,19 @@ dialect 提供所有 shell 专属 hook 和模型可见字符串：工具名和�
 
 ## Known Limitations and Deferred Work
 
+<a id="known-limitations-and-deferred-work"></a>
+
 - 运行时要求真实的 `ctx.terminals` 后端和所属 Agent；它会拒绝无 agent 调用，而不是创建进程全局 shell 状态。
 - 运行时不是通用 shell 抽象：调用方必须提供用于 marker 创建、命令包装、初始化、完成检测和输出提取的 dialect hook。
 - timeout、abort、初始化失败、send 失败或 shell 退出后的 reset 会丢弃 shell 状态；没有 cwd、环境、函数、别名或后台任务的 checkpoint 或 replay。
 - 一次性 shell 执行和沙箱结算仍由当前包拥有。
+
+<a id="dev-note"></a>
+### 开发备注
+
+<details>
+<summary>维护者的工作上下文 - 点击展开</summary>
+
+无。
+
+</details>

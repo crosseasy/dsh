@@ -699,6 +699,7 @@ describe('materializeCuratedProfile', () => {
         })),
         patchPath: join(dir, PROFILE_PATCH_FILENAME),
         patches: [],
+        patchReload: 'live',
       } satisfies Profile
 
       expect(() => profiles.curatedProfileDependenciesForBundles([], 'web-personal')).toThrow(
@@ -2493,6 +2494,7 @@ describe('materializeCuratedProfile', () => {
       })),
       patchPath: join(dir, PROFILE_PATCH_FILENAME),
       patches: [],
+      patchReload: 'live',
     } satisfies Profile
 
     expect(() => {
@@ -2549,6 +2551,7 @@ describe('materializeCuratedProfile', () => {
       })),
       patchPath: join(dir, PROFILE_PATCH_FILENAME),
       patches: [],
+      patchReload: 'live',
     } satisfies Profile
 
     try {
@@ -2575,6 +2578,7 @@ describe('materializeCuratedProfile', () => {
       })),
       patchPath: join(dir, PROFILE_PATCH_FILENAME),
       patches: [{ id: 'existing', config: { value: { __jsExpr: 'process.env.SECRET' } } }],
+      patchReload: 'live',
     } satisfies Profile
 
     expect(() => { assertCuratedProfileAdmission('web-personal', home, profile) }).toThrow(
@@ -2596,6 +2600,7 @@ describe('materializeCuratedProfile', () => {
       })),
       patchPath: join(dir, PROFILE_PATCH_FILENAME),
       patches: [{ id: 'existing', config: { value: { __jsExpr: 'process.env.SECRET' } } }],
+      patchReload: 'live',
     } satisfies Profile
 
     expect(() => {
@@ -2617,6 +2622,7 @@ describe('materializeCuratedProfile', () => {
       })),
       patchPath: join(dir, PROFILE_PATCH_FILENAME),
       patches: [{ id: 'unregistered-config-only', config: { enabled: true } }],
+      patchReload: 'live',
     } satisfies Profile
 
     expect(() => { assertCuratedProfileAdmission('web-personal', home, profile) }).not.toThrow()
@@ -2641,6 +2647,7 @@ describe('materializeCuratedProfile', () => {
         id: 'approved-leaf',
         config: { insert: ['ordinary-config-value'] },
       }],
+      patchReload: 'live',
     } satisfies Profile
 
     expect(() => { assertCuratedProfileAdmission('web-personal', home, profile) }).not.toThrow()
@@ -2666,6 +2673,7 @@ describe('materializeCuratedProfile', () => {
       })),
       patchPath: join(dir, PROFILE_PATCH_FILENAME),
       patches: [],
+      patchReload: 'live',
     } satisfies Profile
 
     expect(() => {
@@ -2697,6 +2705,7 @@ describe('materializeCuratedProfile', () => {
       layers,
       patchPath: join(dir, PROFILE_PATCH_FILENAME),
       patches: [],
+      patchReload: 'live',
     } satisfies Profile
 
     expect(() => {
@@ -2755,6 +2764,7 @@ describe('materializeCuratedProfile', () => {
         { id: 'group-a', config: [{ id: 'child-b', name: 'plugin-b', config: {} }] },
         { id: 'group-b', config: [{ id: 'child-a', name: 'plugin-a', config: {} }] },
       ],
+      patchReload: 'live',
     } satisfies Profile
 
     expect(() => {
@@ -2790,6 +2800,7 @@ describe('materializeCuratedProfile', () => {
       })),
       patchPath: join(dir, PROFILE_PATCH_FILENAME),
       patches: [],
+      patchReload: 'live',
     } satisfies Profile
 
     expect(() => {
@@ -2820,6 +2831,7 @@ describe('materializeCuratedProfile', () => {
       })),
       patchPath: join(dir, PROFILE_PATCH_FILENAME),
       patches: [],
+      patchReload: 'live',
     } satisfies Profile
 
     expect(() => {
@@ -3435,8 +3447,10 @@ describe('materializeCuratedProfile', () => {
     const home = tmp()
     const web = resolveProfileDir('web', home)
     const headless = resolveProfileDir('headless', home)
-    initProfile(web, PROFILE_TEMPLATES.web ?? [])
-    initProfile(headless, PROFILE_TEMPLATES.headless ?? [])
+    const webTemplate = PROFILE_TEMPLATES.web
+    const headlessTemplate = PROFILE_TEMPLATES.headless
+    initProfile(web, webTemplate?.bundles ?? [], webTemplate?.patchReload)
+    initProfile(headless, headlessTemplate?.bundles ?? [], headlessTemplate?.patchReload)
     const files = ['package.json', PROFILE_PATCH_FILENAME, 'pnpm-workspace.yaml'] as const
     const before = new Map(
       [web, headless].flatMap(dir => files.map(file => [`${dir}/${file}`, readFileSync(join(dir, file), 'utf8')])),

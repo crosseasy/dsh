@@ -34,7 +34,7 @@ The decision belongs at workflow level because cancellation applies to the whole
 
 ## Activation contract
 
-Failover may be activated only while the corresponding standby lane is green. `serial / linux (self-hosted standby)` validates the aggregate and Linux browser prerequisites on `vm-backup`; `serial / windows (self-hosted standby)` validates `check:ci:windows-complete` and the required Node, pnpm, Git Bash, PowerShell, and symlink support on `dsh-win-ci`.
+`dsh-win-ci`: 32 always-on runner instances (scheduled tasks `GH-Runner-01`…`GH-Runner-32`) on the in-house Windows CI server (one 96-core / 580 GB machine). Labels: `[self-hosted, dsh-win-ci, windows]`. The image must preinstall Node 24, pnpm, Git (with Git Bash on `PATH`, i.e. `C:\Program Files\Git\bin` — the `bash` tool spawns `bash` by name), PowerShell 7, and enable Developer Mode for symlink support. The workspaces and the pnpm store must both live on a ReFS volume (`F:`): the Windows installs pass `--package-import-method=clone` on ReFS, which needs that volume layout and the `@reflink/reflink` native module that the system corepack pnpm carries (see [the Windows ReFS store note](2026-08-30-windows-refs-store-block-clone-install.md)); a rebuilt runner without this layout fails the Windows build gates with TS6231. Check the latest `serial / windows (self-hosted standby)` run before switching: a green standby verifies the pool can execute `check:ci:windows-complete` end-to-end.
 
 Setting `DSH_CI_FAILOVER_LINUX=selfhosted` or `DSH_CI_FAILOVER_WINDOWS=selfhosted` affects only workflow runs created after the variable changes. Queued jobs retain their resolved runner labels, so activation requires a new workflow run.
 

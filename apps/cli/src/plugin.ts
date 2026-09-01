@@ -117,8 +117,7 @@ function exportsPatch(packageName: string, profileDir: string): boolean {
 }
 
 function ordinaryProfileBundles(profile: string): readonly string[] {
-  if (!Object.hasOwn(PROFILE_TEMPLATES, profile)) return DEFAULT_PROFILE_BUNDLES
-  return PROFILE_TEMPLATES[profile] as readonly string[]
+  return PROFILE_TEMPLATES[profile]?.bundles ?? DEFAULT_PROFILE_BUNDLES
 }
 
 /**
@@ -1007,7 +1006,8 @@ export async function runPlugin(profile: string, args: readonly string[]): Promi
 
   const dir = resolveProfileDir(profile)
   if (!existsSync(join(dir, 'package.json'))) {
-    initProfile(dir, ordinaryProfileBundles(profile))
+    const template = PROFILE_TEMPLATES[profile]
+    initProfile(dir, ordinaryProfileBundles(profile), template?.patchReload)
     process.stderr.write(`${NAME}: initialized profile ${profile} at ${dir}\n`)
   }
   const before = readProfileManifest(NAME, dir)

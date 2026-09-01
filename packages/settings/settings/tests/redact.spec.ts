@@ -5,7 +5,7 @@ import * as settingsModule from '../src/index.ts'
 import type { WireSettingsDescriptor } from '../src/index.ts'
 import { MemorySettings } from './memory.ts'
 
-const { redactSecrets, settingsNamespace } = settingsModule
+const { redactSecrets } = settingsModule
 
 const describeForWire = (
   schema: z<never>,
@@ -257,7 +257,7 @@ describe('describeForWire', () => {
 })
 
 describe('describe() layers and redaction', () => {
-  const NS = settingsNamespace('adapter')
+  const NS = 'adapter'
 
   async function boot(doc?: Record<string, unknown>) {
     const ctx = new Context()

@@ -33,6 +33,7 @@ export const planProjectionStateSchema: ZodType<PlanProjectionState> = zod.objec
     commandId: zod.string() as unknown as ZodType<CommandId>,
     wanted: zod.boolean(),
   }).strict().nullable(),
+  activeAtLastHeader: zod.boolean().nullable(),
 }).strict()
 
 /** Wire payload schema of the `plan` projection. */
@@ -51,5 +52,5 @@ export const planProjectionDefinition = {
     viewSchema: planProjectionSchema,
     view: viewPlanProjectionState,
   },
-  stateVersion: 2,
+  stateVersion: 3,
 } satisfies ProjectionDefinition<'plan', PlanProjectionState>

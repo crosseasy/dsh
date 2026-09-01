@@ -7,9 +7,14 @@ import { Context } from '@deepseek-ai/cordis'
 import z from '@deepseek-ai/schemastery'
 import { SHELL_SETTINGS_NAMESPACE } from '@deepseek-ai/dsh-shell'
 import type { ShellExecRequest, ShellExecSpec, ShellProcess, ShellRunResult } from '@deepseek-ai/dsh-shell'
-import { assertServiceableOneShotShellConfig, OneShotShellExecutor, oneShotShellSettings as projectOneShotShellSettings, resolveOneShotShellRequest } from '@deepseek-ai/dsh-shell-runtime'
+import {
+  assertServiceableOneShotShellConfig,
+  OneShotShellExecutor,
+  oneShotShellSettings as projectOneShotShellSettings,
+  resolveOneShotShellRequest,
+} from '@deepseek-ai/dsh-shell-runtime'
 import type { OneShotShellSettings } from '@deepseek-ai/dsh-shell-runtime'
-import { installSettingsSection } from '@deepseek-ai/dsh-settings'
+import type {} from '@deepseek-ai/dsh-settings'
 
 /** Model-friendly Bash env defaults; explicit caller env still wins. */
 export const ENV_OVERRIDES = {
@@ -82,12 +87,16 @@ export class LocalBashExecutor extends OneShotShellExecutor {
     const entry = config as ResolvedConfig
     assertServiceableBashConfig(entry)
     this.source = () => entry
-    installSettingsSection(ctx, SHELL_SETTINGS_NAMESPACE, LocalBashExecutor.Config, entry, {
-      validate: assertServiceableBashConfig,
-      setSource: (current) => {
-        this.source = current as () => ResolvedConfig
-      },
-      onChange: () => {},
+    ctx.inject(['settings'], (settingsCtx) => {
+      settingsCtx.settings.installSection(ctx, SHELL_SETTINGS_NAMESPACE, LocalBashExecutor.Config, entry, {
+        validate: assertServiceableBashConfig,
+        setSource: (current) => {
+          this.source = current as () => ResolvedConfig
+        },
+        // Every field is read through the getter at each command, so nothing
+        // derived from the source needs rebuilding when the document changes.
+        onChange: () => {},
+      })
     })
   }
 

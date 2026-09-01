@@ -1,9 +1,27 @@
+---
+description: "Shared persistent shell tool runtime for packages that register model-facing Bash and PowerShell tools."
+kind: "package-library"
+---
+
 # @deepseek-ai/dsh-persistent-tool-runtime
 
 English | [中文](README.zh.md)
 
+## Summary
+
 Private helper package for persistent shell tools backed by `ctx.terminals`. It registers one model-facing tool from a caller-provided `PersistentShellDialect` and owns the owner-scoped PTY cache, first-call de-duplication, same-owner command serialization, owner/plugin cleanup, scrollback paging, command deadlines, reset handling, and common text result framing.
 
+## Table of Contents
+
+- [Config](#config)
+- [API Contract](#api-contract)
+- [Owner-Scoped PTY Lifecycle](#owner-scoped-pty-lifecycle)
+- [Output, Timeout, and Reset Behavior](#output-timeout-and-reset-behavior)
+- [Model Experience](#model-experience)
+- [Known Limitations and Deferred Work](#known-limitations-and-deferred-work)
+- [Dev Note](#dev-note)
+
+<a id="config"></a>
 ## Config
 
 The package has no Cordis plugin config. Callers pass a `PersistentShellDialect` to `registerPersistentShellTool()`.
@@ -28,6 +46,7 @@ Each command is wrapped with fresh dialect markers and submitted once. The runti
 
 `timeoutMs` applies to one command execution. Timeout returns bounded partial output with the common timeout notice, resets the PTY, and appends `resetMessage`. Initialization failure, send failure, command abort, and observed shell exit also clear the cached PTY; shell exit returns the best partial capture plus `[shell exited: code N]`, `[shell killed by signal: SIG]`, or `[shell exited]`, then appends `resetMessage`.
 
+<a id="model-experience"></a>
 ## Model Experience
 
 ### Persistent shell tool results
@@ -46,7 +65,19 @@ Append-only tool results follow the reusable request prefix. The runtime preserv
 
 ## Known Limitations and Deferred Work
 
+<a id="known-limitations-and-deferred-work"></a>
+
 - The runtime requires a real `ctx.terminals` backend and an owning Agent; it rejects agentless calls instead of creating process-global shell state.
 - The runtime is not a generic shell abstraction: callers must provide dialect hooks for marker creation, command wrapping, initialization, completion detection, and output extraction.
 - Reset discards shell state after timeout, abort, initialization failure, send failure, or shell exit; there is no checkpoint or replay of cwd, environment, functions, aliases, or background jobs.
 - One-shot shell execution and sandbox settlement remain owned by their current packages.
+
+<a id="dev-note"></a>
+### Dev Note
+
+<details>
+<summary>Working context for maintainers - click to expand</summary>
+
+None.
+
+</details>

@@ -1,9 +1,25 @@
+---
+description: "用于精选插件准入与 profile 证据门禁的源树命令库和可执行入口。"
+kind: "package-library"
+---
+
 # `@deepseek-ai/dsh-curated-scripts`
 
 [English](README.md) | 中文
 
+## 概述
+
 `@deepseek-ai/dsh-curated-scripts` 持有精选插件准入与 profile 证据的源树命令实现。该包导出可测试的命令函数，并为 `verify-lock`、`preflight`、`smoke-profile` 和 `compare-benchmark` 分别交付明确的可执行入口；四个入口共用一个 runner。
 
+## 目录
+
+- [命令](#commands)
+- [API](#api)
+- [模型体验](#model-experience)
+- [已知限制与暂缓事项](#known-limitations-and-deferred-work)
+- [开发备注](#dev-note)
+
+<a id="commands"></a>
 ## 命令
 
 - `verify-lock` 静态校验 catalog metadata，包括计算得到的八维评分和必需的 Node/core-patch 声明。绝对 `--artifact-root` 只有同时包含受管 `dsh.profile` manifest 与两份 pnpm lockfile 时才会产生 observed 证据；不受管根目录仍只校验 metadata。受管校验会在不执行包脚本的前提下核对来源、catalog 所有的直接候选目录摘要与运行时依赖闭包摘要、manifest、patch、声明的 main 文件、依赖、安装 hook、Node 兼容性和核心路径改动。JSON 报告分别给出 `catalogCandidateCount` 与 `selectedCandidateCount`，并标明 `provenanceScope`，因此不含第三方依赖的 profile 会报告选中 0 个产物，而不会把完整 catalog 表述为已观测。
@@ -17,6 +33,7 @@ Observed verify-lock 将 canonical `profiles/<built-in-curated-name>` 目录视�
 
 仓库保留四个 `.mjs` wrapper 作为源树开发入口。源码执行通过 tsx 与仓库 paths map 运行 dsh CLI，built 执行则使用纯 Node 运行 manifest 声明的 dsh bin。npm 包不包含这些 wrapper，只发布四个 built command bin。
 
+<a id="api"></a>
 ## API
 
 仓库 activation verifier 要求 `runtimeActivationEvidence` 的 key 与 `targetProfiles` 精确一致，校验每个 profile 的全部五份记录，并把每份记录的 `profile` 绑定到对应 map key。Evidence 与 artifact 路径必须位于仓库内的普通目录之下；读取使用有界 descriptor，并在前后校验祖先目录和文件 identity。重复 JSON key 会在 `JSON.parse` 前被拒绝，原始 secret-key 扫描也会在解析字段可能隐藏先前值之前执行。Record 与 artifact command 检查会拒绝 scheme URL、option 赋值 URL 和无 scheme `user:pass@host:port` 值中的 URL userinfo，且不回显 argv。
@@ -31,6 +48,7 @@ Observed verify-lock 将 canonical `profiles/<built-in-curated-name>` 目录视�
 
 Runtime closure identity 会绑定直接候选的完整 peer-suffixed snapshot key、每个传递依赖的 peer-suffixed resolution key，以及每个 GitHub codeload 依赖经过校验的 package path。结构化 `Authorization` 与 `Proxy-Authorization` tuple 和 `{ name, value }` record 属于含 secret 的输入；准入会拒绝它们，诊断则保留 header 名称并遮蔽其值。Preflight 与 smoke 只在查找和执行时保留原始 profile 名称，并在文本与 JSON 报告中遮蔽 secret-shaped profile 值。Production child 结果与输出的 subprocess stage 会独立保留 `exitCode`、`signal` 和 `timedOut`，同时保留 `status` 以兼容现有 consumer。Staging-worker 失败恰好携带一种表示：非空 `error`，或非空 `issues` 数组且其中的 `code` 与 `message` 字段均非空。注入的单调时钟会在下一次读取时观测 worker 构造与 termination 已耗费的时间，并从后续工作预算和 stage duration 中扣除该时间，但无法抢占或硬性限制这两种操作。
 
+<a id="model-experience"></a>
 ## 模型体验
 
 ### 离线精选校验
@@ -49,8 +67,20 @@ Runtime closure identity 会绑定直接候选的完整 peer-suffixed snapshot k
 
 ## 已知限制与暂缓事项
 
+<a id="known-limitations-and-deferred-work"></a>
+
 - **不安装第三方包**：这些命令读取调用方提供的已安装产物，但不安装包，也不运行候选安装生命周期脚本。
 - **静态结果不是运行时证据**：无 root 的 lock 校验和显式 preflight fixture 会标为非观测；preflight fixture 不会被报告为已通过观测准入，smoke 则要求真实已安装 profile。
 - **Windows observed smoke 待实现**：在 Job Object child runner 能证明 descendant quiescence 之前，`smoke-profile` 会在 Windows 上于 spawn `dsh` 前失败。
 - **Patch 完整性需要操作者审查**：preflight 会解析并校验已配置字段，但不会把 config-only override 与官方 `--dump-config` 基线比较。
 - **仓库不包含长周期运行证据**：默认 benchmark 只列出待执行评测，不伪造运行记录。`compare-benchmark` 会评估输入记录，但不执行外部工作负载、故障评测或 3–7 天 canary。
+
+<a id="dev-note"></a>
+### 开发备注
+
+<details>
+<summary>维护者的工作上下文 - 点击展开</summary>
+
+无。
+
+</details>

@@ -4,7 +4,7 @@
  */
 
 import type { Readable } from 'node:stream'
-import { spawnSubprocess } from '@deepseek-ai/dsh-subprocess-local/src/spawn.ts'
+import { spawnSubprocess } from '../packages/subprocess/subprocess-local/src/spawn.ts'
 
 const TERMINATION_GRACE_MS = 250
 

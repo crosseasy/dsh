@@ -4,15 +4,15 @@ import { join } from 'node:path'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { runOwnedProcess } from './run-owned-process.ts'
 
-type SpawnSubprocess = typeof import('@deepseek-ai/dsh-subprocess-local/src/spawn.ts')['spawnSubprocess']
+type SpawnSubprocess = typeof import('../packages/subprocess/subprocess-local/src/spawn.ts')['spawnSubprocess']
 
 const spawnHarness = vi.hoisted(() => ({
   actual: undefined as SpawnSubprocess | undefined,
   implementation: undefined as SpawnSubprocess | undefined,
 }))
 
-vi.mock('@deepseek-ai/dsh-subprocess-local/src/spawn.ts', async (importOriginal) => {
-  const actual = await importOriginal<typeof import('@deepseek-ai/dsh-subprocess-local/src/spawn.ts')>()
+vi.mock('../packages/subprocess/subprocess-local/src/spawn.ts', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../packages/subprocess/subprocess-local/src/spawn.ts')>()
   spawnHarness.actual = actual.spawnSubprocess
   return {
     ...actual,

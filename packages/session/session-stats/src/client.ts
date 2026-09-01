@@ -13,3 +13,4 @@ export {
   viewSessionStatsProjectionState,
 } from './projection-fold.ts'
 export type { SessionStatsState, SessionStatsTotals } from './projection-fold.ts'
+export { sessionStatsProjectionDefinition } from './projection.ts'

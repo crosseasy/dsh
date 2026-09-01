@@ -4,7 +4,7 @@
  * @module @deepseek-ai/dsh-session-stats/projection-fold
  */
 
-import { isTokenDelta } from '@deepseek-ai/dsh-llm/message'
+import type { StreamChunk } from '@deepseek-ai/dsh-llm/types'
 import type { SessionEvent } from '@deepseek-ai/dsh-session'
 import type { SessionStatsProjection } from './types.ts'
 
@@ -43,6 +43,19 @@ export function initialSessionStatsState(): SessionStatsState {
     lastTurn: null,
     openStep: null,
     pendingCalls: {},
+  }
+}
+
+/** Whether a stream chunk carries a non-empty first-token delta. */
+function isTokenDelta(chunk: StreamChunk): boolean {
+  switch (chunk.type) {
+    case 'text-delta':
+    case 'reasoning-delta':
+      return chunk.text !== ''
+    case 'tool-call-delta':
+      return chunk.argumentsDelta !== '' || chunk.name !== undefined
+    default:
+      return false
   }
 }
 

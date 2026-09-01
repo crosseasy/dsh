@@ -1,15 +1,32 @@
+---
+description: "Structured benchmark assets and a read-only Cordis service for curated plugin admission evidence."
+kind: "package-reference"
+---
+
 # `@deepseek-ai/dsh-curated-bench`
 
 English | [中文](README.zh.md)
 
+## Summary
+
 `@deepseek-ai/dsh-curated-bench` owns structured benchmark inputs for the curated plugin layer. Every execution-related asset identifies itself as `observed`, `fixture`, or `planned`; the checked-in default is a plan with no fabricated runs.
 
+## Table of Contents
+
+- [Assets](#assets)
+- [API](#api)
+- [Model Experience](#model-experience)
+- [Known Limitations and Deferred Work](#known-limitations-and-deferred-work)
+- [Dev Note](#dev-note)
+
+<a id="assets"></a>
 ## Assets
 
 - `manifests/`: read-only candidate audit summaries.
 - `tasks/`: capability task-set definitions for search, memory, browser, MCP, cost, and profile smoke checks.
 - `baselines/`: official profile snapshots, curated profile snapshots, dynamic A/B comparison inputs, and non-restorable planning history.
 
+<a id="api"></a>
 ## API
 
 The package exports directory locators for the three asset roots, a read-only `ctx.curatedBench` asset service, and `validateCuratedBenchAssets()` for static asset checks in tests and build gates. Runtime asset listing is iterative and allows at most 1,024 total entries and 64 nested directory levels. Static validation reads each required `.keep.json` as a contained bounded regular file and requires exactly one non-empty `purpose` field; every parsed asset must be plain JSON with finite numbers. Its invariant companion is empty because fixed JSON assets provide no observable event-stream or mutable-data relationship. Consumers read explicit JSON files from those directories; the package does not run benchmarks itself.
@@ -26,6 +43,7 @@ Files under `baselines/history` are recursively validated planning records with 
 
 Each lock candidate records shared package, patch, normalized source-content, installed-tree, and runtime-closure identities plus exactly one `installSource`. Its `bundlePatch` is a package-contained POSIX relative path beginning with `./`. An npm source requires an exact SemVer 2.0 `npmVersion` and SHA-512 `npmIntegrity`; valid prerelease and build metadata are accepted without prefix, range, or tag coercion. A Git source requires a canonical `https://github.com/<owner>/<repo>` repository, full commit, explicit `repositoryPath`, and an empty `installScripts` record. The source-content digest identifies sorted extracted files rather than GitHub's changeable archive encoding. Missing, mixed, floating, or placeholder source data is invalid. A profile with no third-party candidates uses an empty `candidates` array. Comparison returns the decision, reasons, and immutable snapshot content; an external rollout operator performs restoration, with no claim of automatic or atomic restore.
 
+<a id="model-experience"></a>
 ## Model Experience
 
 ### Benchmark assets
@@ -44,5 +62,17 @@ No direct cache effect; callers that quote benchmark data own that request conte
 
 ## Known Limitations and Deferred Work
 
+<a id="known-limitations-and-deferred-work"></a>
+
 - **Records are classified**: fixture and planned records are not accepted evidence and do not count as canary or fault execution. `evidenceKind: observed`, execution metadata, and run fields are input-provider assertions. Neither that label nor an `accepted` decision cryptographically authenticates the producer or evidence; the operator decides whether their provenance is trustworthy.
 - **Run evidence remains external**: the checked-in curated lock has no active third-party candidates. Activation requires a real pinned artifact, a keyless assembled snapshot, every required dependency bundle, and retained install, enable, restart, disable or uninstall evidence. E3/E4, search, memory, browser, MCP, A/B, fault, and canary campaigns remain pending.
+
+<a id="dev-note"></a>
+### Dev Note
+
+<details>
+<summary>Working context for maintainers - click to expand</summary>
+
+None.
+
+</details>

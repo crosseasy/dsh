@@ -1,13 +1,29 @@
+---
+description: "静态精选 profile 组合包，把精选策略与 benchmark 服务插入精选 profile。"
+kind: "package-bundle"
+---
+
 # `@deepseek-ai/dsh-curated-base`
 
 [English](README.md) | 中文
 
+## 概述
+
 `@deepseek-ai/dsh-curated-base` 是精选插件层的静态 profile 组合包。它的 `dsh.bundle.patch` manifest 指向 [`cordis.patch.yml`](cordis.patch.yml)，其中插入 `@deepseek-ai/dsh-curated-policy` 和 `@deepseek-ai/dsh-curated-bench` 行。第三方插件行属于其他精选组合包或 profile overlay。
 
+## 目录
+
+- [组合包约定](#bundle-contract)
+- [模型体验](#model-experience)
+- [已知限制与暂缓事项](#known-limitations-and-deferred-work)
+- [开发备注](#dev-note)
+
+<a id="bundle-contract"></a>
 ## 组合包约定
 
 该包的主模块不导出运行时 API。它的 package manifest 声明供 profile 组合消费的组合包 patch；可选 invariant companion 记录该组合包除加载精选服务行外不持有运行时 invariant。
 
+<a id="model-experience"></a>
 ## 模型体验
 
 ### Curated 服务插入
@@ -26,5 +42,17 @@
 
 ## 已知限制与暂缓事项
 
+<a id="known-limitations-and-deferred-work"></a>
+
 - **精选行为由其他包持有**：此组合包只加载 `@deepseek-ai/dsh-curated-policy` 和 `@deepseek-ai/dsh-curated-bench`；插件 allowlist、benchmark 资产、执行约束和第三方行属于这些包或其他组合包。
 - **不安装候选**：该组合包不安装第三方包，也不运行其安装生命周期脚本。
+
+<a id="dev-note"></a>
+### 开发备注
+
+<details>
+<summary>维护者的工作上下文 - 点击展开</summary>
+
+无。
+
+</details>

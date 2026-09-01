@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it } from 'vitest'
 import { Context } from '@deepseek-ai/cordis'
-import { CallId } from '@deepseek-ai/dsh-llm'
+import { ToolCallId } from '@deepseek-ai/dsh-llm'
 import { Session, SessionId } from '@deepseek-ai/dsh-session'
 import AgentRegistry, { Inbox } from '@deepseek-ai/dsh-agent'
 import type { Agent } from '@deepseek-ai/dsh-agent'
@@ -72,7 +72,7 @@ function call(
 ) {
   return ctx.tools.execute({
     signal,
-    callId: CallId(`persistent-runtime-${++callNumber}`),
+    callId: ToolCallId(`persistent-runtime-${++callNumber}`),
     name: 'fake',
     arguments: { command },
     agent: owner,

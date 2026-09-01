@@ -1,5 +1,5 @@
 /**
- * Browser-safe token-meter projection types and Cordis-free fold functions.
+ * Client-namespace projection of token-meter's browser-safe contracts and folds.
  *
  * @module @deepseek-ai/dsh-token-meter/client
  */
@@ -12,6 +12,7 @@ export {
   viewContextBreakdownProjectionState,
 } from './breakdown-fold.ts'
 export type { ContextBreakdownState } from './breakdown-fold.ts'
+export { contextBreakdownProjectionDefinition } from './breakdown-projection.ts'
 export {
   applyContextPressureProjectionEvent,
   applyTokenUsageProjectionEvent,
@@ -23,3 +24,9 @@ export {
   viewTokenUsageProjectionState,
 } from './usage-fold.ts'
 export type { ContextPressureState, TokenUsageState } from './usage-fold.ts'
+export {
+  contextPressureProjectionDefinition,
+  tokenUsageProjectionDefinition,
+} from './usage-projection.ts'
+export { deriveTurnTokenUsage } from './turn-usage.ts'
+export type { TurnTokenUsage, TurnTokenUsageRoute } from './turn-usage.ts'

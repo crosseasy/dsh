@@ -1,9 +1,25 @@
+---
+description: "Source-tree command library and executable entries for curated plugin admission and profile evidence gates."
+kind: "package-library"
+---
+
 # `@deepseek-ai/dsh-curated-scripts`
 
 English | [中文](README.zh.md)
 
+## Summary
+
 `@deepseek-ai/dsh-curated-scripts` owns the source-tree command implementations for curated plugin admission and profile evidence. The package exports testable command functions and ships a distinct executable entry for each of `verify-lock`, `preflight`, `smoke-profile`, and `compare-benchmark`; all four entries use one shared runner.
 
+## Table of Contents
+
+- [Commands](#commands)
+- [API](#api)
+- [Model Experience](#model-experience)
+- [Known Limitations and Deferred Work](#known-limitations-and-deferred-work)
+- [Dev Note](#dev-note)
+
+<a id="commands"></a>
 ## Commands
 
 - `verify-lock` validates catalog metadata statically, including the computed eight-dimension score and required Node/core-patch declarations. An absolute `--artifact-root` produces observed evidence only when it contains a managed `dsh.profile` manifest and both pnpm lockfiles; unmanaged roots remain metadata-only. Managed validation checks provenance, the catalog-owned direct-candidate tree digest and runtime dependency closure digest, manifests, patches, declared main files, dependencies, install hooks, Node compatibility, and core-path changes without executing package scripts. JSON reports separate `catalogCandidateCount` from `selectedCandidateCount` and identifies `provenanceScope`, so a profile with no third-party dependencies reports zero selected artifacts instead of presenting the full catalog as observed.
@@ -17,6 +33,7 @@ Observed verify-lock treats a canonical `profiles/<built-in-curated-name>` direc
 
 The repository keeps four `.mjs` wrappers for source-tree development. Source execution runs the dsh CLI through tsx with the repository paths map, while built execution runs the manifest-declared dsh bin under plain Node. The npm package omits the wrappers and publishes only the four built command bins.
 
+<a id="api"></a>
 ## API
 
 The repository activation verifier requires `runtimeActivationEvidence` keys to exactly match `targetProfiles`, validates all five records for every profile, and binds each record's `profile` to its map key. Evidence and artifact paths must remain below regular repository directories; reads use bounded descriptors with before-and-after ancestor and file identity checks. Duplicate JSON keys reject before `JSON.parse`, and raw secret-key scanning runs before parsed fields can hide an earlier value. Its record and artifact command checks reject URL userinfo in scheme URLs, option-assigned URLs, and schemeless `user:pass@host:port` values without echoing argv.
@@ -27,6 +44,7 @@ For exact managed roots, `createInstalledArtifactResolver()` runs `assertCurated
 
 Runtime closure identities bind a direct candidate's full peer-suffixed snapshot key, each transitive dependency's peer-suffixed resolution key, and the validated package path of each GitHub codeload dependency. Structured `Authorization` and `Proxy-Authorization` tuples and `{ name, value }` records are secret-bearing input; admission rejects them and diagnostics retain the header name while redacting its value. Preflight and smoke retain raw profile names for lookup and execution but redact secret-shaped profile values in text and JSON reports. Production child results and emitted subprocess stages preserve `exitCode`, `signal`, and `timedOut` independently while retaining `status` for compatibility. A staging-worker failure carries exactly one representation: either a non-empty `error`, or a non-empty `issues` array whose `code` and `message` fields are non-empty. The injected monotonic clock observes elapsed worker construction and termination time at its next reading, charges that time against later work and stage duration, but cannot preempt or hard-bound either operation.
 
+<a id="model-experience"></a>
 ## Model Experience
 
 ### Offline curated verification
@@ -45,8 +63,20 @@ No direct cache effect; diagnostics become model-visible only if a caller explic
 
 ## Known Limitations and Deferred Work
 
+<a id="known-limitations-and-deferred-work"></a>
+
 - **No third-party installation**: the commands read caller-supplied installed artifacts but do not install packages or run candidate install lifecycle scripts.
 - **Static results are not runtime evidence**: rootless lock verification and explicit preflight fixtures are labeled non-observed; preflight fixtures are never accepted as observed profile evidence, and smoke requires a real installed profile.
 - **Windows observed smoke is pending**: `smoke-profile` fails before spawning `dsh` on Windows until a Job Object child runner can prove descendant quiescence.
 - **Patch completeness requires operator review**: preflight parses and validates configured fields but does not compare config-only overrides with an official `--dump-config` baseline.
 - **No long-run evidence is checked in**: the default benchmark lists pending campaigns without fabricated runs. `compare-benchmark` evaluates supplied records but does not execute external workloads, fault campaigns, or 3–7 day canaries.
+
+<a id="dev-note"></a>
+### Dev Note
+
+<details>
+<summary>Working context for maintainers - click to expand</summary>
+
+None.
+
+</details>

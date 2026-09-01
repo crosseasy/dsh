@@ -1,15 +1,32 @@
+---
+description: "用于精选插件准入证据的结构化 benchmark 资产和只读 Cordis 服务。"
+kind: "package-reference"
+---
+
 # `@deepseek-ai/dsh-curated-bench`
 
 [English](README.md) | 中文
 
+## 概述
+
 `@deepseek-ai/dsh-curated-bench` 持有精选插件层的结构化 benchmark 输入。每项执行相关资产都显式标为 `observed`、`fixture` 或 `planned`；仓库中的默认记录是没有伪造运行数据的计划。
 
+## 目录
+
+- [资产](#assets)
+- [API](#api)
+- [模型体验](#model-experience)
+- [已知限制与暂缓事项](#known-limitations-and-deferred-work)
+- [开发备注](#dev-note)
+
+<a id="assets"></a>
 ## 资产
 
 - `manifests/`：只读候选 audit 摘要。
 - `tasks/`：搜索、记忆、浏览器、MCP、成本和 profile smoke 检查的能力任务集定义。
 - `baselines/`：官方 profile 快照、精选 profile 快照、动态 A/B 比较输入和不可恢复的规划历史。
 
+<a id="api"></a>
 ## API
 
 该包导出三个资产根目录的定位值、只读 `ctx.curatedBench` 资产服务，以及供测试和构建门禁执行静态资产检查的 `validateCuratedBenchAssets()`。Runtime 资产列表使用迭代遍历，最多允许 1,024 个总条目和 64 层嵌套目录。静态校验会把每个必需 `.keep.json` 作为目录内的有界普通文件读取，要求它只包含一个非空 `purpose` 字段，并要求每项解析后的资产都是数值有限的 plain JSON。由于固定 JSON 资产不存在可观测的事件流或可变数据关系，其 invariant companion 为空。消费者从这些目录读取显式 JSON 文件；该包本身不运行 benchmark。
@@ -26,6 +43,7 @@ Canonical `baselines/locks/web-curated.json` 与 `baselines/profiles/web-curated
 
 每个 lock candidate 都记录共享的 package、patch、规范化源码内容、安装目录与 runtime closure identity，并且只带一个 `installSource`。其 `bundlePatch` 必须是以 `./` 开头且位于 package 内的 POSIX 相对路径。npm source 要求确切 SemVer 2.0 `npmVersion` 与 SHA-512 `npmIntegrity`；合法 prerelease 与 build metadata 可以使用，但不会对 prefix、range 或 tag 进行 coercion。Git source 要求 canonical `https://github.com/<owner>/<repo>` repository、完整 commit、显式 `repositoryPath` 和空 `installScripts` 记录。源码内容摘要标识排序后的解压文件，而不是 GitHub 可变的归档编码。缺失、混合、浮动或占位 source 数据均不合法。不含第三方 candidate 的 profile 使用空 `candidates` 数组。比较只返回决策、原因和不可变 snapshot 内容；恢复由外部 rollout operator 执行，不声称自动或原子恢复。
 
+<a id="model-experience"></a>
 ## 模型体验
 
 ### Benchmark 资产
@@ -44,5 +62,17 @@ Canonical `baselines/locks/web-curated.json` 与 `baselines/profiles/web-curated
 
 ## 已知限制与暂缓事项
 
+<a id="known-limitations-and-deferred-work"></a>
+
 - **记录具有明确分类**：fixture 和 planned 记录不是准入证据，也不计作 canary 或故障执行。`evidenceKind: observed`、执行 metadata 与运行字段均是输入提供者的断言。该标签与 `accepted` 决策都不会以密码学方式认证 producer 或 evidence；其来源是否可信仍由 operator 判断。
 - **运行证据仍在外部**：签入的精选 lock 不含 active 第三方候选。激活要求真实固定产物、keyless assembled snapshot、全部必需依赖 bundle，以及安装、启用、重启、禁用或卸载证据。E3/E4、搜索、记忆、浏览器、MCP、A/B、故障与 canary 均为 pending。
+
+<a id="dev-note"></a>
+### 开发备注
+
+<details>
+<summary>维护者的工作上下文 - 点击展开</summary>
+
+无。
+
+</details>

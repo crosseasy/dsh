@@ -34,7 +34,7 @@ Status: implemented
 
 ## 启用约定
 
-只有对应热备通道为绿色时才能启用故障切换。`serial / linux (self-hosted standby)` 验证 `vm-backup` 上的聚合流程与 Linux 浏览器先决条件；`serial / windows (self-hosted standby)` 验证 `dsh-win-ci` 上的 `check:ci:windows-complete`，以及必需的 Node、pnpm、Git Bash、PowerShell 与符号链接支持。
+`dsh-win-ci`：公司内部 Windows CI 服务器（一台 96 核 / 580 GB 机器）上 32 个常驻运行器实例（计划任务 `GH-Runner-01`…`GH-Runner-32`）。标签：`[self-hosted, dsh-win-ci, windows]`。镜像必须预装 Node 24、pnpm、Git（Git Bash 在 `PATH` 上，即 `C:\Program Files\Git\bin`——`bash` 工具按名称 spawn `bash`）、PowerShell 7，并为符号链接支持启用开发人员模式。工作区与 pnpm store 必须都位于 ReFS 卷（`F:`）上：Windows 安装步骤在 ReFS 上传递 `--package-import-method=clone`，这需要该卷布局以及系统 corepack pnpm 携带的 `@reflink/reflink` 原生模块（见 [Windows ReFS store note](2026-08-30-windows-refs-store-block-clone-install.zh.md)）；没有此布局的重建运行器会在 Windows 构建门禁阶段以 TS6231 失败。切换前先看 `serial / windows (self-hosted standby)` 最近一次运行：绿色热备验证该池能端到端执行 `check:ci:windows-complete`。
 
 设置 `DSH_CI_FAILOVER_LINUX=selfhosted` 或 `DSH_CI_FAILOVER_WINDOWS=selfhosted` 只影响变量变更后创建的 workflow run。已排队作业保留其解析出的运行器标签，因此启用故障切换必须启动新的 workflow run。
 

@@ -13,3 +13,4 @@ export {
   viewPlanProjectionState,
 } from './projection-fold.ts'
 export type { PlanProjectionState } from './projection-fold.ts'
+export { planProjectionDefinition } from './projection.ts'

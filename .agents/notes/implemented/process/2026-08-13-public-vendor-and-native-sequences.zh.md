@@ -30,7 +30,7 @@ harness 消费方引用 Landlock 入口改用 `workspace:^` 而非 `workspace:*`
 
 ## Alternatives considered
 
-**让 dsh 族保持受限，只公开 curated、vendored 与 native 依赖。** 不采用，因为 `@deepseek-ai/dsh` 还依赖许多非 curated 的 dsh 包。公开 CLI 的任何直接或传递依赖只要受限，就无法匿名安装；而受限 CLI 又不会为其携带的 curated 集成提供公开安装路径。
+**一次性把整个 scope 改成 public。**不予采纳：这会让一次 dsh 发布因 manifest 改动而顺带公开，而不是来自刻意的发布决定。先公开两条依赖序列，能让每一步的已发布包都保持可安装，也是公开 dsh 的前置条件。
 
 **全部保持受限，改为授予一个只读 team。** `npm access grant read-only <org:team> <包>` 是逐包的、没有 scope 通配，覆盖全集意味着每个包一次 grant，外加一个为后续新增包长期补齐的对账任务。它也只能覆盖组织成员，无法服务一个可安装的公开产物。
 
