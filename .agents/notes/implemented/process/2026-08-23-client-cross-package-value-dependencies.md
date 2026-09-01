@@ -28,6 +28,8 @@ Intentional target-local copies wrap only the duplicated implementation in `jscp
 
 `verify-client-packages` rejects every `dsh.client.external` declaration under `packages/client/*`. Outside that feature tree, each declaration must correspond to a production runtime import or re-export. The two retained requests are Session Controller → API Gateway and Workspace Controller → API Gateway; both are transport infrastructure. The Client bundle preset separately rejects workspace runtime imports that are neither module-table requests nor explicitly allowlisted static inputs.
 
+The inline-safe list names browser-safe subpaths, not whole feature roots, when a package root also exports Host services. `@deepseek-ai/dsh-llm/call-config`, `/message`, `/brand`, and `/types` may inline as stateless data helpers, while the `@deepseek-ai/dsh-llm` root stays forbidden because it also exports the decorated `LlmRuntime` service.
+
 Host-facing transport adapters remain outside the feature-plugin prohibition. Connection may use API Proxy's carrier implementation, and `api/remotes` may load a generated Host Remote provider. These imports assemble transport rather than sharing feature behavior.
 
 ## Alternatives considered

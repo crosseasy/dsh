@@ -28,6 +28,8 @@ Status: implemented
 
 `verify-client-packages` 拒绝 `packages/client/*` 下的所有 `dsh.client.external` 声明。在该功能树之外，每条声明都必须对应生产代码中的运行时 import 或 re-export。保留的两条请求是 Session Controller → API Gateway 与 Workspace Controller → API Gateway，二者都属于传输基础设施。Client bundle preset 还会拒绝既非模块表请求、也未被明确加入静态输入 allowlist 的 workspace 运行时 import。
 
+当包根入口同时导出 Host service 时，inline-safe 名单必须写浏览器安全的子路径，而不是整个功能根。`@deepseek-ai/dsh-llm/call-config`、`/message`、`/brand` 与 `/types` 可以作为无状态数据辅助函数内联；`@deepseek-ai/dsh-llm` 根入口仍被禁止，因为它还导出带 decorator 的 `LlmRuntime` service。
+
 面向 Host 的传输适配器不属于功能插件禁令。Connection 可以使用 API Proxy 的 carrier 实现，`api/remotes` 可以加载生成的 Host Remote provider；这些 import 用于组装传输，而不是共享功能行为。
 
 ## 考虑过的替代方案
