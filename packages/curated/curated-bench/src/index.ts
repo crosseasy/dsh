@@ -3,10 +3,11 @@
  * @module @deepseek-ai/dsh-curated-bench
  */
 
-import { readdirSync, readFileSync } from 'node:fs'
-import { join, posix, sep } from 'node:path'
+import { opendirSync, type Dir } from 'node:fs'
+import { join, posix } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import type { Context } from '@deepseek-ai/cordis'
+import { readContainedBenchmarkJson } from './snapshot.ts'
 
 /** Cordis plugin name used by loader diagnostics. */
 export const name = 'curated-bench'
@@ -44,6 +45,8 @@ const DEFAULT_ASSET_DIRS: CuratedBenchAssetDirs = Object.freeze({
   tasks: curatedBenchTasksDir,
   baselines: curatedBenchBaselinesDir,
 })
+const MAX_ASSET_DEPTH = 64
+const MAX_ASSET_ENTRIES = 1024
 
 /** Configuration accepted by the curated benchmark plugin. */
 export interface Config {
@@ -82,6 +85,7 @@ export class CuratedBench {
    * List JSON asset paths for one asset class.
    * @param kind - Asset class to list.
    * @returns sorted POSIX-style relative JSON paths.
+   * @throws when the asset tree exceeds 64 nested levels or 1,024 total entries.
    */
   listAssets(kind: CuratedBenchAssetKind): readonly string[] {
     return Object.freeze(listJsonFiles(this.dirs[kind]).sort((left, right) => left.localeCompare(right)))
@@ -92,9 +96,19 @@ export class CuratedBench {
    * @param kind - Asset class containing the file.
    * @param path - Safe POSIX-style relative path ending in `.json`.
    * @returns the parsed plain JSON value.
+   * @throws when the path is unsafe, the target is not a contained stable regular
+   * file, the read exceeds its limit, the content is malformed JSON, or the
+   * parsed value is not plain JSON.
    */
   readAsset(kind: CuratedBenchAssetKind, path: string): CuratedBenchJson {
-    return deepFreeze(readJson(join(this.dirs[kind], safeAssetPath(path))))
+    const parsed = readContainedBenchmarkJson(
+      this.dirs[kind],
+      safeAssetPath(path),
+      'curated benchmark asset path',
+      'configured asset directory',
+    )
+    if (!isPlainJson(parsed)) throw new Error('curated benchmark asset must contain plain JSON')
+    return deepFreeze(parsed)
   }
 }
 
@@ -110,15 +124,43 @@ export function apply(ctx: Context, config: Config = {}): void {
 
 function listJsonFiles(root: string): string[] {
   const output: string[] = []
-  const visit = (relative: string): void => {
-    for (const entry of readdirSync(join(root, relative), { withFileTypes: true })) {
-      const child = relative === '' ? entry.name : `${relative}/${entry.name}`
-      if (entry.isDirectory()) visit(child)
-      else if (entry.isFile() && entry.name.endsWith('.json')) output.push(child)
+  const pending = [{ relative: '', depth: 0 }]
+  let entryCount = 0
+  while (pending.length > 0) {
+    const { relative, depth } = pending.pop() as typeof pending[number]
+    const directory = opendirSync(join(root, relative), { bufferSize: 1 })
+    try {
+      for (;;) {
+        const entry = directory.readSync()
+        if (entry === null) break
+        entryCount += 1
+        if (entryCount > MAX_ASSET_ENTRIES) {
+          throw new Error(`curated benchmark asset tree must contain at most ${String(MAX_ASSET_ENTRIES)} entries`)
+        }
+        const child = relative === '' ? entry.name : `${relative}/${entry.name}`
+        if (entry.isDirectory()) {
+          if (depth >= MAX_ASSET_DEPTH) {
+            throw new Error(
+              `curated benchmark asset tree must contain at most ${String(MAX_ASSET_DEPTH)} nested directory levels`,
+            )
+          }
+          pending.push({ relative: child, depth: depth + 1 })
+        }
+        else if (entry.isFile() && entry.name.endsWith('.json')) output.push(child)
+      }
+    } finally {
+      closeAssetDirectory(directory)
     }
   }
-  visit('')
   return output
+}
+
+function closeAssetDirectory(directory: Dir): void {
+  try {
+    directory.closeSync()
+  } catch {
+    // A close failure cannot replace the traversal result or diagnostic.
+  }
 }
 
 function safeAssetPath(path: string): string {
@@ -129,13 +171,7 @@ function safeAssetPath(path: string): string {
   if (normalized === '.' || normalized.startsWith('../') || normalized === '..' || !normalized.endsWith('.json')) {
     throw new Error('curated benchmark asset path must stay inside its asset directory and end in .json')
   }
-  return normalized.split('/').join(sep)
-}
-
-function readJson(path: string): CuratedBenchJson {
-  const parsed = JSON.parse(readFileSync(path, 'utf8')) as unknown
-  if (!isPlainJson(parsed)) throw new Error('curated benchmark asset must contain plain JSON')
-  return parsed
+  return normalized
 }
 
 function isPlainJson(value: unknown): value is CuratedBenchJson {

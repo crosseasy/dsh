@@ -35,8 +35,11 @@ import {
   type TextFileReader,
 } from '@deepseek-ai/dsh-app-boot'
 import {
+  assertCuratedInstalledLocks,
+  formatYamlParseError,
   hasCompleteCurrentProfileActivationEvidence,
   loadCuratedCatalog,
+  type CuratedInstalledCandidateIdentity,
 } from '@deepseek-ai/dsh-curated-policy'
 import { dump as dumpYaml, load as loadYaml } from 'js-yaml'
 
@@ -127,6 +130,22 @@ export interface CuratedProfileMaterializeOptions {
 /** Generated managed-file content keyed by profile-relative filename. */
 export type CuratedProfileGeneratedFiles = Readonly<Record<ManagedProfileFile, string>>
 
+/** Descriptor-captured pnpm lock bytes for one installed curated profile. */
+export interface CuratedProfileLockBytes {
+  /** Root `pnpm-lock.yaml` bytes. */
+  readonly root: Uint8Array
+  /** Installed `node_modules/.pnpm/lock.yaml` bytes. */
+  readonly installed: Uint8Array
+}
+
+/** Descriptor-bound decoded UTF-8 root text retained through initial Loader consumption. */
+export interface CuratedProfileRootBinding {
+  /** Exact decoded UTF-8 text captured from the published root file. */
+  readonly content: string
+  /** Reject when the retained profile or root file identity changed. */
+  readonly assertCurrent: () => void
+}
+
 /**
  * Return the complete generated managed-file content for one curated profile.
  * @param profileName - Curated profile template to render.
@@ -163,7 +182,7 @@ export interface CuratedProfileFileSnapshot {
    * snapshot after publication. A same-permission process can still move the
    * original directory and link the same inode back before the path-based rename.
    */
-  readonly writeRootConfig: (content: string) => void
+  readonly writeRootConfig: (content: string) => CuratedProfileRootBinding
   /** Close every retained file descriptor. */
   readonly close: () => void
 }
@@ -223,6 +242,27 @@ export function curatedProfileDependenciesForBundles(
     dependencies[bundle] = dependency.spec
   }
   return dependencies
+}
+
+/**
+ * Admit both installed lock snapshots against the checked-in catalog and generated profile dependencies.
+ * @param profileName - Built-in curated profile whose installed locks are being admitted.
+ * @param locks - Descriptor-captured root and installed lock bytes.
+ * @returns frozen installed candidate identities in catalog order.
+ * @throws when either lock differs from the profile's exact catalog pins.
+ */
+export function assertCuratedProfileLockAdmission(
+  profileName: CuratedProfileName,
+  locks: CuratedProfileLockBytes,
+): readonly CuratedInstalledCandidateIdentity[] {
+  const template = CURATED_PROFILE_TEMPLATES[profileName]
+  return assertCuratedInstalledLocks({
+    catalog: loadCuratedCatalog(resolveAllowlistPath()),
+    profileId: profileName,
+    manifestDependencies: curatedProfileDependenciesForBundles(template.bundles, profileName),
+    rootLock: locks.root,
+    installedLock: locks.installed,
+  })
 }
 
 /**
@@ -358,7 +398,7 @@ interface OpenManagedProfileFile {
 
 interface ManagedProfileFiles extends CuratedProfileFileSnapshot {
   /** Retain and verify a managed file that appeared after the initial snapshot. */
-  readonly retain: (file: ManagedProfileFile, expectedIdentity?: BigIntStats) => string
+  readonly retain: (file: ProfileFile, expectedIdentity?: BigIntStats) => string
   /** Remove a file published by this materialization if its retained identity is unchanged. */
   readonly rollbackCreated: (file: ManagedProfileFile, expectedIdentity: BigIntStats) => void
 }
@@ -393,7 +433,7 @@ function openManagedProfileFiles(
     profilesDirectoryIdentity,
   }
   assertProfileDirectoryCurrent(profileName, directory)
-  const opened = new Map<ManagedProfileFile, OpenManagedProfileFile>()
+  const opened = new Map<ProfileFile, OpenManagedProfileFile>()
   try {
     for (const file of MANAGED_PROFILE_FILES) {
       const path = join(dir, file)
@@ -494,7 +534,7 @@ function openManagedProfileFiles(
       assertProfileDirectoryCurrent(profileName, directory)
     },
     writeRootConfig: (content) => {
-      writeProfileFile(
+      const identity = writeProfileFile(
         profileName,
         PROFILE_ROOT_FILENAME,
         join(dir, PROFILE_ROOT_FILENAME),
@@ -502,6 +542,10 @@ function openManagedProfileFiles(
         snapshot,
         renameSync,
       )
+      const retainedContent = snapshot.retain(PROFILE_ROOT_FILENAME, identity)
+      if (retainedContent !== content) throw managedProfileFileChanged(profileName, PROFILE_ROOT_FILENAME)
+      snapshot.assertCurrent()
+      return { content: retainedContent, assertCurrent: snapshot.assertCurrent }
     },
     close: () => {
       if (closed) return
@@ -514,7 +558,7 @@ function openManagedProfileFiles(
 
 function openManagedProfileFile(
   profileName: CuratedProfileName,
-  file: ManagedProfileFile,
+  file: ProfileFile,
   path: string,
   initial: BigIntStats,
   directory: ProfileDirectoryBinding,
@@ -570,7 +614,7 @@ function readManagedProfileFile(
   descriptor: number,
   before: BigIntStats,
   profileName: CuratedProfileName,
-  file: ManagedProfileFile,
+  file: ProfileFile,
 ): string {
   const content = Buffer.alloc(Number(before.size))
   let offset = 0
@@ -595,7 +639,7 @@ function readManagedProfileFile(
 
 function assertManagedProfileFileCurrent(
   profileName: CuratedProfileName,
-  file: ManagedProfileFile,
+  file: ProfileFile,
   entry: OpenManagedProfileFile,
   directory: ProfileDirectoryBinding,
 ): void {
@@ -649,6 +693,22 @@ function writeManagedProfileFile(
   return writeProfileFile(profileName, file, path, content, profileFiles, linkSync)
 }
 
+function writeProfileFile(
+  profileName: CuratedProfileName,
+  file: typeof PROFILE_ROOT_FILENAME,
+  path: string,
+  content: string,
+  profileFiles: ManagedProfileFiles,
+  publish: typeof renameSync,
+): BigIntStats
+function writeProfileFile(
+  profileName: CuratedProfileName,
+  file: ManagedProfileFile,
+  path: string,
+  content: string,
+  profileFiles: ManagedProfileFiles,
+  publish: typeof linkSync,
+): BigIntStats | undefined
 function writeProfileFile(
   profileName: CuratedProfileName,
   file: ProfileFile,
@@ -814,6 +874,24 @@ function assertProfileDirectoryCurrent(
   }
 }
 
+function activeAssignedCandidatePackage(
+  candidate: {
+    readonly active: boolean
+    readonly expectedPackage: unknown
+    readonly id: string
+    readonly targetProfiles: readonly string[]
+  },
+  profileName: CuratedProfileName,
+): string | undefined {
+  if (!candidate.active || !candidate.targetProfiles.includes(profileName)) return undefined
+  if (typeof candidate.expectedPackage !== 'string' || candidate.expectedPackage.length === 0) {
+    throw new Error(
+      `curated profile active candidate ${candidate.id} assigned to ${profileName} must declare expectedPackage`,
+    )
+  }
+  return candidate.expectedPackage
+}
+
 /**
  * Admit a loaded curated profile before config dump or Loader activation.
  * This boot check covers deterministic composition and package-manager
@@ -846,12 +924,10 @@ export function assertCuratedProfileAdmission(
   if (!sameOrderedStrings(profile.layers.map(layer => layer.packageName), template.bundles)) {
     throw new Error(`${profileName} resolved bundle list violates curated policy`)
   }
-  const assignedPackages = loadCuratedCatalog(resolveAllowlistPath()).candidates.flatMap(candidate =>
-    candidate.active
-    && candidate.targetProfiles.includes(profileName)
-    && candidate.expectedPackage !== null
-      ? [candidate.expectedPackage]
-      : [])
+  const assignedPackages = loadCuratedCatalog(resolveAllowlistPath()).candidates.flatMap((candidate) => {
+    const packageName = activeAssignedCandidatePackage(candidate, profileName)
+    return packageName === undefined ? [] : [packageName]
+  })
   const selectedPackages = template.bundles.filter(bundle =>
     !INSTALLATION_OWNED_PROFILE_BUNDLES.has(bundle))
   if (!sameOrderedStrings(selectedPackages, assignedPackages)) {
@@ -938,7 +1014,7 @@ function validateExistingProfilePatch(
 ): void {
   const patchPath = join(dir, PROFILE_PATCH_FILENAME)
   if (!existingFiles.has(PROFILE_PATCH_FILENAME)) return
-  const patch = loadOverlayPatches(profileName, patchPath, existingFiles.readFile)
+  const patch = loadCuratedProfilePatch(profileName, patchPath, existingFiles)
   if (containsDynamicExpression(patch)) {
     throw new Error(`${profileName} existing patch must not contain dynamic expressions`)
   }
@@ -954,9 +1030,13 @@ function validateExistingEnterprisePatch(
 ): void {
   const patchPath = join(dir, PROFILE_PATCH_FILENAME)
   if (!existingFiles.has(PROFILE_PATCH_FILENAME)) return
-  const patch = loadOverlayPatches('web-enterprise', patchPath, existingFiles.readFile)
+  const patch = loadCuratedProfilePatch('web-enterprise', patchPath, existingFiles)
   if (containsDynamicExpression(patch)) {
     throw new Error('web-enterprise existing patch must not contain dynamic expressions')
+  }
+  const prohibition = enterpriseProhibition(patch, enterpriseProhibitedPackages(template))
+  if (prohibition !== undefined) {
+    throw new Error(`web-enterprise existing patch violates curated policy: prohibited ${prohibition}`)
   }
   const governedPlugins = governedEnterprisePlugins(template)
   const entries = composeEntries([
@@ -969,6 +1049,15 @@ function validateExistingEnterprisePatch(
   if (!isSafeEnterpriseComposition(entries, template)) {
     throw new Error('web-enterprise existing patch violates curated policy')
   }
+}
+
+function loadCuratedProfilePatch(
+  profileName: CuratedProfileName,
+  patchPath: string,
+  existingFiles: CuratedProfileFileSnapshot,
+): CuratedPatch[] {
+  const source = existingFiles.readFile(patchPath)
+  return loadOverlayPatches(profileName, patchPath, () => source)
 }
 
 function sameOrderedStrings(left: readonly string[], right: readonly string[]): boolean {
@@ -1048,7 +1137,18 @@ function validateExistingPackageManagerPolicy(
   }
   const workspacePath = join(dir, 'pnpm-workspace.yaml')
   if (existingFiles.has('pnpm-workspace.yaml')) {
-    const workspace = loadYaml(existingFiles.readFile(workspacePath) as string)
+    const source = existingFiles.readFile(workspacePath) as string
+    let workspace: unknown
+    try {
+      workspace = loadYaml(source)
+    } catch (error) {
+      const diagnostic = formatYamlParseError(error, workspacePath, source)
+      /* v8 ignore next -- js-yaml parse failures are YAMLException instances accepted by the formatter. */
+      throw new Error(
+        `${profileName}: failed to parse workspace ${workspacePath}: `
+        + (diagnostic ?? 'invalid YAML'),
+      )
+    }
     if (!isDeepStrictEqual(workspace, PROFILE_WORKSPACE)) {
       throw new Error(`${profileName} existing package-manager state violates curated policy`)
     }
@@ -1077,36 +1177,51 @@ function enterpriseProhibitedPackages(template: CuratedProfileTemplate): Readonl
       : []))
 }
 
-function containsEnterpriseProhibition(value: unknown, prohibitedPackages: ReadonlySet<string>): boolean {
-  if (Array.isArray(value)) return value.some(item => containsEnterpriseProhibition(item, prohibitedPackages))
-  if (!isRecord(value)) return false
+function enterpriseProhibition(
+  value: unknown,
+  prohibitedPackages: ReadonlySet<string>,
+): string | undefined {
+  if (Array.isArray(value)) {
+    for (const item of value) {
+      const prohibition = enterpriseProhibition(item, prohibitedPackages)
+      if (prohibition !== undefined) return prohibition
+    }
+    return undefined
+  }
+  if (!isRecord(value)) return undefined
   if (typeof value.id === 'string' && !isSafeEnterpriseConfig(value.id, value.config)) {
-    return true
+    return 'governed-plugin configuration; restore the curated-safe configuration'
   }
   for (const [key, item] of Object.entries(value)) {
-    if (
-      (key === 'externalBodyEgress' || key === 'bodyEgress' || key === 'egressBody'
-        || key === 'anonymousVisionFallback' || key === 'browserDownload' || key === 'captureBody')
-      && item !== false
-    ) {
-      return true
+    if ((key === 'externalBodyEgress' || key === 'bodyEgress' || key === 'egressBody') && item !== false) {
+      return 'external-body-egress override; remove it or set the egress setting to false'
+    }
+    if (key === 'anonymousVisionFallback' && item !== false) {
+      return 'anonymous-vision-fallback override; remove it or set anonymousVisionFallback to false'
+    }
+    if (key === 'browserDownload' && item !== false) {
+      return 'browser-download override; remove it or set browserDownload to false'
+    }
+    if (key === 'captureBody' && item !== false) {
+      return 'body-capture override; remove it or set captureBody to false'
     }
     if (key === 'importMode' && item !== 'dry-run') {
-      return true
+      return 'config-import override; remove it or set importMode to dry-run'
     }
     if ((key === 'sessionsWrite' || key === 'writeSessions') && item !== false) {
-      return true
+      return 'session-write override; remove it or set session writes to false'
     }
     if (
       key === 'name'
       && typeof item === 'string'
       && prohibitedPackages.has(item)
     ) {
-      return true
+      return 'package insertion; remove the prohibited package row'
     }
-    if (containsEnterpriseProhibition(item, prohibitedPackages)) return true
+    const prohibition = enterpriseProhibition(item, prohibitedPackages)
+    if (prohibition !== undefined) return prohibition
   }
-  return false
+  return undefined
 }
 
 interface EnterprisePlugin {
@@ -1168,7 +1283,7 @@ function isSafeEnterpriseComposition(
   entries: ReturnType<typeof composeEntries>,
   template: CuratedProfileTemplate,
 ): boolean {
-  return !containsEnterpriseProhibition(entries, enterpriseProhibitedPackages(template))
+  return enterpriseProhibition(entries, enterpriseProhibitedPackages(template)) === undefined
     && hasSafeEnterprisePlugins(entries, governedEnterprisePlugins(template))
 }
 
@@ -1240,7 +1355,19 @@ function loadAllowlistedThirdPartyBundleDependencies(
   readonly sourceVerified: boolean
   readonly spec?: string
 }> {
-  const parsed = loadYaml(readFileSync(resolveAllowlistPath(), 'utf8'))
+  const allowlistPath = resolveAllowlistPath()
+  const source = readFileSync(allowlistPath, 'utf8')
+  let parsed: unknown
+  try {
+    parsed = loadYaml(source)
+  } catch (error) {
+    const diagnostic = formatYamlParseError(error, allowlistPath, source)
+    /* v8 ignore next -- js-yaml parse failures are YAMLException instances accepted by the formatter. */
+    throw new Error(
+      'curated profile dependency allowlist cannot be loaded: '
+      + (diagnostic ?? 'invalid YAML'),
+    )
+  }
   if (!isRecord(parsed) || !Array.isArray(parsed.candidates)) {
     throw new Error('curated profile dependency allowlist must contain a candidates array')
   }
@@ -1252,46 +1379,59 @@ function loadAllowlistedThirdPartyBundleDependencies(
     readonly spec?: string
   }>()
   parsed.candidates.forEach((candidate, index) => {
-    if (!isRecord(candidate) || typeof candidate.expectedPackage !== 'string') return
-    if (dependencies.has(candidate.expectedPackage)) {
-      throw new Error(`curated profile dependency allowlist package ${candidate.expectedPackage} is duplicated`)
+    if (!isRecord(candidate)) {
+      throw new Error(`curated profile dependency allowlist candidates[${String(index)}] must be a mapping`)
     }
-    const active = requiredBoolean(candidate.active, `candidates[${String(index)}].active`)
-    const rejections = requiredArray(candidate.rejections, `candidates[${String(index)}].rejections`)
-    const targetProfiles = requiredStringArray(candidate.targetProfiles, `candidates[${String(index)}].targetProfiles`)
-    const sourceVerified = verifiedSource(candidate.sourceStatus, `candidates[${String(index)}].sourceStatus`)
-    const requiredRuntimeBundles = candidate.requiredRuntimeBundles === undefined
+    const record = candidate
+    const active = requiredBoolean(record.active, `candidates[${String(index)}].active`)
+    const rejections = requiredArray(record.rejections, `candidates[${String(index)}].rejections`)
+    const targetProfiles = requiredStringArray(record.targetProfiles, `candidates[${String(index)}].targetProfiles`)
+    const id = typeof record.id === 'string' && record.id.length > 0
+      ? record.id
+      : requiredString(record.expectedPackage, `candidates[${String(index)}].expectedPackage`)
+    activeAssignedCandidatePackage({
+      active,
+      expectedPackage: record.expectedPackage,
+      id,
+      targetProfiles,
+    }, profileName)
+    if (typeof record.expectedPackage !== 'string') return
+    if (dependencies.has(record.expectedPackage)) {
+      throw new Error(`curated profile dependency allowlist package ${record.expectedPackage} is duplicated`)
+    }
+    const sourceVerified = verifiedSource(record.sourceStatus, `candidates[${String(index)}].sourceStatus`)
+    const requiredRuntimeBundles = record.requiredRuntimeBundles === undefined
       ? []
       : requiredStringArray(
-        candidate.requiredRuntimeBundles,
+        record.requiredRuntimeBundles,
         `candidates[${String(index)}].requiredRuntimeBundles`,
       )
     const activationEvidenceComplete = hasCompleteCurrentProfileActivationEvidence({
       requiredRuntimeBundles,
-      runtimeActivationEvidence: candidate.runtimeActivationEvidence,
+      runtimeActivationEvidence: record.runtimeActivationEvidence,
       targetProfiles,
     }, profileName)
     if (!active || rejections.length > 0 || !targetProfiles.includes(profileName) || !sourceVerified) {
-      dependencies.set(candidate.expectedPackage, {
+      dependencies.set(record.expectedPackage, {
         activationEvidenceComplete,
         requiredRuntimeBundles,
         sourceVerified,
       })
       return
     }
-    const repository = requiredString(candidate.repository, `candidates[${String(index)}].repository`)
-    const commit = requiredString(candidate.commit, `candidates[${String(index)}].commit`)
-    const repositoryPath = nullableString(candidate.repositoryPath, `candidates[${String(index)}].repositoryPath`)
-    const npmVersion = candidate.npmVersion === undefined
+    const repository = requiredString(record.repository, `candidates[${String(index)}].repository`)
+    const commit = requiredString(record.commit, `candidates[${String(index)}].commit`)
+    const repositoryPath = nullableString(record.repositoryPath, `candidates[${String(index)}].repositoryPath`)
+    const npmVersion = record.npmVersion === undefined
       ? undefined
-      : requiredString(candidate.npmVersion, `candidates[${String(index)}].npmVersion`)
+      : requiredString(record.npmVersion, `candidates[${String(index)}].npmVersion`)
     if (npmVersion !== undefined) {
-      requiredString(candidate.npmIntegrity, `candidates[${String(index)}].npmIntegrity`)
+      requiredString(record.npmIntegrity, `candidates[${String(index)}].npmIntegrity`)
     }
     if (!FULL_GIT_SHA_PATTERN.test(commit)) {
-      throw new Error(`curated profile dependency allowlist ${candidate.expectedPackage} commit must be pinned`)
+      throw new Error(`curated profile dependency allowlist ${record.expectedPackage} commit must be pinned`)
     }
-    dependencies.set(candidate.expectedPackage, {
+    dependencies.set(record.expectedPackage, {
       activationEvidenceComplete,
       requiredRuntimeBundles,
       sourceVerified,

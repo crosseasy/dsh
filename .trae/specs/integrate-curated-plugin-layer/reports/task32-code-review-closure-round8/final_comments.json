@@ -1,0 +1,13 @@
+[
+  {
+    "title": "Lock contention repeatedly spawns process-identity commands",
+    "file": "apps/cli/src/curated-profile-lock.ts",
+    "start_line": 392,
+    "end_line": 392,
+    "severity": "P1",
+    "category": "PERFORMANCE",
+    "confidence": 9,
+    "suggestion": "Resolve this process's start identity once before entering the retry loop and pass that retained identity into each claim attempt; continue checking the competing owner's current identity on every stale-lock decision.",
+    "rationale": "When one curated install holds the lock, every 50 ms retry calls tryAcquireCuratedProfileLock(), which recomputes processStarted(process.pid). On macOS that synchronously launches /bin/ps, and on Windows it launches PowerShell. A normal concurrent install can hold the lock while pnpm runs, so the waiter may create hundreds or thousands of subprocesses before acquisition or the ten-minute timeout, consuming substantial CPU and process resources for an identity that cannot change during the waiting process."
+  }
+]

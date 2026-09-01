@@ -35,6 +35,38 @@ function writeBase(dir: string): string {
 }
 
 describe('renderConfigDump', () => {
+  it('uses descriptor-bound root bytes while retaining the config-path provenance label', () => {
+    const dir = tmp()
+    const base = join(dir, 'cordis.yml')
+    writeFileSync(base, '- id: disk\n  name: ./noop.mjs\n')
+    let assertions = 0
+    const dump = renderConfigDump(NAME, base, [], () => {}, {
+      content: '- id: bound\n  name: ./noop.mjs\n',
+      assertCurrent: () => { assertions++ },
+    })
+
+    expect(assertions).toBe(2)
+    expect(dump).toContain('# == cordis.yml\n- id: bound')
+    expect(dump).not.toContain('id: disk')
+  })
+
+  it('rejects descriptor-bound root identity changes before and after composition', () => {
+    const base = join(tmp(), 'cordis.yml')
+    writeFileSync(base, '[]\n')
+    expect(() => renderConfigDump(NAME, base, [], () => {}, {
+      content: '[]\n',
+      assertCurrent: () => { throw new Error('changed before dump') },
+    })).toThrow('changed before dump')
+
+    let assertions = 0
+    expect(() => renderConfigDump(NAME, base, [], () => {}, {
+      content: '[]\n',
+      assertCurrent: () => {
+        if (++assertions === 2) throw new Error('changed after dump')
+      },
+    })).toThrow('changed after dump')
+  })
+
   it('composes overlay layers in order, prints !!js verbatim, and labels each section with its source and patches', () => {
     const dir = tmp()
     const base = writeBase(dir)

@@ -273,6 +273,7 @@ assetDirs(): CuratedBenchAssetDirs
  * List JSON asset paths for one asset class.
  * @param kind - Asset class to list.
  * @returns sorted POSIX-style relative JSON paths.
+ * @throws when the asset tree exceeds 64 nested levels or 1,024 total entries.
  */
 listAssets(kind: CuratedBenchAssetKind): readonly string[]
 
@@ -281,6 +282,9 @@ listAssets(kind: CuratedBenchAssetKind): readonly string[]
  * @param kind - Asset class containing the file.
  * @param path - Safe POSIX-style relative path ending in `.json`.
  * @returns the parsed plain JSON value.
+ * @throws when the path is unsafe, the target is not a contained stable regular
+ * file, the read exceeds its limit, the content is malformed JSON, or the
+ * parsed value is not plain JSON.
  */
 readAsset(kind: CuratedBenchAssetKind, path: string): CuratedBenchJson
 ```

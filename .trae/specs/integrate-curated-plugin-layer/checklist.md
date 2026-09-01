@@ -126,3 +126,16 @@
 - [x] 官方 `web`/`headless`、Agent loop、工具执行顺序、权限交互与 session wire format 未发生 curated 行为回归。
 - [x] 独立代码、安全和规格审查无未解决 P0–P2 或高置信度实质问题。
 - [x] 用户既有脏工作树内容保持原样；当前 `.git/index` SHA-256 为 `65f44b02d33a4745e5b6a6472a2e398e6370ccb4bb6f56aa355562c3fde9d2e5`，cached diff SHA-256 为 `e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855`，staged paths 为 0；未新增 `docs/plugin/superpowers/`、`.trae/specs/`、报告或状态文件到 staged，未执行 commit/push/merge/rebase/reset/add；一次验证代理误调用 `git write-tree`，仅返回已存在且等于 HEAD tree 的 `551bbad102aef40396f7597f22c1b95f7aaf0640`，未改变 index、refs 或工作树，也未生成新的 tree 内容；`progress.md` 仅追加一个本轮总结。
+
+## Round 8 当前代码从零复审
+
+- [x] 当前规格与七份规划文档的要求已从当前源码、配置、测试和新鲜命令输出重新建立追踪，未把旧报告或旧进度结论作为通过证据。
+- [x] 候选供应链事实、active/rejected 决策、五个 profile 的组合与隔离、生命周期脚本和包变换限制均已重新核对。
+- [x] `verify-lock`、`preflight`、`smoke-profile` 与 `compare-benchmark` 的成功和关键拒绝路径具有本轮新鲜证据，且输出不泄露秘密。
+- [x] Curated focused tests 与 per-file coverage、constraints、相关 typecheck、scoped lint、doc-sync、build/hygiene 均有本轮低于一分钟的通过证据。
+- [x] 真实 CLI 的 `headless` 与五个 curated profile 启动面已在洁净隔离 DSH home 验证；仅在存在 active UI 候选时使用 Chrome CDP 9333。
+- [x] Bits Code Guard 新报告、独立安全审查和规格一致性审查均无未解决 P0-P2 或高置信度实质问题。
+- [x] 所有确认的仓库内行为缺口均先有预期失败测试，再由唯一写入子代理最小修复并重新验证；若无缺口则未制造源码改动。
+- [x] 官方 `web`/`headless`、Agent loop、工具执行顺序、权限交互和 session wire format 未发生 curated 行为回归。
+- [x] 长周期 E3/E4、真实 A/B、故障注入与 3–7 天 canary 的状态诚实，未以 fixture、planned 或 metadata-only 结果冒充完成。
+- [x] 用户既有工作树保持不变；最终 staged paths 为 0 且 cached diff 为空，规划与报告未 staged；初始 Bits agent 曾意外 staged changes，root 已用 `git restore --staged -- :/` 清除；verifier 曾意外执行 `git write-tree`，仅返回已有 tree，未改变 refs、index 或工作树；未执行 commit、push、merge、rebase、reset 或 checkout；`progress.md` 仅追加一个本轮总结。

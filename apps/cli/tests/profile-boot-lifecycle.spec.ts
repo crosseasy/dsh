@@ -105,6 +105,165 @@ function installLifecycleFixture(
 }
 
 describe('profile boot lifecycle', () => {
+  it('releases prepared profile state when composition fails', async () => {
+    const home = mkdtempSync(join(tmpdir(), 'dsh-cli-profile-compose-failure-'))
+    process.env.DSH_HOME = home
+    const dir = resolveProfileDir('compose-failure', home)
+    initProfile(dir, [])
+    vi.resetModules()
+    vi.doMock('@deepseek-ai/dsh-app-boot', async () => {
+      const actual = await vi.importActual<typeof import('@deepseek-ai/dsh-app-boot')>(
+        '@deepseek-ai/dsh-app-boot',
+      )
+      return {
+        ...actual,
+        composeEntries: () => { throw new Error('composition failed') },
+      }
+    })
+    try {
+      const { runProfile } = await import('../src/profile-boot.ts')
+      await expect(runProfile({
+        environment: createLaunchEnvironmentSnapshot([{ source: 'process', values: {} }]),
+        profile: 'compose-failure',
+        patchFiles: [],
+        args: [],
+      })).rejects.toThrow('composition failed')
+    } finally {
+      rmSync(home, { recursive: true, force: true })
+    }
+  })
+
+  it('wires launch callbacks and the telemetry override into the boot transaction', async () => {
+    const home = mkdtempSync(join(tmpdir(), 'dsh-cli-profile-callbacks-'))
+    process.env.DSH_HOME = home
+    process.env.DSH_TELEMETRY_DISABLED = '1'
+    const dir = resolveProfileDir('callbacks', home)
+    initProfile(dir, [])
+    const patchPath = join(dir, 'cordis.patch.yml')
+    const { writeFileSync } = await import('node:fs')
+    writeFileSync(patchPath, [
+      '- insert:',
+      '    - name: fixture-no-id',
+      '    - id: agent-presets',
+      '      name: fixture-agent-presets',
+      '    - id: session-telemetry-otel',
+      '      name: fixture-telemetry',
+      '',
+    ].join('\n'))
+    const ctx = new Context()
+    const loader = {
+      create: vi.fn(async () => 'hmr-entry'),
+      remove: vi.fn(async () => {}),
+    }
+    ctx.provide('loader', loader)
+    ctx.provide('timer', {})
+    let failLoudRelease: (() => Promise<void> | void) | undefined
+    let bootPatches: readonly unknown[] = []
+    const shutdownCodes: number[] = []
+    const interruptCodes: number[] = []
+    let disposeForShutdown: (() => Promise<void>) | undefined
+    const signalHandlers = new Map<string, () => void>()
+    vi.resetModules()
+    vi.doMock('@deepseek-ai/dsh-app-boot', async () => {
+      const actual = await vi.importActual<typeof import('@deepseek-ai/dsh-app-boot')>(
+        '@deepseek-ai/dsh-app-boot',
+      )
+      return {
+        ...actual,
+        boot: async (...args: Parameters<typeof actual.boot>) => {
+          bootPatches = args[2] ?? []
+          await args[3]?.(ctx)
+          return ctx
+        },
+        installFailLoud: (
+          _name: string,
+          _process: unknown,
+          release?: () => Promise<void> | void,
+        ) => {
+          failLoudRelease = release
+          return () => {}
+        },
+        watchUserPatches: async () => async () => {},
+      }
+    })
+    vi.doMock('../src/process-shutdown.ts', () => ({
+      createProcessShutdown: (dispose: () => Promise<void>) => {
+        disposeForShutdown = dispose
+        return {
+          shutdown: async (code: number) => {
+            shutdownCodes.push(code)
+            await dispose()
+          },
+          interrupt: (code: number) => { interruptCodes.push(code) },
+        }
+      },
+    }))
+    vi.spyOn(process, 'on').mockImplementation(((event: string, listener: () => void) => {
+      signalHandlers.set(event, listener)
+      return process
+    }) as typeof process.on)
+    try {
+      const { runProfile } = await import('../src/profile-boot.ts')
+      const result = await runProfile({
+        environment: createLaunchEnvironmentSnapshot([{ source: 'process', values: {} }]),
+        profile: 'callbacks',
+        patchFiles: [],
+        args: ['fixture'],
+      })
+
+      expect(bootPatches).toContainEqual({ id: 'session-telemetry-otel', disabled: true })
+      expect(result.ctx.get('cmdlineArgs')?.get()).toEqual(['fixture'])
+      result.ctx.get('appExit')?.(7)
+      await failLoudRelease?.()
+      await disposeForShutdown?.()
+      signalHandlers.get('SIGTERM')?.()
+      signalHandlers.get('SIGINT')?.()
+      expect(shutdownCodes).toEqual([7])
+      expect(interruptCodes).toEqual([0, 130])
+    } finally {
+      delete process.env.DSH_TELEMETRY_DISABLED
+      await ctx.fiber.dispose()
+      rmSync(home, { recursive: true, force: true })
+    }
+  })
+
+  it('skips watcher setup when the booted tree already exited', async () => {
+    const home = mkdtempSync(join(tmpdir(), 'dsh-cli-profile-already-exited-'))
+    process.env.DSH_HOME = home
+    initProfile(resolveProfileDir('already-exited', home), [])
+    const ctx = new Context()
+    const watched = vi.fn()
+    vi.resetModules()
+    vi.doMock('@deepseek-ai/dsh-app-boot', async () => {
+      const actual = await vi.importActual<typeof import('@deepseek-ai/dsh-app-boot')>(
+        '@deepseek-ai/dsh-app-boot',
+      )
+      return {
+        ...actual,
+        boot: async (...args: Parameters<typeof actual.boot>) => {
+          await args[3]?.(ctx)
+          await ctx.fiber.dispose()
+          return ctx
+        },
+        installFailLoud: () => () => {},
+        watchUserPatches: watched,
+      }
+    })
+    vi.spyOn(process, 'on').mockImplementation((() => process) as typeof process.on)
+    try {
+      const { runProfile } = await import('../src/profile-boot.ts')
+      await runProfile({
+        environment: createLaunchEnvironmentSnapshot([{ source: 'process', values: {} }]),
+        profile: 'already-exited',
+        patchFiles: [],
+        args: [],
+      })
+      expect(watched).not.toHaveBeenCalled()
+    } finally {
+      rmSync(home, { recursive: true, force: true })
+    }
+  })
+
   it('rolls back post-boot setup in reverse and awaits root quiescence before rejecting', async () => {
     const home = mkdtempSync(join(tmpdir(), 'dsh-cli-profile-lifecycle-'))
     process.env.DSH_HOME = home

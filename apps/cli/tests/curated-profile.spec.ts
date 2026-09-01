@@ -1,4 +1,15 @@
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, symlinkSync, writeFileSync } from 'node:fs'
+import {
+  cpSync,
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  readdirSync,
+  renameSync,
+  rmSync,
+  symlinkSync,
+  writeFileSync,
+} from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -9,10 +20,12 @@ import type { PatchOptions } from '@deepseek-ai/cordis-plugin-include'
 import Loader from '@deepseek-ai/cordis-plugin-loader'
 import { composeEntries, initProfile, readProfileManifest, resolveProfileDir } from '@deepseek-ai/dsh-app-boot'
 import { CURATED_PROFILE_TEMPLATES } from '@deepseek-ai/dsh-curated-profiles'
+import { dshHomePath } from '@deepseek-ai/dsh-home-paths'
 import { createLaunchEnvironmentSnapshot } from '@deepseek-ai/dsh-launch-environment'
 import { load as loadYaml } from 'js-yaml'
-import { ensureCuratedProfile, isCuratedProfileName } from '../src/curated-profile.ts'
-import { prepareProfile } from '../src/profile-boot.ts'
+import { admitCuratedProfile, ensureCuratedProfile, isCuratedProfileName } from '../src/curated-profile.ts'
+import { runDumpConfig } from '../src/dump-config.ts'
+import { prepareProfile, prepareProfileForUse } from '../src/profile-boot.ts'
 
 const tmp = (): string => mkdtempSync(join(tmpdir(), 'dsh-cli-curated-profile-'))
 const previousHome = process.env.DSH_HOME
@@ -53,7 +66,10 @@ async function runSource(
 
 type ConfigRefresh = () => Promise<void> | void
 
-function useRealPatchWatcherBoot(refreshes: Map<string, ConfigRefresh>): void {
+function useRealPatchWatcherBoot(
+  refreshes: Map<string, ConfigRefresh>,
+  beforeMount?: (rootConfig: string) => void,
+): void {
   vi.doMock('@deepseek-ai/dsh-app-boot', async () => {
     const actual = await vi.importActual<typeof import('@deepseek-ai/dsh-app-boot')>(
       '@deepseek-ai/dsh-app-boot',
@@ -61,10 +77,15 @@ function useRealPatchWatcherBoot(refreshes: Map<string, ConfigRefresh>): void {
     return {
       ...actual,
       boot: async (...args: Parameters<typeof actual.boot>) => {
+        if (beforeMount !== undefined) {
+          beforeMount(args[1])
+          return actual.boot(...args)
+        }
         const ctx = new Context()
+        ctx.provide('dshHomePath', dshHomePath)
         await ctx.plugin(Loader)
         await args[3]?.(ctx)
-        await actual.mountRootInclude(ctx, args[1])
+        await actual.mountRootInclude(ctx, args[1], [], undefined, args[5])
         ctx.provide('hmr', {
           registerConfig: async (filename: string, refresh: ConfigRefresh) => {
             refreshes.set(filename, refresh)
@@ -81,12 +102,501 @@ function useRealPatchWatcherBoot(refreshes: Map<string, ConfigRefresh>): void {
 afterEach(() => {
   if (previousHome === undefined) delete process.env.DSH_HOME
   else process.env.DSH_HOME = previousHome
+  vi.doUnmock('node:child_process')
   vi.doUnmock('node:fs')
   vi.doUnmock('@deepseek-ai/dsh-app-boot')
   vi.resetModules()
 })
 
 describe('curated profile launcher bridge', () => {
+  it.skipIf(process.platform === 'win32')('does not replace an existing empty install lock', async () => {
+    const root = tmp()
+    const home = join(root, 'home')
+    const lockDir = join(home, 'profiles', '.web-personal.install.lock')
+    mkdirSync(lockDir, { recursive: true })
+    try {
+      const { acquireCuratedProfilePreparationLock } = await import('../src/curated-profile-lock.ts')
+
+      expect(() => acquireCuratedProfilePreparationLock('web-personal', home)).toThrow(
+        'curated profile lock is held or its owner cannot be verified',
+      )
+      expect(readdirSync(lockDir)).toEqual([])
+    } finally {
+      rmSync(root, { recursive: true, force: true })
+    }
+  })
+
+  it('does not let a delayed stale reclaimer remove a replacement owner', async () => {
+    const root = tmp()
+    const home = join(root, 'home')
+    const profilesDir = join(home, 'profiles')
+    const lockDir = join(profilesDir, '.web-personal.install.lock')
+    mkdirSync(lockDir, { recursive: true })
+    writeFileSync(
+      join(lockDir, 'owner.json'),
+      `${JSON.stringify({
+        pid: 2_147_483_647,
+        started: 'completed-process-incarnation',
+        token: 'stale',
+      })}\n`,
+    )
+    let acquire!: typeof import('../src/curated-profile-lock.ts')['acquireCuratedProfilePreparationLock']
+    let replacement: import('../src/curated-profile-lock.ts').CuratedProfileLock | undefined
+    let replacementFailure: unknown
+    let interleaved = false
+    vi.resetModules()
+    vi.doMock('node:fs', async () => {
+      const actual = await vi.importActual<typeof import('node:fs')>('node:fs')
+      const acquireReplacement = (): void => {
+        interleaved = true
+        try {
+          replacement = acquire('web-personal', home)
+        } catch (error) {
+          replacementFailure = error
+        }
+      }
+      return {
+        ...actual,
+        mkdirSync: ((...args: Parameters<typeof actual.mkdirSync>) => {
+          if (!interleaved && String(args[0]) === join(lockDir, 'reclaim')) {
+            acquireReplacement()
+          }
+          return actual.mkdirSync(...args)
+        }),
+        renameSync: ((...args: Parameters<typeof actual.renameSync>) => {
+          if (!interleaved && String(args[0]) === lockDir) acquireReplacement()
+          actual.renameSync(...args)
+        }),
+      }
+    })
+    try {
+      ({ acquireCuratedProfilePreparationLock: acquire } = await import('../src/curated-profile-lock.ts'))
+
+      expect(() => acquire('web-personal', home)).toThrow(
+        'curated profile lock is held or its owner cannot be verified',
+      )
+      expect(interleaved).toBe(true)
+      expect(replacementFailure).toBeUndefined()
+      expect(replacement).toBeDefined()
+      expect(() => replacement?.assertOwned()).not.toThrow()
+      replacement?.release()
+    } finally {
+      vi.doUnmock('node:fs')
+      vi.resetModules()
+      rmSync(root, { recursive: true, force: true })
+    }
+  })
+
+  it.runIf(process.platform === 'darwin')('queries macOS process identity with a fixed locale', async () => {
+    const root = tmp()
+    const home = join(root, 'home')
+    const execFileSync = vi.fn(() => 'Sat Aug 30 12:34:56 2026\n')
+    vi.resetModules()
+    vi.doMock('node:child_process', () => ({ execFileSync }))
+    try {
+      const { acquireCuratedProfilePreparationLock } = await import('../src/curated-profile-lock.ts')
+
+      const lock = acquireCuratedProfilePreparationLock('web-personal', home)
+      lock.release()
+      expect(execFileSync).toHaveBeenCalledWith(
+        '/bin/ps',
+        ['-o', 'lstart=', '-p', String(process.pid)],
+        {
+          encoding: 'utf8',
+          env: { LANG: 'C', LC_ALL: 'C' },
+        },
+      )
+    } finally {
+      vi.doUnmock('node:child_process')
+      vi.resetModules()
+      rmSync(root, { recursive: true, force: true })
+    }
+  })
+
+  it.runIf(process.platform === 'darwin')('does not reclaim when exact process identity lookup fails', async () => {
+    const root = tmp()
+    const home = join(root, 'home')
+    const lockDir = join(home, 'profiles', '.web-personal.install.lock')
+    mkdirSync(lockDir, { recursive: true })
+    writeFileSync(
+      join(lockDir, 'owner.json'),
+      `${JSON.stringify({
+        pid: process.pid,
+        started: 'different-process-incarnation',
+        token: 'stale',
+      })}\n`,
+    )
+    const execFileSync = vi.fn()
+      .mockReturnValueOnce('Sat Aug 30 12:34:56 2026\n')
+      .mockImplementationOnce(() => {
+        throw new Error('process identity unavailable')
+      })
+    vi.resetModules()
+    vi.doMock('node:child_process', () => ({ execFileSync }))
+    try {
+      const { acquireCuratedProfilePreparationLock } = await import('../src/curated-profile-lock.ts')
+
+      expect(() => acquireCuratedProfilePreparationLock('web-personal', home)).toThrow(
+        'curated profile lock is held or its owner cannot be verified',
+      )
+      expect(existsSync(lockDir)).toBe(true)
+    } finally {
+      vi.doUnmock('node:child_process')
+      vi.resetModules()
+      rmSync(root, { recursive: true, force: true })
+    }
+  })
+
+  it.runIf(process.platform === 'darwin')('reuses its process start identity while retrying a live lock owner', async () => {
+    const root = tmp()
+    const profilesDir = join(root, 'profiles')
+    const lockDir = join(profilesDir, '.web-personal.install.lock')
+    const ownerPid = 987_654
+    const lstart = 'Mon Aug 31 12:34:56 2026'
+    let ownQueries = 0
+    mkdirSync(lockDir, { recursive: true })
+    writeFileSync(
+      join(lockDir, 'owner.json'),
+      `${JSON.stringify({
+        pid: ownerPid,
+        started: `darwin:${lstart}`,
+        token: 'owner',
+      })}\n`,
+    )
+    vi.resetModules()
+    vi.doMock('node:child_process', () => ({
+      execFileSync: (_file: string, argv: readonly string[]) => {
+        if (argv.at(-1) === String(process.pid)) ownQueries += 1
+        return `${lstart}\n`
+      },
+    }))
+    const kill = vi.spyOn(process, 'kill').mockReturnValue(true)
+    vi.useFakeTimers()
+    try {
+      const { withCuratedInstallLock } = await import('../src/curated-profile-lock.ts')
+
+      const pending = withCuratedInstallLock('web-personal', profilesDir, () => {})
+      await vi.advanceTimersByTimeAsync(50)
+      await vi.advanceTimersByTimeAsync(50)
+      await vi.advanceTimersByTimeAsync(50)
+      rmSync(lockDir, { recursive: true })
+      await vi.advanceTimersByTimeAsync(50)
+      await pending
+
+      expect(kill).toHaveBeenCalledWith(ownerPid, 0)
+      expect(ownQueries).toBe(1)
+    } finally {
+      vi.useRealTimers()
+      kill.mockRestore()
+      vi.doUnmock('node:child_process')
+      vi.resetModules()
+      rmSync(root, { recursive: true, force: true })
+    }
+  })
+
+  it.runIf(process.platform === 'darwin')('fails install lock acquisition when its initial process identity is unavailable', async () => {
+    const root = tmp()
+    const profilesDir = join(root, 'profiles')
+    const execFileSync = vi.fn()
+      .mockImplementationOnce(() => {
+        throw new Error('process identity unavailable')
+      })
+      .mockReturnValue('Mon Aug 31 12:34:56 2026\n')
+    mkdirSync(profilesDir, { recursive: true })
+    vi.resetModules()
+    vi.doMock('node:child_process', () => ({ execFileSync }))
+    try {
+      const { withCuratedInstallLock } = await import('../src/curated-profile-lock.ts')
+
+      await expect(withCuratedInstallLock('web-personal', profilesDir, () => {})).rejects.toThrow(
+        'cannot verify this process incarnation for curated profile locking',
+      )
+      expect(execFileSync).toHaveBeenCalledTimes(1)
+    } finally {
+      vi.doUnmock('node:child_process')
+      vi.resetModules()
+      rmSync(root, { recursive: true, force: true })
+    }
+  })
+
+  it('does not materialize a live profile while installation owns the rename transition', () => {
+    const root = tmp()
+    const home = join(root, 'home')
+    process.env.DSH_HOME = home
+    const profilesDir = join(home, 'profiles')
+    const liveDir = join(profilesDir, 'web-personal')
+    const previousDir = join(profilesDir, '.web-personal.install-previous')
+    const lockDir = join(profilesDir, '.web-personal.install.lock')
+    try {
+      ensureCuratedProfile('web-personal')
+      writeFileSync(join(liveDir, 'cordis.patch.yml'), '# retained user patch\n')
+      renameSync(liveDir, previousDir)
+      mkdirSync(lockDir)
+      writeFileSync(
+        join(lockDir, 'owner.json'),
+        `${JSON.stringify({ pid: process.pid, token: 'installer' })}\n`,
+      )
+
+      expect(() => prepareProfile('web-personal')).toThrow(
+        'curated profile lock is held or its owner cannot be verified',
+      )
+      expect(existsSync(liveDir)).toBe(false)
+      expect(readFileSync(join(previousDir, 'cordis.patch.yml'), 'utf8')).toBe(
+        '# retained user patch\n',
+      )
+    } finally {
+      rmSync(root, { recursive: true, force: true })
+    }
+  })
+
+  it('leaves an interrupted previous-only install state for installer recovery', () => {
+    const root = tmp()
+    const home = join(root, 'home')
+    process.env.DSH_HOME = home
+    const profilesDir = join(home, 'profiles')
+    const liveDir = join(profilesDir, 'web-personal')
+    const previousDir = join(profilesDir, '.web-personal.install-previous')
+    try {
+      ensureCuratedProfile('web-personal')
+      writeFileSync(join(liveDir, 'cordis.patch.yml'), '# retained user patch\n')
+      renameSync(liveDir, previousDir)
+
+      expect(() => prepareProfile('web-personal')).toThrow(
+        'curated profile installation requires recovery',
+      )
+      expect(existsSync(liveDir)).toBe(false)
+      expect(readFileSync(join(previousDir, 'cordis.patch.yml'), 'utf8')).toBe(
+        '# retained user patch\n',
+      )
+    } finally {
+      rmSync(root, { recursive: true, force: true })
+    }
+  })
+
+  it('does not release a copied install lock owner as its own', async () => {
+    const root = tmp()
+    const home = join(root, 'home')
+    const profilesDir = join(home, 'profiles')
+    mkdirSync(profilesDir, { recursive: true })
+    const lockDir = join(profilesDir, '.web-personal.install.lock')
+    const originalLockDir = `${lockDir}.original`
+    try {
+      const { withCuratedInstallLock } = await import('../src/curated-profile-lock.ts')
+
+      await expect(withCuratedInstallLock('web-personal', profilesDir, () => {
+        renameSync(lockDir, originalLockDir)
+        cpSync(originalLockDir, lockDir, { recursive: true })
+      })).rejects.toThrow(
+        'curated profile lock ownership changed',
+      )
+      expect(existsSync(lockDir)).toBe(true)
+    } finally {
+      rmSync(root, { recursive: true, force: true })
+    }
+  })
+
+  it('aggregates an undefined operation rejection with a release failure', async () => {
+    const root = tmp()
+    const home = join(root, 'home')
+    const profilesDir = join(home, 'profiles')
+    mkdirSync(profilesDir, { recursive: true })
+    const lockDir = join(profilesDir, '.web-personal.install.lock')
+    const originalLockDir = `${lockDir}.original`
+    try {
+      const { withCuratedInstallLock } = await import('../src/curated-profile-lock.ts')
+
+      const rejection = await withCuratedInstallLock('web-personal', profilesDir, () => {
+        renameSync(lockDir, originalLockDir)
+        cpSync(originalLockDir, lockDir, { recursive: true })
+        return new Promise<never>((_resolve, reject) => {
+          // oxlint-disable-next-line typescript/prefer-promise-reject-errors -- Exercises non-Error rejection.
+          reject()
+        })
+      }).catch((error: unknown) => error)
+
+      expect(rejection).toBeInstanceOf(AggregateError)
+      const aggregate = rejection as AggregateError
+      const errors = aggregate.errors as unknown[]
+      expect(errors).toHaveLength(2)
+      expect(errors[0]).toBeUndefined()
+      expect(errors[1]).toBeInstanceOf(Error)
+      expect((errors[1] as Error).message).toContain(
+        'curated profile lock ownership changed',
+      )
+    } finally {
+      rmSync(root, { recursive: true, force: true })
+    }
+  })
+
+  it('rejects same-inode lock owner growth before allocation and after reading', async () => {
+    for (const mode of ['before-allocation', 'after-read'] as const) {
+      const root = tmp()
+      const home = join(root, 'home')
+      const profilesDir = join(home, 'profiles')
+      const lockDir = join(profilesDir, '.web-personal.install.lock')
+      const ownerPath = join(lockDir, 'owner.json')
+      mkdirSync(lockDir, { recursive: true })
+      writeFileSync(ownerPath, `${JSON.stringify({ pid: 2_147_483_647, token: 'stale' })}\n`)
+      const ownerDescriptors = new Set<number>()
+      const fstatCalls = new Map<number, number>()
+      vi.resetModules()
+      vi.doMock('node:fs', async () => {
+        const actual = await vi.importActual<typeof import('node:fs')>('node:fs')
+        return {
+          ...actual,
+          openSync: (...args: Parameters<typeof actual.openSync>) => {
+            const descriptor = actual.openSync(...args)
+            if (String(args[0]) === ownerPath) {
+              ownerDescriptors.add(descriptor)
+              fstatCalls.set(descriptor, 0)
+            }
+            return descriptor
+          },
+          fstatSync: ((...args: Parameters<typeof actual.fstatSync>) => {
+            const identity = actual.fstatSync(...args)
+            if (ownerDescriptors.has(args[0])) {
+              const call = (fstatCalls.get(args[0]) ?? 0) + 1
+              fstatCalls.set(args[0], call)
+              if (
+                (mode === 'before-allocation' && call === 1)
+                || (mode === 'after-read' && call === 2)
+              ) {
+                Object.defineProperty(identity, 'size', { value: 4097n })
+              }
+            }
+            return identity
+          }) as typeof actual.fstatSync,
+        }
+      })
+      const allocate = vi.spyOn(Buffer, 'alloc')
+      try {
+        const { acquireCuratedProfilePreparationLock } = await import('../src/curated-profile-lock.ts')
+
+        expect(() => acquireCuratedProfilePreparationLock('web-personal', home)).toThrow(
+          'curated profile lock is held or its owner cannot be verified',
+        )
+        expect(allocate.mock.calls.some(([size]) => size > 4096)).toBe(false)
+        expect(existsSync(lockDir)).toBe(true)
+      } finally {
+        allocate.mockRestore()
+        vi.doUnmock('node:fs')
+        vi.resetModules()
+        rmSync(root, { recursive: true, force: true })
+      }
+    }
+  })
+
+  it('propagates unexpected lock-owner inspection failures', async () => {
+    const root = tmp()
+    const home = join(root, 'home')
+    const profilesDir = join(home, 'profiles')
+    const lockDir = join(profilesDir, '.web-personal.install.lock')
+    const ownerPath = join(lockDir, 'owner.json')
+    mkdirSync(lockDir, { recursive: true })
+    writeFileSync(ownerPath, `${JSON.stringify({ pid: process.pid, token: 'owner' })}\n`)
+    vi.resetModules()
+    vi.doMock('node:fs', async () => {
+      const actual = await vi.importActual<typeof import('node:fs')>('node:fs')
+      return {
+        ...actual,
+        lstatSync: ((...args: Parameters<typeof actual.lstatSync>) => {
+          if (String(args[0]) === ownerPath) throw new Error('unexpected owner inspection failure')
+          return actual.lstatSync(...args)
+        }) as typeof actual.lstatSync,
+      }
+    })
+    try {
+      const { acquireCuratedProfilePreparationLock } = await import('../src/curated-profile-lock.ts')
+
+      expect(() => acquireCuratedProfilePreparationLock('web-personal', home)).toThrow(
+        'unexpected owner inspection failure',
+      )
+      expect(existsSync(lockDir)).toBe(true)
+    } finally {
+      vi.doUnmock('node:fs')
+      vi.resetModules()
+      rmSync(root, { recursive: true, force: true })
+    }
+  })
+
+  it('does not reclaim a malformed lock-owner record', () => {
+    const root = tmp()
+    const home = join(root, 'home')
+    process.env.DSH_HOME = home
+    const lockDir = join(home, 'profiles', '.web-personal.install.lock')
+    mkdirSync(lockDir, { recursive: true })
+    writeFileSync(join(lockDir, 'owner.json'), '{')
+    try {
+      expect(() => prepareProfile('web-personal')).toThrow(
+        'curated profile lock is held or its owner cannot be verified',
+      )
+      expect(existsSync(lockDir)).toBe(true)
+    } finally {
+      rmSync(root, { recursive: true, force: true })
+    }
+  })
+
+  it('reclaims a lock whose PID belongs to a different process incarnation', async () => {
+    const root = tmp()
+    const home = join(root, 'home')
+    const lockDir = join(home, 'profiles', '.web-personal.install.lock')
+    mkdirSync(lockDir, { recursive: true })
+    writeFileSync(
+      join(lockDir, 'owner.json'),
+      `${JSON.stringify({
+        pid: process.pid,
+        started: 'different-process-incarnation',
+        token: 'stale',
+      })}\n`,
+    )
+    try {
+      const { acquireCuratedProfilePreparationLock } = await import('../src/curated-profile-lock.ts')
+
+      const lock = acquireCuratedProfilePreparationLock('web-personal', home)
+      lock.release()
+      expect(existsSync(lockDir)).toBe(false)
+    } finally {
+      rmSync(root, { recursive: true, force: true })
+    }
+  })
+
+  it('renders curated default and ordinary layered dumps in process', () => {
+    const root = tmp()
+    const home = join(root, 'home')
+    process.env.DSH_HOME = home
+    const stdout = vi.spyOn(process.stdout, 'write').mockReturnValue(true)
+    try {
+      ensureCuratedProfile('web-personal')
+      runDumpConfig('web-personal', true, [])
+      expect(stdout).toHaveBeenLastCalledWith(expect.stringContaining('@deepseek-ai/dsh-base'))
+
+      const ordinaryDir = resolveProfileDir('ordinary-dump', home)
+      initProfile(ordinaryDir, [])
+      const profilePatch = join(ordinaryDir, 'cordis.patch.yml')
+      const homePatch = join(home, 'cordis.patch.yml')
+      const overlay = join(root, 'overlay.yml')
+      writeFileSync(profilePatch, '- insert:\n    - id: profile\n      name: profile-plugin\n')
+      writeFileSync(homePatch, '- insert:\n    - id: home\n      name: home-plugin\n')
+      writeFileSync(overlay, '- insert:\n    - id: overlay\n      name: overlay-plugin\n')
+      runDumpConfig('ordinary-dump', false, [overlay])
+      const rendered = String(stdout.mock.calls.at(-1)?.[0])
+      expect(rendered).toContain(profilePatch)
+      expect(rendered).toContain(homePatch)
+      expect(rendered).toContain(overlay)
+
+      const emptyHome = join(root, 'empty-home')
+      process.env.DSH_HOME = emptyHome
+      const emptyDir = resolveProfileDir('empty-dump', emptyHome)
+      initProfile(emptyDir, [])
+      rmSync(join(emptyDir, 'cordis.patch.yml'))
+      runDumpConfig('empty-dump', false, [])
+      expect(stdout).toHaveBeenLastCalledWith('\n')
+    } finally {
+      stdout.mockRestore()
+      rmSync(root, { recursive: true, force: true })
+    }
+  })
+
   it('rejects a linked profiles root before healing the module fallback', () => {
     const home = tmp()
     const outside = tmp()
@@ -94,7 +604,7 @@ describe('curated profile launcher bridge', () => {
     process.env.DSH_HOME = home
 
     expect(() => prepareProfile('web-curated', { userLayer: false })).toThrow(
-      'web-curated profile root resolves outside the DSH home',
+      'profiles root must be a regular directory',
     )
     expect(existsSync(join(outside, 'node_modules'))).toBe(false)
   })
@@ -213,6 +723,41 @@ describe('curated profile launcher bridge', () => {
     }
   })
 
+  it('does not execute a curated root config replaced before Loader mounting', async () => {
+    const root = tmp()
+    const home = join(root, 'home')
+    const marker = join(root, 'executed')
+    const payload = join(root, 'payload.mjs')
+    process.env.DSH_HOME = home
+    writeFileSync(payload, [
+      "import { writeFileSync } from 'node:fs'",
+      "export const name = 'root-swap-payload'",
+      `export function apply() { writeFileSync(${JSON.stringify(marker)}, 'executed\\n') }`,
+      '',
+    ].join('\n'))
+    const refreshes = new Map<string, ConfigRefresh>()
+    vi.resetModules()
+    useRealPatchWatcherBoot(refreshes, (rootConfig) => {
+      writeFileSync(rootConfig, `- id: root-swap-payload\n  name: ${JSON.stringify(payload)}\n`)
+    })
+    const { runProfile } = await import('../src/profile-boot.ts')
+    const processOn = vi.spyOn(process, 'on').mockImplementation((() => process) as typeof process.on)
+    try {
+      await expect(runProfile({
+        environment: createLaunchEnvironmentSnapshot([{ source: 'process', values: {} }]),
+        profile: 'web-personal',
+        patchFiles: [],
+        args: ['--no-open'],
+      })).rejects.toThrow(
+        'web-personal managed profile file cordis.yml changed while it was being read',
+      )
+      expect(existsSync(marker)).toBe(false)
+    } finally {
+      processOn.mockRestore()
+      rmSync(root, { recursive: true, force: true })
+    }
+  })
+
   it('recognizes only curated profile template names', () => {
     expect(isCuratedProfileName('web-curated')).toBe(true)
     expect(isCuratedProfileName('web-coding')).toBe(true)
@@ -246,10 +791,16 @@ describe('curated profile launcher bridge', () => {
       const manifest = readProfileManifest('dsh', profileDir)
       stageProfileDependencies(profileDir, manifest.dependencies ?? {})
 
-      const profile = prepareProfile('web-research', { userLayer: false })
+      const prepared = prepareProfileForUse('web-research', { userLayer: false })
+      const profile = prepared.profile
+      prepared.close()
+      prepared.close()
 
       expect(profile.layers.map(layer => layer.packageName)).toEqual(manifest.dsh?.profile?.bundles)
       expect(profile.patches).toEqual([])
+      expect(() => {
+        admitCuratedProfile('web-research', profile, [], { userLayer: false })
+      }).not.toThrow()
       expect(existsSync(resolveProfileDir('web', home))).toBe(false)
       expect(existsSync(resolveProfileDir('headless', home))).toBe(false)
     } finally {
@@ -647,7 +1198,7 @@ describe('curated profile launcher bridge', () => {
       replaced = true
 
       await expect(Promise.resolve(refresh?.())).rejects.toThrow(
-        'web-personal profile root resolves outside the DSH home',
+        'profiles root must be a regular directory',
       )
       expect(externalReadFile).toBe(false)
       expect(externalReadSync).toBe(false)
@@ -730,6 +1281,10 @@ describe('curated profile launcher bridge', () => {
       expect(() => prepareProfile('web-personal')).toThrow(
         'web-personal existing manifest violates curated policy',
       )
+      expect(() => { ensureCuratedProfile('web-personal') }).toThrow(
+        'web-personal existing manifest violates curated policy',
+      )
+      expect(existsSync(join(home, 'profiles/.web-personal.install.lock'))).toBe(false)
       expect(readFileSync(manifestPath)).toEqual(before)
     } finally {
       rmSync(home, { recursive: true, force: true })
@@ -837,7 +1392,7 @@ describe('curated profile launcher bridge', () => {
     }
   }, 45_000)
 
-  it('keeps default-only recovery independent of a broken enterprise patch', async () => {
+  it('rejects malformed curated profile, home, and overlay patches without exposing secret values', async () => {
     const root = tmp()
     const home = join(root, 'home')
     process.env.DSH_HOME = home
@@ -846,19 +1401,83 @@ describe('curated profile launcher bridge', () => {
       const profileDir = resolveProfileDir('web-enterprise', home)
       const manifest = readProfileManifest('dsh', profileDir)
       stageProfileDependencies(profileDir, manifest.dependencies ?? {})
-      writeFileSync(join(profileDir, 'cordis.patch.yml'), '- id: memento\n  config:\n    broken: [\n')
+      const secret = 'super-secret-value'
+      writeFileSync(
+        join(profileDir, 'cordis.patch.yml'),
+        `- id: memento\n  config:\n    apiKey: ${secret}\n    broken: [\n`,
+      )
 
       const defaultOnly = await runSource(home, ['--profile', 'web-enterprise', '--dump-default-config'])
-      expect(defaultOnly.exitCode, defaultOnly.stderr).toBe(0)
-      expect(defaultOnly.stdout).toContain('# == @deepseek-ai/dsh-base')
+      expect(defaultOnly.exitCode).not.toBe(0)
+      expect(defaultOnly.stderr).toContain('failed to parse overlay')
+      expect(defaultOnly.stderr).toContain('[REDACTED]')
+      expect(defaultOnly.stderr).not.toContain(secret)
 
       const ordinaryDump = await runSource(home, ['--profile', 'web-enterprise', '--dump-config'])
       expect(ordinaryDump.exitCode).not.toBe(0)
       expect(ordinaryDump.stderr).toContain('failed to parse overlay')
+      expect(ordinaryDump.stderr).not.toContain(secret)
 
       const boot = await runSource(home, ['--profile', 'web-enterprise'])
       expect(boot.exitCode).not.toBe(0)
       expect(boot.stderr).toContain('failed to parse overlay')
+      expect(boot.stderr).not.toContain(secret)
+
+      writeFileSync(join(profileDir, 'cordis.patch.yml'), '[]\n')
+      writeFileSync(
+        join(home, 'cordis.patch.yml'),
+        `- id: webserver\n  config:\n    token: ${secret}\n    broken: [\n`,
+      )
+      const homeResult = await runSource(home, ['--profile', 'web-enterprise', '--dump-config'])
+      expect(homeResult.exitCode).not.toBe(0)
+      expect(homeResult.stderr).toContain('[REDACTED]')
+      expect(homeResult.stderr).not.toContain(secret)
+
+      writeFileSync(join(home, 'cordis.patch.yml'), '[]\n')
+      const overlay = join(root, 'overlay.yml')
+      writeFileSync(
+        overlay,
+        `- id: webserver\n  config:\n    apiKey: ${secret}\n    broken: [\n`,
+      )
+      const overlayResult = await runSource(
+        home,
+        ['--profile', 'web-enterprise', '--dump-config', '--patch', overlay],
+      )
+      expect(overlayResult.exitCode).not.toBe(0)
+      expect(overlayResult.stderr).toContain('[REDACTED]')
+      expect(overlayResult.stderr).not.toContain(secret)
+    } finally {
+      rmSync(root, { recursive: true, force: true })
+    }
+  }, 45_000)
+
+  it('admits but omits a safe curated default-only patch and ignores an ordinary malformed patch', async () => {
+    const root = tmp()
+    const home = join(root, 'home')
+    process.env.DSH_HOME = home
+    try {
+      ensureCuratedProfile('web-personal')
+      const curatedDir = resolveProfileDir('web-personal', home)
+      writeFileSync(join(curatedDir, 'cordis.patch.yml'), '- id: webserver\n  config:\n    port: 3999\n')
+      const curated = await runSource(home, ['--profile', 'web-personal', '--dump-default-config'])
+      expect(curated.exitCode, curated.stderr).toBe(0)
+      expect(curated.stdout).not.toContain('3999')
+      expect(curated.stdout).not.toContain(join(curatedDir, 'cordis.patch.yml'))
+
+      writeFileSync(
+        join(curatedDir, 'cordis.patch.yml'),
+        '- insert:\n    - id: unapproved\n      name: unapproved-plugin\n',
+      )
+      const rejected = await runSource(home, ['--profile', 'web-personal', '--dump-default-config'])
+      expect(rejected.exitCode).not.toBe(0)
+      expect(rejected.stderr).toContain('existing patch introduces an unapproved executable or group')
+
+      const ordinaryDir = resolveProfileDir('custom-default-dump', home)
+      initProfile(ordinaryDir, [])
+      writeFileSync(join(ordinaryDir, 'cordis.patch.yml'), 'broken: [\n')
+      const ordinary = await runSource(home, ['--profile', 'custom-default-dump', '--dump-default-config'])
+      expect(ordinary.exitCode, ordinary.stderr).toBe(0)
+      expect(ordinary.stdout.trim()).toBe('')
     } finally {
       rmSync(root, { recursive: true, force: true })
     }

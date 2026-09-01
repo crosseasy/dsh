@@ -1,14 +1,16 @@
-import { mkdtempSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdtempSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join, resolve, sep } from 'node:path'
 import { pathToFileURL } from 'node:url'
 import { describe, expect, it, vi } from 'vitest'
 import { Context } from '@deepseek-ai/cordis'
+import Loader from '@deepseek-ai/cordis-plugin-loader'
 import SystemPrompt, { renderPrompt } from '@deepseek-ai/dsh-system-prompt'
 import {
   addHarnessSourceSection, assertEntriesActivated, assertEntriesLoaded, boot,
   FAIL_LOUD_RELEASE_TIMEOUT_MS, HARNESS_SOURCE_SECTION,
-  installFailLoud, loadEnv, loadLayeredEnv, loadOverlayPatches, resolveConfigPath, type FailLoudProcess,
+  installFailLoud, loadEnv, loadLayeredEnv, loadOverlayPatches, mountRootInclude,
+  resolveConfigPath, type FailLoudProcess,
 } from '../src/index.ts'
 
 const NAME = 'dsh-test-bin'
@@ -565,9 +567,162 @@ describe('loadOverlayPatches', () => {
     writeFileSync(scalar, '- scalar\n')
     expect(() => loadOverlayPatches(NAME, scalar)).toThrow('entry 1')
   })
+
+  it('redacts malformed YAML diagnostics without retaining the parser error', () => {
+    const file = join(tmp(), 'overlay.yml')
+    const secret = 'overlay-secret-value'
+    writeFileSync(file, `- id: target\n  config:\n    apiKey: ${secret}\n    broken: [\n`)
+
+    let failure: unknown
+    try {
+      loadOverlayPatches(NAME, file)
+    } catch (error) {
+      failure = error
+    }
+
+    expect(failure).toBeInstanceOf(Error)
+    expect((failure as Error).message).toContain('[REDACTED]')
+    expect((failure as Error).message).not.toContain(secret)
+    expect((failure as Error).cause).toBeUndefined()
+    expect((failure as Error).stack).not.toContain(secret)
+  })
 })
 
 describe('boot', () => {
+  it('mounts bound root bytes with relative, bare, and nested include resolution', async () => {
+    const dir = tmp()
+    const harness = tmp()
+    const rootPath = join(dir, 'cordis.yml')
+    const harnessPlugin = join(harness, 'node_modules', 'bound-bare')
+    mkdirSync(harnessPlugin, { recursive: true })
+    writeFileSync(join(harnessPlugin, 'package.json'), JSON.stringify({
+      name: 'bound-bare',
+      type: 'module',
+      exports: './index.mjs',
+    }))
+    writeFileSync(join(harnessPlugin, 'index.mjs'), 'export function apply(ctx) { ctx.provide("boundBare", true) }\n')
+    writeFileSync(join(dir, 'relative.mjs'), 'export function apply(ctx) { ctx.provide("boundRelative", true) }\n')
+    writeFileSync(join(dir, 'nested.mjs'), 'export function apply(ctx) { ctx.provide("boundNested", true) }\n')
+    writeFileSync(join(dir, 'absolute.mjs'), 'export function apply(ctx) { ctx.provide("boundAbsolute", true) }\n')
+    writeFileSync(join(dir, 'disk.mjs'), 'export function apply(ctx) { ctx.provide("diskRoot", true) }\n')
+    writeFileSync(rootPath, '- id: disk\n  name: ./disk.mjs\n')
+    writeFileSync(join(dir, 'nested.yml'), '- id: nested\n  name: ./nested.mjs\n')
+    let assertions = 0
+    const ctx = await boot(
+      NAME,
+      rootPath,
+      undefined,
+      undefined,
+      pathToFileURL(join(harness, 'entry.mjs')).href,
+      {
+        content: [
+          '- id: relative',
+          '  name: ./relative.mjs',
+          '- id: bare',
+          '  name: bound-bare',
+          '- id: nested-include',
+          '  name: cordis:include',
+          '  config:',
+          '    path: ./nested.yml',
+          '- id: absolute',
+          `  name: ${JSON.stringify(join(dir, 'absolute.mjs'))}`,
+          '',
+        ].join('\n'),
+        assertCurrent: () => { assertions++ },
+      },
+    )
+    try {
+      expect(assertions).toBe(3)
+      expect(ctx.get('boundRelative')).toBe(true)
+      expect(ctx.get('boundBare')).toBe(true)
+      expect(ctx.get('boundNested')).toBe(true)
+      expect(ctx.get('boundAbsolute')).toBe(true)
+      expect(ctx.get('diskRoot')).toBeUndefined()
+    } finally {
+      await ctx.fiber.dispose()
+    }
+  })
+
+  it('rejects bound root identity changes before and after mount without retaining a partial tree', async () => {
+    const dir = tmp()
+    const rootPath = join(dir, 'cordis.yml')
+    writeFileSync(rootPath, '[]\n')
+    const before = new Context()
+    await before.plugin(Loader)
+    await expect(mountRootInclude(before, rootPath, [], undefined, {
+      content: '[]\n',
+      assertCurrent: () => { throw new Error('changed before mount') },
+    })).rejects.toThrow('changed before mount')
+    expect([...before.loader.entries()]).toEqual([])
+    await before.fiber.dispose()
+
+    const afterCreate = new Context()
+    await afterCreate.plugin(Loader)
+    let assertions = 0
+    await expect(mountRootInclude(afterCreate, rootPath, [], undefined, {
+      content: '[]\n',
+      assertCurrent: () => {
+        if (++assertions === 3) throw new Error('changed after create')
+      },
+    })).rejects.toThrow('changed after create')
+    expect([...afterCreate.loader.entries()]).toEqual([])
+    await afterCreate.fiber.dispose()
+  })
+
+  it('rejects a bound root identity change before a child plugin can apply', async () => {
+    const dir = tmp()
+    const rootPath = join(dir, 'cordis.yml')
+    const marker = join(dir, 'plugin-applied')
+    writeFileSync(rootPath, '[]\n')
+    writeFileSync(
+      join(dir, 'side-effect.mjs'),
+      `import { writeFileSync } from 'node:fs'\nexport function apply() { writeFileSync(${JSON.stringify(marker)}, 'applied') }\n`,
+    )
+    const ctx = new Context()
+    await ctx.plugin(Loader)
+    let assertions = 0
+
+    await expect(mountRootInclude(ctx, rootPath, [], undefined, {
+      content: '- id: side-effect\n  name: ./side-effect.mjs\n',
+      assertCurrent: () => {
+        if (++assertions === 2) throw new Error('changed before child activation')
+      },
+    })).rejects.toThrow('changed before child activation')
+    expect(existsSync(marker)).toBe(false)
+    expect([...ctx.loader.entries()]).toEqual([])
+    await ctx.fiber.dispose()
+  })
+
+  it('requires bound root arrays and keeps their generated tree non-persistent', async () => {
+    const dir = tmp()
+    const rootPath = join(dir, 'cordis.yml')
+    writeFileSync(rootPath, '[]\n')
+    const invalid = new Context()
+    await invalid.plugin(Loader)
+    await expect(mountRootInclude(invalid, rootPath, [], undefined, {
+      content: '{}\n',
+      assertCurrent: () => {},
+    })).rejects.toThrow('bound root config must be a top-level array')
+    await invalid.fiber.dispose()
+
+    const ctx = new Context()
+    await ctx.plugin(Loader)
+    const updates = vi.fn()
+    ctx.on('loader/config-update', updates)
+    const entry = await mountRootInclude(ctx, rootPath, [{
+      id: 'missing',
+      config: { value: 'ignored' },
+    }], undefined, {
+      content: '[]\n',
+      assertCurrent: () => {},
+    })
+    await entry?.update({ config: { path: 'changed.yml' } })
+    entry?.subtree?.write()
+    expect([...ctx.loader.entries()]).toHaveLength(1)
+    expect(updates).toHaveBeenCalled()
+    await ctx.fiber.dispose()
+  })
+
   it('boots a leaf config through the real Loader and settles the tree', async () => {
     const dir = tmp()
     writeFileSync(join(dir, 'noop.mjs'), 'export const name = "noop"\nexport function apply() {}\n')

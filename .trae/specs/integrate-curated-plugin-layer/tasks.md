@@ -227,3 +227,21 @@
   - [x] 29.4 本轮五路独立只读审计与最终对抗复审均未发现仓库内行为缺口；唯一被标记项（summary rollup 的空 tree/closure 摘要 map）经核实为 `bench.spec.ts:121-126` 刻意锁定的契约、无运行时消费、权威 `plugin-allowlist.yaml` 仍持有 6+6 真实摘要，非缺陷，遵循简化/外科式改动原则不改动；未修改 `docs/plugin/superpowers/`、Agent loop、官方模板或 session wire format。
   - [x] 29.5 委派独立代码、安全与规格一致性复审，覆盖 `packages/curated/**` 与 CLI bridge；最终对抗复审 verdict = CLEAN，无 P0–P2 或高置信度实质问题（唯一 informational 观察为未来激活 permission 候选时的前瞻性提示，当前不可达）。
   - [x] 29.6 核对工作树与 index 指纹：staged SHA-256 保持 `0d654fdb471cb3501ae2eaa313af3c23742af74e314420b083783a5ec55b0ba6`，未回滚/覆盖/混入用户改动，未执行 commit/push/merge/rebase/reset/add；已向 append-only `progress.md` 追加本轮唯一总结。
+
+- [x] Task 31: 结合当前代码从零复审并严格执行 `integrate-curated-plugin-layer`。
+  - [x] 31.1 并行委派只读子代理，从当前源码重新建立规格、七份规划文档、候选供应链、profile 组合、命令与长期证据状态的追踪；不得复用既有报告或 `progress.md` 结论。
+  - [x] 31.2 按 Bits Code Guard 工作流审查当前 curated 完整范围与直接 CLI/boot bridge，生成新的 JSONL、Markdown 和 HTML 报告。
+  - [x] 31.3 独立执行安全与规格一致性复审，只保留有当前源码证据的可利用安全问题或 P0-P2 实质缺陷。
+  - [x] 31.4 对确认的仓库内行为缺口由唯一写入子代理按 TDD 最小修复，同步必要 README/JSDoc/Agent Note，并复审至无未解决实质问题；若无缺口则不制造改动。
+  - [x] 31.5 取得新鲜 focused tests、per-file coverage、constraints、相关 typecheck、scoped lint、doc-sync、build/hygiene、四类 curated 命令和真实 CLI 启动证据；每条命令低于一分钟，只有存在 active UI 候选时才使用 Chrome CDP 9333。
+  - [x] 31.6 核对当前工作树、HEAD 与 index 指纹，保持用户改动和未 staged 规划/报告状态；最终 staged paths 为 0 且 cached diff 为空；初始 Bits agent 曾意外 staged changes，root 已用 `git restore --staged -- :/` 清除；verifier 曾意外执行 `git write-tree`，仅返回已有 tree，未改变 refs、index 或工作树；未执行 commit、push、merge、rebase、reset 或 checkout，并向 append-only `progress.md` 追加本轮唯一总结。
+
+- Task 31 depends on Task 30；31.1–31.3 的只读审计可并行，31.4 保持单一写入，31.5–31.6 在修复和复审完成后执行。
+
+- [x] Task 32: 收敛 Task 31 新增安全路径的覆盖率与最终门禁。
+  - [x] 32.1 为 shared installed-lock 校验、profile root binding、staged activation、benchmark 必需资产与脱敏新增有契约价值的分支测试，使所有变更的 curated、CLI 和 app-boot 可执行源恢复四维 100% 覆盖。
+  - [x] 32.2 删除或简化无可达契约价值的防御分支，不为覆盖率添加仅重复实现的断言。
+  - [x] 32.3 重跑分片 coverage、focused tests、相关 typecheck、scoped lint、constraints、doc-sync、build、hygiene、运行时命令与真实 CLI 验证，每条命令低于一分钟。
+  - [x] 32.4 完成最终 Bits、安全、规格和 prose 复审，修复全部未解决 P0-P2 或高置信度实质问题后重新验证。
+
+- Task 32 depends on Task 31.4；Task 31.5–31.6 依赖 Task 32。

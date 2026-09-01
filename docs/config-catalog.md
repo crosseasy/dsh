@@ -599,7 +599,7 @@ export interface CuratedBenchAssetDirs {
 }
 ```
 
-Source: [`packages/curated/curated-bench/src/index.ts:49`](../packages/curated/curated-bench/src/index.ts)
+Source: [`packages/curated/curated-bench/src/index.ts:52`](../packages/curated/curated-bench/src/index.ts)
 
 <a id="deepseek-aidsh-curated-policy"></a>
 
@@ -616,7 +616,7 @@ interface Config {
 }
 ```
 
-Source: [`packages/curated/curated-policy/src/index.ts:294`](../packages/curated/curated-policy/src/index.ts)
+Source: [`packages/curated/curated-policy/src/index.ts:305`](../packages/curated/curated-policy/src/index.ts)
 
 <a id="deepseek-aidsh-e2b"></a>
 

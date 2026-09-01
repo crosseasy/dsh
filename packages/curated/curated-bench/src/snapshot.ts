@@ -36,6 +36,9 @@ const GIT_SOURCE_FIELDS = ['kind', 'repository', 'commit', 'repositoryPath', 'in
  * Serialize a plain JSON value with object keys sorted recursively.
  * @param value - JSON-compatible value to serialize.
  * @returns deterministic JSON text used for curated rollback snapshot hashes.
+ * @throws when the value contains a non-finite number, non-plain object,
+ * symbol, non-enumerable or accessor property, sparse or subclassed array,
+ * extra array property, or unsupported value.
  */
 export function canonicalBenchmarkJson(value: unknown): string {
   return JSON.stringify(normalizedBenchmarkJson(value))
@@ -165,11 +168,57 @@ export interface BoundBenchmarkSnapshotReferenceRead extends BenchmarkSnapshotRe
 }
 
 /**
+ * Read one JSON file through a stable regular-file descriptor below a canonical root.
+ * @param rootPath - Directory that must contain the unresolved and canonical file.
+ * @param reference - Safe relative POSIX JSON path below `rootPath`.
+ * @param label - Field label used in diagnostics.
+ * @param containerLabel - Root description used in containment diagnostics.
+ * @returns the parsed JSON value.
+ * @throws when the path is unsafe, the target is not a contained stable regular
+ * file, the read exceeds its limit, or the content is malformed JSON.
+ */
+export function readContainedBenchmarkJson(
+  rootPath: string,
+  reference: string,
+  label: string,
+  containerLabel = 'benchmark fixture directory',
+): unknown {
+  assertSafeBenchmarkReference(reference, label)
+  const root = realpathSync.native(rootPath)
+  const unresolved = resolve(root, ...reference.split('/'))
+  const initial = lstatSync(unresolved, { bigint: true })
+  if (initial.isSymbolicLink() || !initial.isFile()) {
+    throw new Error(`${label} must reference a regular file`)
+  }
+  const canonical = realpathSync.native(unresolved)
+  const fromRoot = relative(root, canonical)
+  if (fromRoot === '..' || fromRoot.startsWith(`..${sep}`) || isAbsolute(fromRoot)) {
+    throw new Error(`${label} must stay inside the ${containerLabel}`)
+  }
+  const canonicalEntry = lstatSync(canonical, { bigint: true })
+  if (!canonicalEntry.isFile() || canonicalEntry.isSymbolicLink()) {
+    throw new Error(`${label} must reference a regular file`)
+  }
+  if (!sameFileIdentity(initial, canonicalEntry)) {
+    throw new Error(`${label} changed while it was being read`)
+  }
+  const bytes = readBoundedRegularFile(canonical, initial, label)
+  try {
+    const source = new TextDecoder('utf-8', { fatal: true })
+      .decode(bytes)
+    return JSON.parse(source) as unknown
+  } catch (error) {
+    throw new Error(`${label} must contain valid JSON`, { cause: error })
+  }
+}
+
+/**
  * Read and verify one content-addressed benchmark snapshot reference.
  * @param fixturePath - Benchmark fixture whose directory owns the reference.
  * @param value - Reference object containing exactly `path` and `sha256`.
  * @param label - Field label used in diagnostics.
  * @returns validated reference, parsed snapshot, and calculated canonical digest.
+ * @throws when the reference fields, contained file, JSON value, or digest is invalid.
  */
 export function readBoundBenchmarkSnapshotReference(
   fixturePath: string,
@@ -199,12 +248,23 @@ export function readBoundBenchmarkSnapshotReference(
  * @param reference - Relative POSIX JSON path recorded in the fixture.
  * @param label - Field label used in diagnostics.
  * @returns parsed snapshot and canonical SHA-256 from one descriptor-safe read.
+ * @throws when the path, contained file, JSON object, or canonical value is invalid.
  */
 export function readBenchmarkSnapshotReferenceWithDigest(
   fixturePath: string,
   reference: string,
   label: string,
 ): BenchmarkSnapshotReferenceRead {
+  const parsed = readContainedBenchmarkJson(dirname(fixturePath), reference, label)
+  if (!isRecord(parsed)) throw new Error(`${label} must reference a JSON object`)
+  const canonicalJson = canonicalBenchmarkJson(parsed)
+  return {
+    sha256: createHash('sha256').update(canonicalJson).digest('hex'),
+    snapshot: parsed,
+  }
+}
+
+function assertSafeBenchmarkReference(reference: string, label: string): void {
   if (
     reference.length === 0
     || isAbsolute(reference)
@@ -216,31 +276,6 @@ export function readBenchmarkSnapshotReferenceWithDigest(
     || reference.startsWith('../')
   ) {
     throw new Error(`${label} must be a safe relative JSON path`)
-  }
-  const root = realpathSync.native(dirname(fixturePath))
-  const unresolved = resolve(root, ...reference.split('/'))
-  const initial = lstatSync(unresolved, { bigint: true })
-  if (initial.isSymbolicLink() || !initial.isFile()) {
-    throw new Error(`${label} must reference a regular file`)
-  }
-  const canonical = realpathSync.native(unresolved)
-  const fromRoot = relative(root, canonical)
-  if (fromRoot === '..' || fromRoot.startsWith(`..${sep}`) || isAbsolute(fromRoot)) {
-    throw new Error(`${label} must stay inside the benchmark fixture directory`)
-  }
-  const canonicalEntry = lstatSync(canonical, { bigint: true })
-  if (!canonicalEntry.isFile() || canonicalEntry.isSymbolicLink()) {
-    throw new Error(`${label} must reference a regular file`)
-  }
-  if (!sameFileIdentity(initial, canonicalEntry)) {
-    throw new Error(`${label} changed while it was being read`)
-  }
-  const parsed = JSON.parse(readBoundedRegularFile(canonical, initial, label).toString('utf8')) as unknown
-  if (!isRecord(parsed)) throw new Error(`${label} must reference a JSON object`)
-  const canonicalJson = canonicalBenchmarkJson(parsed)
-  return {
-    sha256: createHash('sha256').update(canonicalJson).digest('hex'),
-    snapshot: parsed,
   }
 }
 
@@ -408,12 +443,52 @@ function isNodeError(error: unknown): error is NodeJS.ErrnoException & { readonl
 }
 
 function normalizedBenchmarkJson(value: unknown): unknown {
-  if (value === null || typeof value === 'string' || typeof value === 'boolean' || typeof value === 'number') return value
-  if (Array.isArray(value)) return value.map(item => normalizedBenchmarkJson(item))
+  if (value === null || typeof value === 'string' || typeof value === 'boolean') return value
+  if (typeof value === 'number') {
+    if (!Number.isFinite(value)) throw new Error('benchmark snapshots must contain finite numbers')
+    return value
+  }
+  if (Array.isArray(value)) {
+    const descriptors = Object.getOwnPropertyDescriptors(value)
+    if (
+      Object.getPrototypeOf(value) !== Array.prototype
+      || Reflect.ownKeys(value).length !== value.length + 1
+    ) {
+      throw new Error('benchmark snapshots must contain plain JSON arrays')
+    }
+    for (let index = 0; index < value.length; index++) {
+      const descriptor = descriptors[String(index)]
+      if (
+        descriptor?.enumerable !== true
+        || !Object.hasOwn(descriptor, 'value')
+      ) {
+        throw new Error('benchmark snapshots must contain plain JSON arrays')
+      }
+    }
+    return Array.from(
+      { length: value.length },
+      (_, index) => normalizedBenchmarkJson(descriptors[String(index)]?.value),
+    )
+  }
   if (isRecord(value)) {
-    return Object.fromEntries(Object.keys(value)
+    const prototype: unknown = Object.getPrototypeOf(value)
+    if (prototype !== Object.prototype && prototype !== null) {
+      throw new Error('benchmark snapshots must contain plain JSON values')
+    }
+    const keys = Object.keys(value)
+    if (Reflect.ownKeys(value).length !== keys.length) {
+      throw new Error('benchmark snapshots must contain plain JSON values')
+    }
+    const descriptors = Object.getOwnPropertyDescriptors(value)
+    if (keys.some((key) => {
+      const descriptor = descriptors[key] as PropertyDescriptor
+      return descriptor.enumerable !== true || !Object.hasOwn(descriptor, 'value')
+    })) {
+      throw new Error('benchmark snapshots must contain plain JSON values')
+    }
+    return Object.fromEntries(keys
       .sort()
-      .map(key => [key, normalizedBenchmarkJson(value[key])]))
+      .map(key => [key, normalizedBenchmarkJson(descriptors[key]?.value)]))
   }
   throw new Error('benchmark snapshots must contain plain JSON values')
 }

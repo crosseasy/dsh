@@ -24,6 +24,7 @@ import {
   type Profile,
 } from '@deepseek-ai/dsh-app-boot'
 import {
+  assertCuratedProfileLockAdmission,
   assertCuratedProfileAdmission,
   CURATED_BASELINE_BUNDLES,
   CURATED_PROFILE_TEMPLATES,
@@ -34,7 +35,12 @@ import {
   type CuratedProfileManifest,
   type CuratedProfileName,
 } from '../src/index.ts'
-import { CuratedPolicy, loadCuratedCatalog } from '@deepseek-ai/dsh-curated-policy'
+import {
+  CuratedPolicy,
+  loadCuratedCatalog,
+  type CuratedCandidate,
+  type CuratedInstalledLocksInput,
+} from '@deepseek-ai/dsh-curated-policy'
 import { load as loadYaml } from 'js-yaml'
 import * as curatedProfilesInvariant from '../src/invariant.ts'
 import { bootCuratedBehaviorProfile } from './fixtures/behavior-profile.ts'
@@ -174,6 +180,40 @@ async function withSyntheticEnterpriseCandidate(
 }
 
 describe('curated profile templates', () => {
+  it('admits current built-in lock bytes against authoritative generated dependencies', async () => {
+    const lock = Buffer.from("lockfileVersion: '9.0'\nimporters:\n  '.': {}\n")
+
+    expect(assertCuratedProfileLockAdmission('web-curated', {
+      root: lock,
+      installed: lock,
+    })).toEqual([])
+
+    const admitted = vi.fn((_input: CuratedInstalledLocksInput) => Object.freeze([]))
+    vi.resetModules()
+    vi.doMock('@deepseek-ai/dsh-curated-policy', async () => {
+      const actual = await vi.importActual<typeof import('@deepseek-ai/dsh-curated-policy')>(
+        '@deepseek-ai/dsh-curated-policy',
+      )
+      return { ...actual, assertCuratedInstalledLocks: admitted }
+    })
+    const profiles = await import('../src/index.ts')
+    profiles.assertCuratedProfileLockAdmission('web-personal', {
+      root: lock,
+      installed: lock,
+    })
+
+    expect(admitted).toHaveBeenCalledOnce()
+    const input = admitted.mock.calls[0]?.[0]
+    expect(input?.catalog.schemaVersion).toBe(2)
+    expect(input?.profileId).toBe('web-personal')
+    expect(input?.manifestDependencies).toEqual(profiles.curatedProfileDependenciesForBundles(
+      profiles.CURATED_PROFILE_TEMPLATES['web-personal'].bundles,
+      'web-personal',
+    ))
+    expect(input?.rootLock).toBe(lock)
+    expect(input?.installedLock).toBe(lock)
+  })
+
   it('keeps every curated package publicly publishable with its runtime payload', () => {
     for (const packageName of curatedPackageNames) {
       const manifestPath = fileURLToPath(new URL(`../../curated-${packageName}/package.json`, import.meta.url))
@@ -211,6 +251,7 @@ describe('curated profile templates', () => {
           'baselines/**/*.json',
           'lib/types/**/*.js',
         ]))
+        expect(manifest.files).not.toContain('lib/snapshot-*.js')
       } else if (packageName === 'policy') {
         expect(manifest.files).toEqual(expect.arrayContaining([
           'policy/plugin-allowlist.yaml',
@@ -628,6 +669,48 @@ describe('materializeCuratedProfile', () => {
       'plugin-c': '1.2.3',
     })
   })
+
+  it.each([null, ''])(
+    'rejects an active assigned candidate with package identity %j during assignment and admission',
+    async (expectedPackage) => {
+      const home = tmp()
+      const dir = materializeCuratedProfile('web-personal', home)
+      const checkedInCatalog = loadCuratedCatalog()
+      const sourceCandidate = checkedInCatalog.candidates[0] as CuratedCandidate
+      const profiles = await withMockedDependencyCatalog(JSON.stringify({
+        ...checkedInCatalog,
+        candidates: [{
+          ...sourceCandidate,
+          id: 'missing-package',
+          expectedPackage,
+          targetProfiles: ['web-personal'],
+          active: true,
+          rejections: [],
+        }],
+      }))
+      const profile = {
+        name: 'web-personal',
+        dir,
+        layers: CURATED_PROFILE_TEMPLATES['web-personal'].bundles.map(packageName => ({
+          packageName,
+          packageDir: dir,
+          patchPath: join(dir, `${packageName}.yml`),
+          patches: [],
+        })),
+        patchPath: join(dir, PROFILE_PATCH_FILENAME),
+        patches: [],
+      } satisfies Profile
+
+      expect(() => profiles.curatedProfileDependenciesForBundles([], 'web-personal')).toThrow(
+        'curated profile active candidate missing-package assigned to web-personal must declare expectedPackage',
+      )
+      expect(() => {
+        profiles.assertCuratedProfileAdmission('web-personal', home, profile)
+      }).toThrow(
+        'curated profile active candidate missing-package assigned to web-personal must declare expectedPackage',
+      )
+    },
+  )
 
   it.each([
     {
@@ -1065,6 +1148,11 @@ describe('materializeCuratedProfile', () => {
       'curated profile dependency allowlist must contain a candidates array',
     )
 
+    const invalidCandidate = await withMockedDependencyCatalog(dependencyCatalog('  - invalid\n'))
+    expect(() => invalidCandidate.curatedProfileDependenciesForBundles(['plugin-a'], 'web-curated')).toThrow(
+      'curated profile dependency allowlist candidates[0] must be a mapping',
+    )
+
     const invalidRepository = await withMockedDependencyCatalog(dependencyCatalog(`  - expectedPackage: plugin-a
     repository: ""
     repositoryPath: null
@@ -1133,6 +1221,25 @@ describe('materializeCuratedProfile', () => {
     expect(() => invalidRejections.curatedProfileDependenciesForBundles(['plugin-a'], 'web-curated')).toThrow(
       'curated profile dependency allowlist candidates[0].rejections must be a list',
     )
+  })
+
+  it('redacts malformed dependency allowlist YAML without retaining the parser error', async () => {
+    const secret = 'allowlist-secret-value'
+    const profiles = await withMockedDependencyCatalog(
+      `apiKey: ${secret}\ncandidates:\n  - expectedPackage: [\n`,
+    )
+
+    let failure: unknown
+    try {
+      profiles.curatedProfileDependenciesForBundles(['plugin-a'], 'web-curated')
+    } catch (error) {
+      failure = error
+    }
+
+    expect(failure).toBeInstanceOf(Error)
+    expect(String(failure)).toContain('[REDACTED]')
+    expect(String(failure)).not.toContain(secret)
+    expect((failure as Error).cause).toBeUndefined()
   })
 
   it('materializes below a DSH home that does not exist yet', () => {
@@ -1589,6 +1696,137 @@ describe('materializeCuratedProfile', () => {
     snapshot.close()
     expect(() => { snapshot.close() }).not.toThrow()
     expect(() => { snapshot.assertCurrent() }).toThrow('managed profile file snapshot is closed')
+  })
+
+  it('retains exact generated root bytes until the profile snapshot closes', () => {
+    const home = tmp()
+    const snapshot = materializeCuratedProfileForLoad('web-personal', home)
+    const binding = snapshot.writeRootConfig('[]\n')
+
+    expect(binding.content).toBe('[]\n')
+    expect(() => { binding.assertCurrent() }).not.toThrow()
+    snapshot.close()
+    expect(() => { snapshot.close() }).not.toThrow()
+    expect(() => { binding.assertCurrent() }).toThrow('managed profile file snapshot is closed')
+  })
+
+  it('rejects generated root bytes that differ when retained after publication', async () => {
+    const home = tmp()
+    const snapshot = materializeCuratedProfileForLoad('web-personal', home)
+    const root = join(snapshot.dir, 'cordis.yml')
+    vi.resetModules()
+    vi.doMock('node:fs', async () => {
+      const actual = await vi.importActual<typeof import('node:fs')>('node:fs')
+      let rootDescriptor: number | undefined
+      return {
+        ...actual,
+        openSync: (...args: Parameters<typeof actual.openSync>) => {
+          const descriptor = actual.openSync(...args)
+          if (String(args[0]) === root) rootDescriptor = descriptor
+          return descriptor
+        },
+        readSync: ((...args: Parameters<typeof actual.readSync>) => {
+          const count = Reflect.apply(actual.readSync, actual, args)
+          if (args[0] === rootDescriptor && count === 3 && Buffer.isBuffer(args[1])) {
+            Buffer.from('{}\n').copy(args[1], typeof args[2] === 'number' ? args[2] : 0)
+          }
+          return count
+        }) as typeof actual.readSync,
+      }
+    })
+    const profiles = await import('../src/index.ts')
+    const raced = profiles.materializeCuratedProfileForLoad('web-personal', home)
+    try {
+      expect(() => raced.writeRootConfig('[]\n')).toThrow(
+        'web-personal managed profile file cordis.yml changed while it was being read',
+      )
+    } finally {
+      raced.close()
+      snapshot.close()
+    }
+  })
+
+  it('propagates a generated root publication failure without retaining the file', async () => {
+    const home = tmp()
+    const root = join(resolveProfileDir('web-personal', home), 'cordis.yml')
+    vi.resetModules()
+    vi.doMock('node:fs', async () => {
+      const actual = await vi.importActual<typeof import('node:fs')>('node:fs')
+      return {
+        ...actual,
+        renameSync: (...args: Parameters<typeof actual.renameSync>) => {
+          if (String(args[1]) === root) throw Object.assign(new Error('publish denied'), { code: 'EACCES' })
+          actual.renameSync(...args)
+        },
+      }
+    })
+    const profiles = await import('../src/index.ts')
+    const snapshot = profiles.materializeCuratedProfileForLoad('web-personal', home)
+    try {
+      expect(() => snapshot.writeRootConfig('[]\n')).toThrow('publish denied')
+      expect(existsSync(root)).toBe(false)
+    } finally {
+      snapshot.close()
+    }
+  })
+
+  it.each(['truncate', 'replace', 'symlink'] as const)(
+    'rejects a generated root changed by %s after publication',
+    (mutation) => {
+      const home = tmp()
+      const outside = join(tmp(), 'outside.yml')
+      const snapshot = materializeCuratedProfileForLoad('web-personal', home)
+      const root = join(snapshot.dir, 'cordis.yml')
+      const binding = snapshot.writeRootConfig('[]\n')
+      try {
+        if (mutation === 'truncate') {
+          writeFileSync(root, '')
+        } else {
+          rmSync(root)
+          if (mutation === 'replace') writeFileSync(root, '[]\n')
+          else {
+            writeFileSync(outside, '[]\n')
+            symlinkSync(outside, root)
+          }
+        }
+        expect(() => { binding.assertCurrent() }).toThrow(
+          'web-personal managed profile file cordis.yml changed while it was being read',
+        )
+      } finally {
+        snapshot.close()
+      }
+    },
+  )
+
+  it('rejects a root replacement between publication and descriptor retention', async () => {
+    const home = tmp()
+    const dir = materializeCuratedProfile('web-personal', home)
+    const root = join(dir, 'cordis.yml')
+    let rootStats = 0
+    vi.resetModules()
+    vi.doMock('node:fs', async () => {
+      const actual = await vi.importActual<typeof import('node:fs')>('node:fs')
+      return {
+        ...actual,
+        lstatSync: ((...args: Parameters<typeof actual.lstatSync>) => {
+          const result = actual.lstatSync(...args)
+          if (String(args[0]) === root && ++rootStats === 2) {
+            actual.renameSync(root, `${root}.original`)
+            actual.writeFileSync(root, 'attacker\n')
+          }
+          return result
+        }) as typeof actual.lstatSync,
+      }
+    })
+    const profiles = await import('../src/index.ts')
+    const snapshot = profiles.materializeCuratedProfileForLoad('web-personal', home)
+    try {
+      expect(() => snapshot.writeRootConfig('[]\n')).toThrow(
+        'web-personal managed profile file cordis.yml changed while it was being read',
+      )
+    } finally {
+      snapshot.close()
+    }
   })
 
   it.each(managedProfileFiles)('rejects an existing profile missing managed file %s', (file) => {
@@ -2180,6 +2418,11 @@ describe('materializeCuratedProfile', () => {
   it.each([
     {
       profile: 'web-personal',
+      patch: '- id: existing\n  config: !!js "process.env.SECRET"\n',
+      message: 'web-personal existing patch must not contain dynamic expressions',
+    },
+    {
+      profile: 'web-personal',
       patch: '- insert:\n    - id: unapproved\n      name: unapproved-plugin\n',
       message: 'web-personal existing patch introduces an unapproved executable or group',
     },
@@ -2188,12 +2431,51 @@ describe('materializeCuratedProfile', () => {
       patch: '- id: existing\n  config: !!js "process.env.SECRET"\n',
       message: 'web-enterprise existing patch must not contain dynamic expressions',
     },
+    {
+      profile: 'web-personal',
+      patch: '{}\n',
+      message: 'must be a top-level YAML array',
+    },
   ] as const)('rejects an unsafe existing patch for $profile', ({ profile, patch, message }) => {
     const home = tmp()
     const dir = materializeCuratedProfile(profile, home)
     writeFileSync(join(dir, PROFILE_PATCH_FILENAME), patch)
 
     expect(() => openExistingCuratedProfileFiles(profile, home)).toThrow(message)
+  })
+
+  it('redacts malformed curated profile YAML before returning the parser diagnostic', () => {
+    const home = tmp()
+    const dir = materializeCuratedProfile('web-personal', home)
+    const secret = 'profile-secret-value'
+    writeFileSync(
+      join(dir, PROFILE_PATCH_FILENAME),
+      `- id: existing\n  config:\n    apiKey: ${secret}\n    broken: [\n`,
+    )
+
+    expect(() => openExistingCuratedProfileFiles('web-personal', home)).toThrow('[REDACTED]')
+    try {
+      openExistingCuratedProfileFiles('web-personal', home)
+    } catch (error) {
+      expect(String(error)).not.toContain(secret)
+    }
+  })
+
+  it('redacts malformed curated workspace YAML before returning the parser diagnostic', () => {
+    const home = tmp()
+    const dir = materializeCuratedProfile('web-personal', home)
+    const secret = 'workspace-secret-value'
+    writeFileSync(
+      join(dir, 'pnpm-workspace.yaml'),
+      `packages:\n  - .\napiKey: ${secret}\nbroken: [\n`,
+    )
+
+    expect(() => materializeCuratedProfile('web-personal', home)).toThrow('[REDACTED]')
+    try {
+      materializeCuratedProfile('web-personal', home)
+    } catch (error) {
+      expect(String(error)).not.toContain(secret)
+    }
   })
 
   it('rejects resolved bundle order and catalog assignment drift at boot admission', async () => {
@@ -2250,6 +2532,33 @@ describe('materializeCuratedProfile', () => {
     expect(() => {
       mockedProfiles.assertCuratedProfileAdmission('web-personal', home, profile)
     }).toThrow('web-personal catalog assignments violate curated policy')
+  })
+
+  it('leaves a caller-owned profile snapshot open after admission', () => {
+    const home = tmp()
+    const dir = materializeCuratedProfile('web-personal', home)
+    const snapshot = openExistingCuratedProfileFiles('web-personal', home)
+    const profile = {
+      name: 'web-personal',
+      dir,
+      layers: CURATED_PROFILE_TEMPLATES['web-personal'].bundles.map(packageName => ({
+        packageName,
+        packageDir: dir,
+        patchPath: join(dir, `${packageName}.yml`),
+        patches: [],
+      })),
+      patchPath: join(dir, PROFILE_PATCH_FILENAME),
+      patches: [],
+    } satisfies Profile
+
+    try {
+      assertCuratedProfileAdmission('web-personal', home, profile, [], {
+        profileFiles: snapshot,
+      })
+      expect(() => { snapshot.assertCurrent() }).not.toThrow()
+    } finally {
+      snapshot.close()
+    }
   })
 
   it('rejects dynamic expressions in admitted user layers', () => {
@@ -2778,6 +3087,63 @@ describe('materializeCuratedProfile', () => {
     expect(existsSync(join(dir, 'package.json'))).toBe(false)
     expect(existsSync(join(dir, PROFILE_PATCH_FILENAME))).toBe(false)
     expect(existsSync(join(dir, 'pnpm-workspace.yaml'))).toBe(false)
+  })
+
+  it('rejects a prohibited foundation override before writing missing managed files', () => {
+    const home = tmp()
+    const dir = resolveProfileDir('web-enterprise', home)
+    mkdirSync(dir, { recursive: true })
+    const secret = 'sk-browser-download-secret'
+    writeFileSync(
+      join(dir, PROFILE_PATCH_FILENAME),
+      `- id: webserver\n  config:\n    browserDownload: ${secret}\n`,
+    )
+
+    try {
+      materializeCuratedProfile('web-enterprise', home)
+      expect.unreachable()
+    } catch (error) {
+      expect(String(error)).toContain('prohibited browser-download override')
+      expect(String(error)).toContain('set browserDownload to false')
+      expect(String(error)).not.toContain(secret)
+    }
+    expect(readdirSync(dir)).toEqual([PROFILE_PATCH_FILENAME])
+  })
+
+  it.each([
+    ['anonymousVisionFallback', 'prohibited anonymous-vision-fallback override'],
+    ['captureBody', 'prohibited body-capture override'],
+  ] as const)('names the prohibited enterprise %s category without exposing its value', (key, message) => {
+    const home = tmp()
+    const dir = resolveProfileDir('web-enterprise', home)
+    const secret = `sk-${key}-secret`
+    mkdirSync(dir, { recursive: true })
+    writeFileSync(
+      join(dir, PROFILE_PATCH_FILENAME),
+      `- id: webserver\n  config:\n    ${key}: ${secret}\n`,
+    )
+
+    try {
+      materializeCuratedProfile('web-enterprise', home)
+      expect.unreachable()
+    } catch (error) {
+      expect(String(error)).toContain(message)
+      expect(String(error)).not.toContain(secret)
+    }
+  })
+
+  it('names the prohibited enterprise package category and correction', () => {
+    const home = tmp()
+    const dir = resolveProfileDir('web-enterprise', home)
+    mkdirSync(dir, { recursive: true })
+    writeFileSync(
+      join(dir, PROFILE_PATCH_FILENAME),
+      '- insert:\n    - id: search\n      name: dsh-web-search-pro\n      config: {}\n',
+    )
+
+    expect(() => materializeCuratedProfile('web-enterprise', home)).toThrow(
+      'prohibited package insertion; remove the prohibited package row',
+    )
   })
 
   it('rejects prohibited existing enterprise content before writing any profile file', () => {

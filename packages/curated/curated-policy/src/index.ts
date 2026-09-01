@@ -9,6 +9,17 @@ import { fileURLToPath } from 'node:url'
 import type { Context } from '@deepseek-ai/cordis'
 import { FAILSAFE_SCHEMA, load as loadYaml, YAMLException } from 'js-yaml'
 
+export {
+  assertCuratedInstalledCandidateLocks,
+  assertCuratedInstalledLocks,
+  assertPnpmRegistryResolution,
+  pnpmLockTransformation,
+  type CuratedInstalledCandidateIdentity,
+  type CuratedInstalledCandidateLocksInput,
+  type CuratedInstalledLocksInput,
+  type CuratedInstalledSourceIdentity,
+} from './installed-lock.ts'
+
 /** Cordis plugin name used by loader diagnostics. */
 export const name = 'curated-policy'
 
@@ -323,10 +334,18 @@ const windowsAbsolutePathPattern = /^(?:[A-Za-z]:|\\\\)/u
 const redacted = '[REDACTED]'
 const secretKeyPattern =
   /(?:api[-_]?key|authorization|cookie|credential|password|private[-_]?key|secret|token|(?:^|[-_])auth(?:$|[-_]))/iu
-const secretValuePattern = /(?:bearer\s+\S+|gh[pousr]_[a-z0-9_]+|(?<![\p{L}\p{N}_-])sk-[a-z0-9_-]+|-----BEGIN [A-Z ]*PRIVATE KEY-----)/iu
+const secretValuePattern = new RegExp(
+  String.raw`(?:bearer\s+\S+|gh[pousr]_[a-z0-9_]+|github_pat_[a-z0-9_]+`
+  + String.raw`|(?<![\p{L}\p{N}_-])sk-[a-z0-9_-]+|-----BEGIN [A-Z ]*PRIVATE KEY-----)`,
+  'iu',
+)
 const privateKeyBlockReplacementPattern =
   /-----BEGIN [A-Z ]*PRIVATE KEY-----[\s\S]*?(?:-----END[^\r\n]*(?=\r?\n|$)|$)/giu
-const secretValueReplacementPattern = /(?:bearer\s+\S+|gh[pousr]_[a-z0-9_]+|(?<![\p{L}\p{N}_-])sk-[a-z0-9_-]+)/giu
+const secretValueReplacementPattern = new RegExp(
+  String.raw`(?:bearer\s+\S+|gh[pousr]_[a-z0-9_]+|github_pat_[a-z0-9_]+`
+  + String.raw`|(?<![\p{L}\p{N}_-])sk-[a-z0-9_-]+)`,
+  'giu',
+)
 const secretAssignmentReplacementPattern =
   /((?:^|[^\p{L}\p{N}_-])(?:api[-_]?key|authorization|cookie|credential|password|private[-_]?key|secret|token|auth)\s*[:=]\s*)[^\r\n]*/gimu
 const urlUserinfoReplacementPattern = /([A-Za-z][A-Za-z0-9+.-]*:\/\/)[^\s/?#]+@/gu
@@ -592,7 +611,10 @@ export function validateCandidateLock(catalog: CuratedCatalog): PolicyIssue[] {
       issues.push(policyIssue({
         code: 'candidate-secret-material',
         candidateId: candidate.id,
-        message: 'candidate fields must not contain secret material',
+        message: containsSecretMaterial(candidate.targetProfiles)
+          || containsSecretMaterial(candidate.runtimeActivationEvidence)
+          ? `candidate fields must not contain secret material: ${redacted}`
+          : 'candidate fields must not contain secret material',
       }))
     }
     if (!candidateIdPattern.test(candidate.id)) {
@@ -1568,7 +1590,7 @@ function optionalCandidateConfig(value: unknown, label: string): CuratedCandidat
   assertOnlyKeys(record, candidateConfigKeys, label)
   return {
     entryId: stringField(record, 'entryId', label),
-    values: recordField(record.values, `${label}.values`),
+    values: copyFiniteJsonObject(record.values, `curated catalog ${label}.values`),
   }
 }
 
@@ -1790,6 +1812,68 @@ function permissionDecisionField(record: Record<string, unknown>, field: string,
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value)
+}
+
+function copyFiniteJsonObject(value: unknown, label: string): Record<string, unknown> {
+  try {
+    const copied = copyFiniteJsonValue(value, new WeakSet())
+    if (!isRecord(copied)) throw new TypeError('not an object')
+    return copied
+  } catch {
+    throw new Error(`${label} must contain only finite JSON-compatible values`)
+  }
+}
+
+function copyFiniteJsonValue(value: unknown, ancestors: WeakSet<object>): unknown {
+  if (
+    value === null
+    || typeof value === 'string'
+    || typeof value === 'boolean'
+    || (typeof value === 'number' && Number.isFinite(value))
+  ) {
+    return value
+  }
+  if (typeof value !== 'object') throw new TypeError('not a JSON value')
+  const prototype: unknown = Object.getPrototypeOf(value)
+  if (Array.isArray(value)) {
+    const keys = Object.keys(value)
+    const descriptors = Object.getOwnPropertyDescriptors(value)
+    if (
+      prototype !== Array.prototype
+      || Reflect.ownKeys(value).length !== value.length + 1
+      || keys.some((key, index) => {
+        const descriptor = descriptors[key] as PropertyDescriptor
+        return key !== String(index)
+          || descriptor.enumerable !== true
+          || !Object.hasOwn(descriptor, 'value')
+      })
+    ) {
+      throw new TypeError('not a dense plain array')
+    }
+    if (ancestors.has(value)) throw new TypeError('cyclic JSON value')
+    ancestors.add(value)
+    const copied = value.map(item => copyFiniteJsonValue(item, ancestors))
+    ancestors.delete(value)
+    return copied
+  }
+  if (prototype !== Object.prototype && prototype !== null) throw new TypeError('not a plain object')
+  const keys = Object.keys(value)
+  if (Reflect.ownKeys(value).length !== keys.length) throw new TypeError('not an own-property object')
+  const descriptors = Object.getOwnPropertyDescriptors(value)
+  if (keys.some((key) => {
+    const descriptor = descriptors[key] as PropertyDescriptor
+    return descriptor.enumerable !== true || !Object.hasOwn(descriptor, 'value')
+  })) {
+    throw new TypeError('not a plain data object')
+  }
+  if (ancestors.has(value)) throw new TypeError('cyclic JSON value')
+  ancestors.add(value)
+  const copied = Object.fromEntries(keys.map(key => [
+    key,
+    copyFiniteJsonValue((value as Record<string, unknown>)[key], ancestors),
+  ]))
+  ancestors.delete(value)
+  return copied
 }
 
 function isPlaceholderDigest(value: string): boolean {
@@ -2108,7 +2192,10 @@ function copyCandidate(candidate: CuratedCandidate): CuratedCandidate {
       : {
         config: {
           entryId: candidate.config.entryId,
-          values: structuredClone(candidate.config.values),
+          values: copyFiniteJsonObject(
+            candidate.config.values,
+            `candidate ${redactSecretText(candidate.id)} config.values`,
+          ),
         },
       },
     ...candidate.runtimeActivationEvidence === undefined

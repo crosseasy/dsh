@@ -27,6 +27,7 @@ import {
   loadProfile,
   PROFILE_PATCH_FILENAME,
   watchUserPatches,
+  type BoundRootConfig,
   type Profile,
 } from '@deepseek-ai/dsh-app-boot'
 import { resolveDshHome } from '@deepseek-ai/dsh-home-paths'
@@ -91,6 +92,16 @@ export interface PrepareProfileOptions {
   additionalUserLayers?: readonly (readonly PatchOptions[])[]
 }
 
+/** Loaded profile state and any descriptor-bound root retained for caller-managed use. */
+export interface PreparedProfile {
+  /** Loaded profile metadata and patch layers. */
+  readonly profile: Profile
+  /** Descriptor-bound generated root for a curated profile. */
+  readonly root?: BoundRootConfig
+  /** Release retained descriptors and the exclusive curated profile lock. */
+  readonly close: () => void
+}
+
 /**
  * Load a resolved profile for `name`: materialize and contain built-in
  * curated profiles before any shared fallback write, heal that fallback, then (re)write the
@@ -103,15 +114,21 @@ export interface PrepareProfileOptions {
  * on the same file, so both compose over the identical base). Curated
  * preparation guards every fallback mutation with its retained profile
  * identity and publishes this root from a checked sibling temporary file;
- * ordinary profiles retain the unguarded legacy behavior.
+ * ordinary profiles retain the unguarded legacy behavior. Callers own
+ * `close()` and must keep the retained root binding open until every consumer
+ * of `root` has finished.
  * @param name - the profile name.
  * @param options - User-layer loading and curated admission options.
- * @returns the loaded profile.
+ * @returns the loaded profile, optional retained root binding, and a `close()`
+ * disposer that callers must invoke to release the exclusive profile lock.
+ * @throws when lock acquisition, interrupted-install recovery, materialization,
+ * filesystem access or validation, profile loading or admission, descriptor
+ * close, or lock release fails.
  */
-export function prepareProfile(
+export function prepareProfileForUse(
   name: string,
   options: PrepareProfileOptions = {},
-): Profile {
+): PreparedProfile {
   const { userLayer = true, additionalUserLayers = [] } = options
   const profileFiles = prepareCuratedProfileFiles(name, { userLayer })
   try {
@@ -123,18 +140,40 @@ export function prepareProfile(
     admitCuratedProfile(name, profile, additionalUserLayers, { userLayer }, profileFiles)
     if (profileFiles === undefined) {
       writeFileSync(join(profile.dir, PROFILE_ROOT_FILENAME), PROFILE_ROOT_CONFIG)
+      return { profile, close: () => {} }
     } else {
-      profileFiles.writeRootConfig(PROFILE_ROOT_CONFIG)
+      const root = profileFiles.writeRootConfig(PROFILE_ROOT_CONFIG)
+      return { profile, root, close: profileFiles.close }
     }
-    return profile
-  } finally {
+  } catch (error) {
     profileFiles?.close()
+    throw error
+  }
+}
+
+/**
+ * Load one profile and release any retained curated root binding before return.
+ * @param name - the profile name.
+ * @param options - User-layer loading and curated admission options.
+ * @returns the loaded profile.
+ * @throws when lock acquisition, interrupted-install recovery, materialization,
+ * filesystem access or validation, profile loading or admission, descriptor
+ * close, or lock release fails.
+ */
+export function prepareProfile(name: string, options: PrepareProfileOptions = {}): Profile {
+  const prepared = prepareProfileForUse(name, options)
+  try {
+    return prepared.profile
+  } finally {
+    prepared.close()
   }
 }
 
 /** One profile's patch layers (application order) and the row index of its pre-flag composition. */
 interface ComposedProfile {
   profile: Profile
+  root?: BoundRootConfig
+  close: () => void
   /** Bundle layers concatenated — the part below the user layers on a live reload. */
   bundlePatches: PatchOptions[]
   /** The home-level user layer (`$DSH_HOME/cordis.patch.yml`), applied after the profile's own. */
@@ -175,29 +214,43 @@ function composeProfile(
 ): ComposedProfile {
   const homePatches = loadOptionalPatches(NAME, homePatchPath()) ?? []
   const overlays = patchFiles.flatMap(file => loadOverlayPatches(NAME, resolve(file)))
-  const profile = prepareProfile(name, { additionalUserLayers: [homePatches, overlays] })
-  const bundlePatches = profile.layers.flatMap(layer => layer.patches)
-  const rows = new Map<string, EntryOptions>()
-  for (const row of composeEntries([bundlePatches, profile.patches, homePatches, overlays])) {
-    if (typeof row.id === 'string') rows.set(row.id, row)
+  const prepared = prepareProfileForUse(name, { additionalUserLayers: [homePatches, overlays] })
+  try {
+    const profile = prepared.profile
+    const bundlePatches = profile.layers.flatMap(layer => layer.patches)
+    const rows = new Map<string, EntryOptions>()
+    for (const row of composeEntries([bundlePatches, profile.patches, homePatches, overlays])) {
+      if (typeof row.id === 'string') rows.set(row.id, row)
+    }
+    const composedOverlays = [...overlays]
+    // The SHIPPED root is the part of the roster only this app can resolve: it
+    // sits beside this app's own config, in both the source and built layouts.
+    // The writable root the roster appends is `dsh-agent-presets`' own, so a
+    // launcher that never reaches this patch still finds a person's presets.
+    if (rows.has('agent-presets')) {
+      composedOverlays.push({
+        id: 'agent-presets',
+        config: {
+          ...(rows.get('agent-presets')?.config ?? {}) as Record<string, unknown>,
+          roots: [{ path: SHIPPED_PRESET_ROOT, trust: 'system' }],
+        },
+      })
+    }
+    const telemetryPatch = resolveTelemetryPatch(process.env.DSH_TELEMETRY_DISABLED, rows.has(TELEMETRY_ROW_ID))
+    if (telemetryPatch !== undefined) composedOverlays.push(telemetryPatch)
+    return {
+      profile,
+      bundlePatches,
+      homePatches,
+      overlays: composedOverlays,
+      rows,
+      close: prepared.close,
+      ...prepared.root === undefined ? {} : { root: prepared.root },
+    }
+  } catch (error) {
+    prepared.close()
+    throw error
   }
-  const composedOverlays = [...overlays]
-  // The SHIPPED root is the part of the roster only this app can resolve: it
-  // sits beside this app's own config, in both the source and built layouts.
-  // The writable root the roster appends is `dsh-agent-presets`' own, so a
-  // launcher that never reaches this patch still finds a person's presets.
-  if (rows.has('agent-presets')) {
-    composedOverlays.push({
-      id: 'agent-presets',
-      config: {
-        ...(rows.get('agent-presets')?.config ?? {}) as Record<string, unknown>,
-        roots: [{ path: SHIPPED_PRESET_ROOT, trust: 'system' }],
-      },
-    })
-  }
-  const telemetryPatch = resolveTelemetryPatch(process.env.DSH_TELEMETRY_DISABLED, rows.has(TELEMETRY_ROW_ID))
-  if (telemetryPatch !== undefined) composedOverlays.push(telemetryPatch)
-  return { profile, bundlePatches, homePatches, overlays: composedOverlays, rows }
 }
 
 /** Options for {@link runProfile}. */
@@ -229,6 +282,8 @@ function shutdownOwnsTree(ctx: Context, signal: AbortSignal): boolean {
  * mounted plugins (or to a one-shot runner the composition mounts).
  * @param options - environment snapshot, profile name, overlays, and the booted app's own arguments.
  * @returns the settled root context and the shutdown controller.
+ * @throws when profile recovery, materialization, filesystem access, admission,
+ * boot, descriptor close, or exclusive profile lock release fails.
  */
 export async function runProfile(options: RunProfileOptions): Promise<{ ctx: Context; shutdown: ProcessShutdown }> {
   const composed = composeProfile(options.profile, options.patchFiles)
@@ -290,18 +345,30 @@ export async function runProfile(options: RunProfileOptions): Promise<{ ctx: Con
   }
   // Cloned for the same insert-aliasing reason as composeLive: the boot
   // application must not mutate the objects later reloads recompose from.
-  const ctx = await boot(NAME, rootConfig, structuredClone(allPatches(composed)), (hostCtx) => {
-    app.current = hostCtx
-    // Before any config-tree entry mounts, so plugins resolve all launch-time
-    // environment values from the same immutable provenance snapshot.
-    hostCtx.provide(DSH_LAUNCH_ENVIRONMENT_KEY, options.environment)
-    // The command line and bounded exit request are launcher facts available
-    // to every app plugin that injects the argument snapshot.
-    provideCmdline(hostCtx, {
-      args: options.args,
-      exit: code => void shutdown.shutdown(code),
-    })
-  })
+  let ctx: Context
+  try {
+    ctx = await boot(
+      NAME,
+      rootConfig,
+      structuredClone(allPatches(composed)),
+      (hostCtx) => {
+        app.current = hostCtx
+        // Before any config-tree entry mounts, so plugins resolve all launch-time
+        // environment values from the same immutable provenance snapshot.
+        hostCtx.provide(DSH_LAUNCH_ENVIRONMENT_KEY, options.environment)
+        // The command line and bounded exit request are launcher facts available
+        // to every app plugin that injects the argument snapshot.
+        provideCmdline(hostCtx, {
+          args: options.args,
+          exit: code => void shutdown.shutdown(code),
+        })
+      },
+      undefined,
+      composed.root,
+    )
+  } finally {
+    composed.close()
+  }
   app.current = ctx
   // A surface can dispose the whole tree while boot or this post-boot watcher
   // setup is still in flight — a signal, or a fast one-shot's appExit. Loader

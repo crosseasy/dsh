@@ -9,7 +9,7 @@
  */
 
 import { spawnSync } from 'node:child_process'
-import { randomBytes } from 'node:crypto'
+import { createHash } from 'node:crypto'
 import {
   closeSync,
   constants,
@@ -20,6 +20,7 @@ import {
   mkdtempSync,
   openSync,
   readdirSync,
+  readlinkSync,
   readSync,
   realpathSync,
   renameSync,
@@ -28,7 +29,7 @@ import {
   writeFileSync,
   type BigIntStats,
 } from 'node:fs'
-import { basename, isAbsolute, join, relative, resolve, sep } from 'node:path'
+import { basename, dirname, isAbsolute, join, relative, resolve, sep } from 'node:path'
 import {
   DEFAULT_PROFILE_BUNDLES,
   initProfile,
@@ -42,6 +43,7 @@ import {
   type ProfileManifest,
 } from '@deepseek-ai/dsh-app-boot'
 import {
+  assertCuratedProfileLockAdmission,
   assertCuratedProfileAdmission,
   curatedProfileDependenciesForBundles,
   CURATED_PROFILE_TEMPLATES,
@@ -51,8 +53,12 @@ import {
   type CuratedProfileName,
 } from '@deepseek-ai/dsh-curated-profiles'
 import { resolveDshHome } from '@deepseek-ai/dsh-home-paths'
-import { load as loadYaml } from 'js-yaml'
 import { isCuratedProfileName } from './curated-profile.ts'
+import {
+  prepareCuratedProfileLockRoot,
+  withCuratedInstallLock,
+  type CuratedProfileLock,
+} from './curated-profile-lock.ts'
 import { INSTALL_ANCHOR } from './profile-boot.ts'
 
 const NAME = 'dsh'
@@ -60,9 +66,10 @@ const IGNORE_SCRIPTS_ARGUMENT = '--config.ignore-scripts=true'
 const OFFLINE_ARGUMENT = '--offline'
 const FROZEN_LOCKFILE_ARGUMENT = '--frozen-lockfile'
 const CURATED_PLUGIN_COMMANDS = new Set(['install', 'list', '--help'])
-const CURATED_INSTALL_LOCK_WAIT_MS = 10 * 60 * 1_000
-const CURATED_INSTALL_LOCK_RETRY_MS = 50
 const CURATED_INSTALL_FILE_LIMIT = 16 * 1024 * 1024
+const CURATED_INSTALL_TREE_LIMIT = 64 * 1024 * 1024
+const CURATED_INSTALL_ENTRY_LIMIT = 1_000
+const CURATED_INSTALL_DEPTH_LIMIT = 64
 const PACKAGE_TRANSFORMATION_ENVIRONMENT = new RegExp([
   String.raw`^(?:npm|pnpm)[._-]?config[._-](?:pnpm[._-])?(?:`,
   String.raw`overrides|patched[-_.]?dependencies|package[-_.]?extensions|`,
@@ -109,6 +116,11 @@ function exportsPatch(packageName: string, profileDir: string): boolean {
   return manifest.dsh?.bundle?.patch !== undefined
 }
 
+function ordinaryProfileBundles(profile: string): readonly string[] {
+  if (!Object.hasOwn(PROFILE_TEMPLATES, profile)) return DEFAULT_PROFILE_BUNDLES
+  return PROFILE_TEMPLATES[profile] as readonly string[]
+}
+
 /**
  * Reconcile `dsh.profile.bundles` against the installed state: pnpm has
  * already written the real installed names (so a git/path/tarball/alias spec
@@ -117,15 +129,17 @@ function exportsPatch(packageName: string, profileDir: string): boolean {
  * package joins the layer stack (appended in dependency order); a
  * dependency-listed name that no longer does — removed, or the installed
  * version dropped the declaration — leaves it. In-box bundles from the
- * profile template are not dependencies and are never touched. Warns once
+ * profile template remain installation-owned even when a redundant manifest
+ * dependency is removed. Warns once
  * per newly-added bundle-less dependency (a plain library is fine; the
  * warning is orientation).
  */
-function reconcilePlugins(before: ProfileManifest, profileDir: string): void {
+function reconcilePlugins(profile: string, before: ProfileManifest, profileDir: string): void {
   const after = readProfileManifest(NAME, profileDir)
   const beforeDeps = new Set(Object.keys(before.dependencies ?? {}))
   const dependencies = Object.keys(after.dependencies ?? {})
   const plugins = after.dsh?.profile?.bundles ?? []
+  const installationOwned = new Set(ordinaryProfileBundles(profile))
   let changed = false
   for (const packageName of dependencies) {
     const isBundle = exportsPatch(packageName, profileDir)
@@ -141,6 +155,7 @@ function reconcilePlugins(before: ProfileManifest, profileDir: string): void {
   }
   const dependencySet = new Set(dependencies)
   for (const packageName of [...plugins]) {
+    if (installationOwned.has(packageName)) continue
     const wasDependency = beforeDeps.has(packageName) || dependencySet.has(packageName)
     const stillBundle = dependencySet.has(packageName) && exportsPatch(packageName, profileDir)
     if (wasDependency && !stillBundle) {
@@ -219,6 +234,8 @@ function sameIdentity(
   return left.ino !== 0n && right.ino !== 0n && left.dev === right.dev && left.ino === right.ino
 }
 
+/* v8 ignore start -- source subprocess tests exercise OS-level lock acquisition,
+   stale-owner recovery, and cleanup; child coverage cannot be attributed here. */
 function assertRegularDirectory(path: string, label: string): BigIntStats {
   const identity = lstatSync(path, { bigint: true })
   if (identity.isSymbolicLink() || !identity.isDirectory()) {
@@ -231,95 +248,16 @@ function prepareCuratedInstallRoots(home: string): {
   readonly profilesDir: string
   readonly stagingRoot: string
 } {
-  mkdirSync(home, { recursive: true, mode: 0o700 })
-  assertRegularDirectory(home, 'DSH home')
-  const profilesDir = join(home, 'profiles')
+  const profilesDir = prepareCuratedProfileLockRoot(home)
   const stagingRoot = join(home, '.curated-install-staging')
-  for (const [path, label] of [
-    [profilesDir, 'profiles root'],
-    [stagingRoot, 'curated install staging root'],
-  ] as const) {
-    mkdirSync(path, { recursive: true, mode: 0o700 })
-    assertRegularDirectory(path, label)
-  }
+  mkdirSync(stagingRoot, { recursive: true, mode: 0o700 })
+  assertRegularDirectory(stagingRoot, 'curated install staging root')
   const canonicalHome = realpathSync.native(home)
-  for (const path of [profilesDir, stagingRoot]) {
-    const fromHome = relative(canonicalHome, realpathSync.native(path))
-    if (isAbsolute(fromHome) || fromHome === '..' || fromHome.startsWith(`..${sep}`)) {
-      throw new Error(`${NAME}: curated install root resolves outside the DSH home`)
-    }
+  const fromHome = relative(canonicalHome, realpathSync.native(stagingRoot))
+  if (isAbsolute(fromHome) || fromHome === '..' || fromHome.startsWith(`..${sep}`)) {
+    throw new Error(`${NAME}: curated install root resolves outside the DSH home`)
   }
   return { profilesDir, stagingRoot }
-}
-
-interface CuratedInstallLock {
-  readonly assertOwned: () => void
-  readonly release: () => void
-}
-
-function processIsAlive(pid: number): boolean {
-  if (!Number.isSafeInteger(pid) || pid <= 0) return false
-  try {
-    process.kill(pid, 0)
-    return true
-  } catch (error) {
-    return (error as NodeJS.ErrnoException).code !== 'ESRCH'
-  }
-}
-
-interface CuratedInstallLockOwner {
-  readonly pid: number
-  readonly token: string
-  readonly lockIdentity: BigIntStats
-}
-
-function readLockOwner(lockPath: string): CuratedInstallLockOwner | undefined {
-  let descriptor: number | undefined
-  try {
-    const lockIdentity = assertRegularDirectory(lockPath, 'curated install lock')
-    const ownerPath = join(lockPath, 'owner.json')
-    const ownerIdentity = lstatSync(ownerPath, { bigint: true })
-    if (ownerIdentity.isSymbolicLink() || !ownerIdentity.isFile() || ownerIdentity.size > 4096n) return undefined
-    let flags = constants.O_RDONLY | constants.O_NONBLOCK
-    /* v8 ignore else -- Windows does not expose O_NOFOLLOW. */
-    if (typeof constants.O_NOFOLLOW === 'number') flags |= constants.O_NOFOLLOW
-    descriptor = openSync(ownerPath, flags)
-    const opened = fstatSync(descriptor, { bigint: true })
-    if (!opened.isFile() || !sameIdentity(ownerIdentity, opened)) return undefined
-    const bytes = Buffer.alloc(Number(opened.size))
-    let offset = 0
-    while (offset < bytes.byteLength) {
-      const count = readSync(descriptor, bytes, offset, bytes.byteLength - offset, null)
-      if (count === 0) break
-      offset += count
-    }
-    const currentOwner = lstatSync(ownerPath, { bigint: true })
-    const currentLock = lstatSync(lockPath, { bigint: true })
-    const held = fstatSync(descriptor, { bigint: true })
-    if (
-      offset !== bytes.byteLength
-      || currentOwner.isSymbolicLink()
-      || !currentOwner.isFile()
-      || !sameIdentity(opened, currentOwner)
-      || !sameIdentity(opened, held)
-      || !sameIdentity(lockIdentity, currentLock)
-    ) return undefined
-    const parsed = JSON.parse(bytes.toString('utf8')) as unknown
-    if (
-      typeof parsed !== 'object'
-      || parsed === null
-      || Array.isArray(parsed)
-      || typeof (parsed as { pid?: unknown }).pid !== 'number'
-      || typeof (parsed as { token?: unknown }).token !== 'string'
-    ) return undefined
-    const owner = parsed as { readonly pid: number; readonly token: string }
-    if (!Number.isSafeInteger(owner.pid) || owner.pid <= 0 || owner.token.length === 0) return undefined
-    return { ...owner, lockIdentity }
-  } catch {
-    return undefined
-  } finally {
-    if (descriptor !== undefined) closeSync(descriptor)
-  }
 }
 
 function removeOwnedPath(path: string, parent: string, expectedIdentity?: BigIntStats): void {
@@ -349,92 +287,6 @@ function removeOwnedPath(path: string, parent: string, expectedIdentity?: BigInt
   rmSync(path, { recursive: true })
 }
 
-function reclaimDeadInstallLock(lockPath: string, parent: string): boolean {
-  const owner = readLockOwner(lockPath)
-  if (owner === undefined || processIsAlive(owner.pid)) return false
-  const lockIdentity = owner.lockIdentity
-  const reclaimed = join(parent, `.${basename(lockPath)}.reclaimed-${randomBytes(16).toString('hex')}`)
-  try {
-    renameSync(lockPath, reclaimed)
-  } catch (error) {
-    if (isNodeError(error) && ['ENOENT', 'EEXIST', 'ENOTEMPTY'].includes(error.code)) return true
-    throw error
-  }
-  removeOwnedPath(reclaimed, parent, lockIdentity)
-  return true
-}
-
-async function acquireCuratedInstallLock(profile: CuratedProfileName, profilesDir: string): Promise<CuratedInstallLock> {
-  const lockPath = join(profilesDir, `.${profile}.install.lock`)
-  const token = randomBytes(16).toString('hex')
-  const deadline = Date.now() + CURATED_INSTALL_LOCK_WAIT_MS
-  for (;;) {
-    const pending = join(profilesDir, `.${profile}.install-lock-${randomBytes(16).toString('hex')}`)
-    mkdirSync(pending, { mode: 0o700 })
-    const pendingIdentity = lstatSync(pending, { bigint: true })
-    try {
-      writeFileSync(
-        join(pending, 'owner.json'),
-        `${JSON.stringify({ pid: process.pid, token })}\n`,
-        { encoding: 'utf8', flag: 'wx', mode: 0o600 },
-      )
-      try {
-        renameSync(pending, lockPath)
-      } catch (error) {
-        if (!isNodeError(error) || !['EEXIST', 'ENOTEMPTY', 'EPERM'].includes(error.code)) throw error
-      }
-      if (readLockOwner(lockPath)?.token === token) break
-    } finally {
-      removeOwnedPath(pending, profilesDir, pendingIdentity)
-    }
-    if (!reclaimDeadInstallLock(lockPath, profilesDir) && Date.now() >= deadline) {
-      throw new Error(`${NAME}: timed out waiting for the curated profile install lock at ${lockPath}`)
-    }
-    await new Promise(resolveDelay => setTimeout(resolveDelay, CURATED_INSTALL_LOCK_RETRY_MS))
-  }
-  const assertOwned = (): void => {
-    if (readLockOwner(lockPath)?.token !== token) {
-      throw new Error(`${NAME}: curated profile install lock ownership changed`)
-    }
-  }
-  return {
-    assertOwned,
-    release: () => {
-      assertOwned()
-      const lockIdentity = assertRegularDirectory(lockPath, 'curated install lock')
-      const released = join(profilesDir, `.${profile}.install-lock-release-${token}`)
-      renameSync(lockPath, released)
-      removeOwnedPath(released, profilesDir, lockIdentity)
-    },
-  }
-}
-
-async function withCuratedInstallLock<T>(
-  profile: CuratedProfileName,
-  profilesDir: string,
-  operation: (lock: CuratedInstallLock) => Promise<T> | T,
-): Promise<T> {
-  const lock = await acquireCuratedInstallLock(profile, profilesDir)
-  let failure: unknown
-  try {
-    return await operation(lock)
-  } catch (error) {
-    failure = error
-    throw error
-  } finally {
-    try {
-      lock.release()
-    } catch (releaseError) {
-      if (failure === undefined) throw releaseError
-      throw new AggregateError(
-        [failure, releaseError],
-        `${NAME}: curated profile install failed and lock release also failed`,
-        { cause: failure },
-      )
-    }
-  }
-}
-
 function recoverCuratedInstallState(profile: CuratedProfileName, profilesDir: string, stagingRoot: string): void {
   const liveDir = join(profilesDir, profile)
   const previousDir = join(profilesDir, `.${profile}.install-previous`)
@@ -442,9 +294,24 @@ function recoverCuratedInstallState(profile: CuratedProfileName, profilesDir: st
     const previousIdentity = assertRegularDirectory(previousDir, 'previous curated profile')
     if (existsSync(liveDir)) {
       assertRegularDirectory(liveDir, 'curated profile')
-      removeOwnedPath(previousDir, profilesDir, previousIdentity)
+      const validation = validateStagedCuratedProfile(profile, dirname(profilesDir), liveDir)
+      try {
+        validation.files.assertCurrent()
+        for (const file of validation.activationFiles) file.assertCurrent()
+        for (const tree of validation.candidateTrees) tree.assertCurrent()
+        for (const stagedLock of validation.locks) stagedLock.assertCurrent()
+        removeOwnedPath(previousDir, profilesDir, previousIdentity)
+      } finally {
+        validation.files.close()
+        for (const file of validation.activationFiles) file.close()
+        for (const stagedLock of validation.locks) stagedLock.close()
+      }
     } else {
       renameSync(previousDir, liveDir)
+      const recoveredIdentity = assertRegularDirectory(liveDir, 'recovered curated profile')
+      if (!sameIdentity(previousIdentity, recoveredIdentity)) {
+        throw new Error(`${NAME}: previous curated profile changed during recovery`)
+      }
     }
   }
   const stagePrefix = `${profile}-`
@@ -455,10 +322,12 @@ function recoverCuratedInstallState(profile: CuratedProfileName, profilesDir: st
     removeOwnedPath(stagePath, stagingRoot, stageIdentity)
   }
 }
+/* v8 ignore stop */
 
 interface BoundRegularFile {
   readonly bytes: Buffer
   readonly assertCurrent: () => void
+  readonly assertMoved: (root: string) => void
   readonly close: () => void
 }
 
@@ -469,9 +338,6 @@ function openBoundedRegularFile(root: string, relativePath: string): BoundRegula
   const rootIdentity = assertRegularDirectory(canonicalRoot, 'curated profile root')
   const path = join(canonicalRoot, relativePath)
   const fromRoot = relative(canonicalRoot, path)
-  if (isAbsolute(fromRoot) || fromRoot === '..' || fromRoot.startsWith(`..${sep}`)) {
-    throw new Error(`${NAME}: curated install file resolves outside its profile`)
-  }
   let ancestor = canonicalRoot
   for (const segment of fromRoot.split(sep).slice(0, -1)) {
     ancestor = join(ancestor, segment)
@@ -490,13 +356,18 @@ function openBoundedRegularFile(root: string, relativePath: string): BoundRegula
   const descriptor = openSync(path, flags)
   try {
     const opened = fstatSync(descriptor, { bigint: true })
+    /* v8 ignore next 3 -- requires replacing a validated file between adjacent lstat/open/fstat calls. */
     if (!opened.isFile() || !sameIdentity(initial, opened)) {
       throw new Error(`${NAME}: curated install file changed while opening: ${relativePath}`)
+    }
+    if (opened.size > BigInt(CURATED_INSTALL_FILE_LIMIT)) {
+      throw new Error(`${NAME}: curated install file exceeds ${String(CURATED_INSTALL_FILE_LIMIT)} bytes: ${relativePath}`)
     }
     const bytes = Buffer.alloc(Number(opened.size))
     let offset = 0
     while (offset < bytes.byteLength) {
       const count = readSync(descriptor, bytes, offset, bytes.byteLength - offset, null)
+      /* v8 ignore next -- a stable regular descriptor cannot return early EOF. */
       if (count === 0) break
       offset += count
     }
@@ -504,6 +375,7 @@ function openBoundedRegularFile(root: string, relativePath: string): BoundRegula
       const currentRoot = lstatSync(canonicalRoot, { bigint: true })
       const current = lstatSync(path, { bigint: true })
       const held = fstatSync(descriptor, { bigint: true })
+      /* v8 ignore next 15 -- each failure requires same-process mutation between the read and immediate identity check. */
       if (
         !sameIdentity(rootIdentity, currentRoot)
         || realpathSync.native(root) !== canonicalRoot
@@ -519,27 +391,61 @@ function openBoundedRegularFile(root: string, relativePath: string): BoundRegula
         throw new Error(`${NAME}: curated install file changed: ${relativePath}`)
       }
     }
+    /* v8 ignore next -- a stable regular descriptor cannot reach EOF before its captured size. */
     if (offset !== bytes.byteLength) {
       throw new Error(`${NAME}: curated install file changed while reading: ${relativePath}`)
     }
     assertCurrent()
-    let closed = false
     return {
       bytes,
       assertCurrent: () => {
-        if (closed) throw new Error(`${NAME}: curated install file snapshot is closed`)
         assertCurrent()
       },
-      close: () => {
-        if (closed) return
-        closed = true
-        closeSync(descriptor)
+      assertMoved: (movedRoot) => {
+        const canonicalMovedRoot = realpathSync.native(movedRoot)
+        const movedRootIdentity = lstatSync(movedRoot, { bigint: true })
+        const movedPath = join(canonicalMovedRoot, relativePath)
+        const current = lstatSync(movedPath, { bigint: true })
+        const held = fstatSync(descriptor, { bigint: true })
+        const currentBytes = Buffer.alloc(bytes.byteLength)
+        let offset = 0
+        while (offset < currentBytes.byteLength) {
+          const count = readSync(
+            descriptor,
+            currentBytes,
+            offset,
+            currentBytes.byteLength - offset,
+            offset,
+          )
+          if (count === 0) break
+          offset += count
+        }
+        if (
+          canonicalMovedRoot !== join(realpathSync.native(dirname(movedRoot)), basename(movedRoot))
+          || movedRootIdentity.isSymbolicLink()
+          || !movedRootIdentity.isDirectory()
+          || !sameIdentity(rootIdentity, movedRootIdentity)
+          || current.isSymbolicLink()
+          || !current.isFile()
+          || realpathSync.native(movedPath) !== movedPath
+          || !sameIdentity(opened, current)
+          || !sameIdentity(opened, held)
+          || opened.size !== held.size
+          || opened.mtimeNs !== held.mtimeNs
+          || offset !== currentBytes.byteLength
+          || !currentBytes.equals(bytes)
+        ) {
+          throw new Error(`${NAME}: curated install file changed: ${relativePath}`)
+        }
       },
+      close: () => { closeSync(descriptor) },
     }
+  /* v8 ignore start -- only an injected descriptor failure after a successful open reaches this cleanup. */
   } catch (error) {
     closeSync(descriptor)
     throw error
   }
+  /* v8 ignore stop */
 }
 /* jscpd:ignore-end */
 
@@ -552,68 +458,210 @@ function readOptionalBoundedRegularFile(root: string, relativePath: string): Bou
   }
 }
 
-function requiredRecord(value: unknown, label: string): Record<string, unknown> {
-  if (typeof value !== 'object' || value === null || Array.isArray(value)) {
-    throw new Error(`${NAME}: ${label} must be a mapping`)
-  }
-  return value as Record<string, unknown>
+interface BoundCandidateTree {
+  readonly assertCurrent: () => void
+  readonly assertMoved: (root: string) => void
 }
 
-function assertInstalledLock(
-  profile: CuratedProfileName,
-  root: string,
-  relativePath: string,
-  expectedDependencies: Readonly<Record<string, string>>,
-): BoundRegularFile {
-  const snapshot = openBoundedRegularFile(root, relativePath)
-  try {
-    const lock = requiredRecord(loadYaml(snapshot.bytes.toString('utf8')), `${profile} ${relativePath}`)
-    if (lock.lockfileVersion !== '9.0') {
-      throw new Error(`${NAME}: ${profile} ${relativePath} lockfileVersion must be 9.0`)
+interface InstalledCandidateTreeIdentity {
+  readonly candidateId: string
+  readonly packageName: string
+  readonly treeSha256: string
+}
+
+interface CandidateTreeEntry {
+  readonly identity: BigIntStats
+  readonly name: string
+  readonly typeKey: string
+}
+
+interface CandidateTreeDirectory {
+  readonly identity: BigIntStats
+  readonly entries: readonly string[]
+  readonly relativeDirectory: string
+}
+
+interface CandidateTreeRoot {
+  readonly canonicalPackageRoot: string
+  readonly entryIdentity: BigIntStats
+  readonly linkTarget: string | undefined
+  readonly targetIdentity: BigIntStats
+}
+
+function readCandidateTreeEntries(directory: string): CandidateTreeEntry[] {
+  return readdirSync(directory, { withFileTypes: true }).map((entry) => {
+    const identity = lstatSync(join(directory, entry.name), { bigint: true })
+    return {
+      identity,
+      name: entry.name,
+      typeKey: JSON.stringify([entry.name, String(identity.mode & BigInt(constants.S_IFMT))]),
     }
-    if (
-      Object.hasOwn(lock, 'overrides')
-      || Object.hasOwn(lock, 'patchedDependencies')
-      || Object.hasOwn(lock, 'packageExtensions')
-    ) {
-      throw new Error(`${NAME}: ${profile} ${relativePath} contains a package transformation`)
-    }
-    const settings = lock.settings
-    if (
-      typeof settings === 'object'
-      && settings !== null
-      && !Array.isArray(settings)
-      && (
-        Object.hasOwn(settings, 'packageExtensionsChecksum')
-        || Object.hasOwn(settings, 'pnpmfileChecksum')
-      )
-    ) {
-      throw new Error(`${NAME}: ${profile} ${relativePath} contains a package transformation`)
-    }
-    const importers = requiredRecord(lock.importers, `${profile} ${relativePath} importers`)
-    const rootImporter = requiredRecord(importers['.'], `${profile} ${relativePath} root importer`)
-    const dependencies = rootImporter.dependencies === undefined
-      ? {}
-      : requiredRecord(rootImporter.dependencies, `${profile} ${relativePath} dependencies`)
-    const actualNames = Object.keys(dependencies).sort()
-    const expectedNames = Object.keys(expectedDependencies).sort()
-    if (JSON.stringify(actualNames) !== JSON.stringify(expectedNames)) {
-      throw new Error(`${NAME}: ${profile} ${relativePath} dependencies differ from the curated template`)
-    }
-    for (const [packageName, specifier] of Object.entries(expectedDependencies)) {
-      const dependency = requiredRecord(
-        dependencies[packageName],
-        `${profile} ${relativePath} dependency ${packageName}`,
-      )
-      if (dependency.specifier !== specifier) {
-        throw new Error(`${NAME}: ${profile} ${relativePath} dependency ${packageName} differs from the curated template`)
+  })
+}
+
+function resolveCandidateTreeRoot(
+  profileRoot: string,
+  identity: InstalledCandidateTreeIdentity,
+  expected?: CandidateTreeRoot,
+): CandidateTreeRoot {
+  const canonicalProfileRoot = realpathSync.native(profileRoot)
+  const nodeModulesRoot = join(canonicalProfileRoot, 'node_modules')
+  assertRegularDirectory(nodeModulesRoot, 'curated profile node_modules')
+  const packageEntry = join(nodeModulesRoot, ...identity.packageName.split('/'))
+  const entryIdentity = lstatSync(packageEntry, { bigint: true })
+  const linkTarget = entryIdentity.isSymbolicLink() ? readlinkSync(packageEntry) : undefined
+  if (linkTarget === undefined && !entryIdentity.isDirectory()) {
+    throw new Error(`${NAME}: installed candidate ${identity.candidateId} must be a directory or pnpm link`)
+  }
+  const canonicalPackageRoot = realpathSync.native(packageEntry)
+  const targetIdentity = assertRegularDirectory(
+    canonicalPackageRoot,
+    `installed candidate ${identity.candidateId} target`,
+  )
+  const fromNodeModules = relative(realpathSync.native(nodeModulesRoot), canonicalPackageRoot)
+  if (
+    isAbsolute(fromNodeModules)
+    || fromNodeModules === '..'
+    || fromNodeModules.startsWith(`..${sep}`)
+  ) {
+    throw new Error(
+      `${NAME}: curated installed candidate resolves outside canonical node_modules: ${identity.candidateId}`,
+    )
+  }
+  const root = { canonicalPackageRoot, entryIdentity, linkTarget, targetIdentity }
+  if (
+    expected !== undefined
+    && (
+      linkTarget !== expected.linkTarget
+      || !sameIdentity(entryIdentity, expected.entryIdentity)
+      || !sameIdentity(targetIdentity, expected.targetIdentity)
+    )
+  ) {
+    throw new Error(`${NAME}: curated installed candidate tree changed: ${identity.candidateId}`)
+  }
+  return root
+}
+
+function installedCandidateTreeSha256(
+  profileRoot: string,
+  identity: InstalledCandidateTreeIdentity,
+  expectedRoot?: CandidateTreeRoot,
+): string {
+  const root = resolveCandidateTreeRoot(profileRoot, identity, expectedRoot)
+  const { canonicalPackageRoot, targetIdentity: packageRootIdentity } = root
+  const files: Array<{ readonly identity: BigIntStats; readonly relativePath: string }> = []
+  const directories: CandidateTreeDirectory[] = []
+  const pending = [{
+    directory: canonicalPackageRoot,
+    identity: packageRootIdentity,
+    relativeDirectory: '',
+    depth: 0,
+  }]
+  let entryCount = 0
+  while (pending.length > 0) {
+    const current = pending.pop() as typeof pending[number]
+    const entries = readCandidateTreeEntries(current.directory)
+    directories.push({
+      identity: current.identity,
+      entries: entries.map(entry => entry.typeKey).sort(),
+      relativeDirectory: current.relativeDirectory,
+    })
+    for (const entry of entries) {
+      entryCount++
+      if (entryCount > CURATED_INSTALL_ENTRY_LIMIT) {
+        throw new Error(`${NAME}: curated installed candidate tree exceeds the entry limit: ${identity.candidateId}`)
+      }
+      const relativePath = current.relativeDirectory === ''
+        ? entry.name
+        : `${current.relativeDirectory}/${entry.name}`
+      const path = join(current.directory, entry.name)
+      const entryIdentity = entry.identity
+      if (entryIdentity.isDirectory()) {
+        const depth = current.depth + 1
+        if (depth > CURATED_INSTALL_DEPTH_LIMIT) {
+          throw new Error(`${NAME}: curated installed candidate tree exceeds the depth limit: ${identity.candidateId}`)
+        }
+        pending.push({ directory: path, identity: entryIdentity, relativeDirectory: relativePath, depth })
+      } else if (entryIdentity.isFile() && !entryIdentity.isSymbolicLink()) {
+        files.push({ identity: entryIdentity, relativePath })
+      } else {
+        throw new Error(`${NAME}: curated installed candidate tree contains a non-regular entry: ${identity.candidateId}`)
       }
     }
-    snapshot.assertCurrent()
-    return snapshot
-  } catch (error) {
-    snapshot.close()
-    throw error
+  }
+  files.sort((left, right) =>
+    Buffer.compare(Buffer.from(left.relativePath), Buffer.from(right.relativePath)))
+  const digest = createHash('sha256')
+  let totalBytes = 0
+  for (const { relativePath } of files) {
+    const file = openBoundedRegularFile(canonicalPackageRoot, relativePath)
+    try {
+      totalBytes += file.bytes.byteLength
+      if (totalBytes > CURATED_INSTALL_TREE_LIMIT) {
+        throw new Error(`${NAME}: curated installed candidate tree exceeds the byte limit: ${identity.candidateId}`)
+      }
+      const pathBytes = Buffer.from(relativePath)
+      digest.update(`${String(pathBytes.byteLength)}:`)
+      digest.update(pathBytes)
+      digest.update(`${String(file.bytes.byteLength)}:`)
+      digest.update(file.bytes)
+      file.assertCurrent()
+    } finally {
+      file.close()
+    }
+  }
+  for (const { identity: fileIdentity, relativePath } of files) {
+    const path = join(canonicalPackageRoot, relativePath)
+    const current = lstatSync(path, { bigint: true })
+    if (
+      current.isSymbolicLink()
+      || !current.isFile()
+      || !sameIdentity(fileIdentity, current)
+      || fileIdentity.size !== current.size
+      || fileIdentity.mtimeNs !== current.mtimeNs
+      || fileIdentity.ctimeNs !== current.ctimeNs
+      || realpathSync.native(path) !== path
+    ) {
+      throw new Error(`${NAME}: curated installed candidate tree changed: ${identity.candidateId}`)
+    }
+  }
+  for (const directory of directories) {
+    const path = join(canonicalPackageRoot, directory.relativeDirectory)
+    const current = lstatSync(path, { bigint: true })
+    /* v8 ignore next -- directory replacement requires same-permission mutation during this synchronous hash. */
+    if (
+      current.isSymbolicLink()
+      || !current.isDirectory()
+      || !sameIdentity(directory.identity, current)
+      || realpathSync.native(path) !== path
+    ) {
+      throw new Error(`${NAME}: curated installed candidate tree changed: ${identity.candidateId}`)
+    }
+    const currentEntries = readCandidateTreeEntries(path).map(entry => entry.typeKey).sort()
+    if (JSON.stringify(currentEntries) !== JSON.stringify(directory.entries)) {
+      throw new Error(`${NAME}: curated installed candidate tree changed: ${identity.candidateId}`)
+    }
+  }
+  return digest.digest('hex')
+}
+
+function bindInstalledCandidateTree(
+  profileRoot: string,
+  identity: InstalledCandidateTreeIdentity,
+): BoundCandidateTree {
+  const root = resolveCandidateTreeRoot(profileRoot, identity)
+  const expected = installedCandidateTreeSha256(profileRoot, identity, root)
+  if (expected !== identity.treeSha256) {
+    throw new Error(`${NAME}: curated installed candidate tree differs from the catalog: ${identity.candidateId}`)
+  }
+  const assertAt = (candidateRoot: string): void => {
+    if (installedCandidateTreeSha256(candidateRoot, identity, root) !== expected) {
+      throw new Error(`${NAME}: curated installed candidate tree changed: ${identity.candidateId}`)
+    }
+  }
+  return {
+    assertCurrent: () => { assertAt(profileRoot) },
+    assertMoved: assertAt,
   }
 }
 
@@ -639,6 +687,36 @@ function stageCuratedProfile(
   return stageDir
 }
 
+function assertCurrentDirectory(path: string, label: string, expected: BigIntStats): void {
+  const current = assertRegularDirectory(path, label)
+  if (!sameIdentity(current, expected)) {
+    throw new Error(`${NAME}: ${label} changed`)
+  }
+}
+
+function ensureContainedDirectory(
+  parent: string,
+  parentIdentity: BigIntStats,
+  name: string,
+  label: string,
+): BigIntStats {
+  assertCurrentDirectory(parent, `${label} parent`, parentIdentity)
+  const path = join(parent, name)
+  let identity: BigIntStats
+  try {
+    identity = assertRegularDirectory(path, label)
+  } catch (error) {
+    if (!isNodeError(error) || error.code !== 'ENOENT') throw error
+    mkdirSync(path, { mode: 0o700 })
+    identity = assertRegularDirectory(path, label)
+  }
+  if (dirname(realpathSync.native(path)) !== realpathSync.native(parent)) {
+    throw new Error(`${NAME}: ${label} resolves outside its parent`)
+  }
+  assertCurrentDirectory(parent, `${label} parent`, parentIdentity)
+  return identity
+}
+
 function materializeEmptyInstalledLock(profile: CuratedProfileName, stageDir: string): void {
   const dependencies = curatedProfileDependenciesForBundles(
     CURATED_PROFILE_TEMPLATES[profile].bundles,
@@ -648,10 +726,30 @@ function materializeEmptyInstalledLock(profile: CuratedProfileName, stageDir: st
   if (Object.keys(dependencies).length > 0 || existsSync(installedLockPath)) return
   const rootLock = openBoundedRegularFile(stageDir, 'pnpm-lock.yaml')
   try {
-    mkdirSync(join(stageDir, 'node_modules/.pnpm'), { recursive: true, mode: 0o700 })
+    const stageIdentity = assertRegularDirectory(stageDir, 'curated installed lock profile')
+    const nodeModules = join(stageDir, 'node_modules')
+    const nodeModulesIdentity = ensureContainedDirectory(
+      stageDir,
+      stageIdentity,
+      'node_modules',
+      'curated installed lock node_modules',
+    )
+    const store = join(nodeModules, '.pnpm')
+    const storeIdentity = ensureContainedDirectory(
+      nodeModules,
+      nodeModulesIdentity,
+      '.pnpm',
+      'curated installed lock store',
+    )
+    assertCurrentDirectory(stageDir, 'curated installed lock profile', stageIdentity)
+    assertCurrentDirectory(nodeModules, 'curated installed lock node_modules', nodeModulesIdentity)
+    assertCurrentDirectory(store, 'curated installed lock store', storeIdentity)
     rootLock.assertCurrent()
     writeFileSync(installedLockPath, rootLock.bytes, { flag: 'wx', mode: 0o600 })
     rootLock.assertCurrent()
+    assertCurrentDirectory(stageDir, 'curated installed lock profile', stageIdentity)
+    assertCurrentDirectory(nodeModules, 'curated installed lock node_modules', nodeModulesIdentity)
+    assertCurrentDirectory(store, 'curated installed lock store', storeIdentity)
   } finally {
     rootLock.close()
   }
@@ -663,24 +761,41 @@ function validateStagedCuratedProfile(
   stageDir: string,
 ): {
   readonly files: CuratedProfileFileSnapshot
+  readonly activationFiles: readonly BoundRegularFile[]
+  readonly candidateTrees: readonly BoundCandidateTree[]
   readonly locks: readonly BoundRegularFile[]
 } {
   const files = openExistingCuratedProfileFiles(profile, stageHome, stageDir)
-  const template = CURATED_PROFILE_TEMPLATES[profile]
-  const expectedDependencies = curatedProfileDependenciesForBundles(template.bundles, profile)
+  const activationFiles: BoundRegularFile[] = []
+  const candidateTrees: BoundCandidateTree[] = []
   const locks: BoundRegularFile[] = []
   try {
-    locks.push(assertInstalledLock(profile, stageDir, 'pnpm-lock.yaml', expectedDependencies))
-    locks.push(assertInstalledLock(profile, stageDir, 'node_modules/.pnpm/lock.yaml', expectedDependencies))
+    const rootLock = openBoundedRegularFile(stageDir, 'pnpm-lock.yaml')
+    locks.push(rootLock)
+    const installedLock = openBoundedRegularFile(stageDir, 'node_modules/.pnpm/lock.yaml')
+    locks.push(installedLock)
+    const installedCandidates = assertCuratedProfileLockAdmission(profile, {
+      root: rootLock.bytes,
+      installed: installedLock.bytes,
+    })
+    for (const identity of installedCandidates) {
+      candidateTrees.push(bindInstalledCandidateTree(stageDir, identity))
+    }
     const loaded = loadProfile(NAME, profile, INSTALL_ANCHOR, stageHome, {
       profileFileReader: files.readFile,
     })
     assertCuratedProfileAdmission(profile, stageHome, loaded, [], { profileFiles: files })
     files.assertCurrent()
+    for (const file of Object.keys(generatedCuratedProfileFiles(profile))) {
+      activationFiles.push(openBoundedRegularFile(stageDir, file))
+    }
+    for (const file of activationFiles) file.assertCurrent()
     for (const lock of locks) lock.assertCurrent()
-    return { files, locks }
+    return { files, activationFiles, candidateTrees, locks }
   } catch (error) {
     files.close()
+    /* v8 ignore next -- only an injected failure after retaining part of the fixed generated-file set reaches this cleanup. */
+    for (const file of activationFiles) file.close()
     for (const lock of locks) lock.close()
     throw error
   }
@@ -690,40 +805,73 @@ function activateStagedCuratedProfile(
   profile: CuratedProfileName,
   profilesDir: string,
   stageDir: string,
-  lock: CuratedInstallLock,
+  lock: CuratedProfileLock,
+  validation: ReturnType<typeof validateStagedCuratedProfile>,
 ): void {
   const liveDir = join(profilesDir, profile)
   const previousDir = join(profilesDir, `.${profile}.install-previous`)
   lock.assertOwned()
-  let movedPrevious = false
+  let previousIdentity: BigIntStats | undefined
   if (existsSync(liveDir)) {
-    assertRegularDirectory(liveDir, 'curated profile')
+    previousIdentity = assertRegularDirectory(liveDir, 'curated profile')
     if (existsSync(previousDir)) {
       throw new Error(`${NAME}: stale curated profile backup was not reclaimed`)
     }
     renameSync(liveDir, previousDir)
-    movedPrevious = true
   }
+  let movedStage = false
+  let stagedIdentity: BigIntStats | undefined
   try {
     lock.assertOwned()
+    validation.files.assertCurrent()
+    for (const file of validation.activationFiles) file.assertCurrent()
+    for (const tree of validation.candidateTrees) tree.assertCurrent()
+    for (const stagedLock of validation.locks) stagedLock.assertCurrent()
+    stagedIdentity = assertRegularDirectory(stageDir, 'staged curated profile')
     renameSync(stageDir, liveDir)
+    movedStage = true
+    for (const file of validation.activationFiles) file.assertMoved(liveDir)
+    for (const tree of validation.candidateTrees) tree.assertMoved(liveDir)
+    for (const stagedLock of validation.locks) stagedLock.assertMoved(liveDir)
   } catch (error) {
-    if (movedPrevious && !existsSync(liveDir)) {
+    const rollbackErrors: unknown[] = []
+    /* v8 ignore else -- pre-rename failures are rejected before entering activation. */
+    if (movedStage && existsSync(liveDir)) {
       try {
+        const currentLive = assertRegularDirectory(liveDir, 'activated curated profile')
+        if (stagedIdentity === undefined || !sameIdentity(stagedIdentity, currentLive)) {
+          throw new Error(`${NAME}: activated curated profile changed before rollback`)
+        }
+        renameSync(liveDir, stageDir)
+      /* v8 ignore next 3 -- requires an injected failure while restoring the staged directory. */
+      } catch (rollbackError) {
+        /* v8 ignore next -- the injected rollback-failure branch is outside normal filesystem semantics. */
+        rollbackErrors.push(rollbackError)
+      }
+    }
+    /* v8 ignore else -- the no-previous case has no rollback state to restore. */
+    if (previousIdentity !== undefined && !existsSync(liveDir)) {
+      try {
+        const currentPrevious = assertRegularDirectory(previousDir, 'previous curated profile')
+        if (!sameIdentity(previousIdentity, currentPrevious)) {
+          throw new Error(`${NAME}: previous curated profile changed before rollback`)
+        }
         renameSync(previousDir, liveDir)
       } catch (rollbackError) {
-        throw new AggregateError(
-          [error, rollbackError],
-          `${NAME}: curated profile activation and rollback both failed`,
-          { cause: error },
-        )
+        rollbackErrors.push(rollbackError)
       }
+    }
+    if (rollbackErrors.length > 0) {
+      throw new AggregateError(
+        [error, ...rollbackErrors],
+        `${NAME}: curated profile activation and rollback both failed`,
+        { cause: error },
+      )
     }
     throw error
   }
-  if (movedPrevious) {
+  if (previousIdentity !== undefined) {
     try {
-      const previousIdentity = assertRegularDirectory(previousDir, 'previous curated profile')
       removeOwnedPath(previousDir, profilesDir, previousIdentity)
     } catch (error) {
       process.stderr.write(`${NAME}: warning: stale curated profile backup will be reclaimed later: ${String(error)}\n`)
@@ -787,17 +935,15 @@ async function installCuratedProfile(profile: CuratedProfileName): Promise<numbe
       stagedValidation.files.assertCurrent()
       for (const stagedLock of stagedValidation.locks) stagedLock.assertCurrent()
       lock.assertOwned()
-      stagedValidation.files.close()
-      for (const stagedLock of stagedValidation.locks) stagedLock.close()
-      stagedValidation = undefined
       liveFiles?.close()
       liveFiles = undefined
       liveLock?.close()
       liveLock = undefined
-      activateStagedCuratedProfile(profile, profilesDir, stageDir, lock)
+      activateStagedCuratedProfile(profile, profilesDir, stageDir, lock, stagedValidation)
       return 0
     } finally {
       stagedValidation?.files.close()
+      for (const file of stagedValidation?.activationFiles ?? []) file.close()
       for (const stagedLock of stagedValidation?.locks ?? []) stagedLock.close()
       liveFiles?.close()
       liveLock?.close()
@@ -861,7 +1007,7 @@ export async function runPlugin(profile: string, args: readonly string[]): Promi
 
   const dir = resolveProfileDir(profile)
   if (!existsSync(join(dir, 'package.json'))) {
-    initProfile(dir, PROFILE_TEMPLATES[profile] ?? DEFAULT_PROFILE_BUNDLES)
+    initProfile(dir, ordinaryProfileBundles(profile))
     process.stderr.write(`${NAME}: initialized profile ${profile} at ${dir}\n`)
   }
   const before = readProfileManifest(NAME, dir)
@@ -873,7 +1019,7 @@ export async function runPlugin(profile: string, args: readonly string[]): Promi
   if (exitCode !== 0) {
     process.stderr.write(`${NAME}: pnpm failed in profile directory ${dir}\n`)
   } else {
-    reconcilePlugins(before, dir)
+    reconcilePlugins(profile, before, dir)
   }
   return exitCode
 }

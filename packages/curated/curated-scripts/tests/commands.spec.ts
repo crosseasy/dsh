@@ -1,13 +1,16 @@
 import { spawnSync } from 'node:child_process'
 import { createHash } from 'node:crypto'
 import { EventEmitter } from 'node:events'
+import { createRequire } from 'node:module'
 import {
   cpSync,
   existsSync,
   mkdirSync,
   mkdtempSync,
   readFileSync,
+  readlinkSync,
   readdirSync,
+  renameSync,
   rmSync,
   symlinkSync,
   truncateSync,
@@ -76,9 +79,29 @@ const fixtureShaB = '89abcdef012345670123456789abcdef0123456789abcdef01234567012
 const fixtureShaC = 'abcdef012345670123456789abcdef0123456789abcdef012345670123456789'
 const fixtureNpmIntegrity =
   'sha512-wmFfSlWDE3ujFuBSY1W8s2gERSotHD4ueelg5BJ5Hd2/ssB5x24xEaQdbMzNhoAaUjpXeIwfOUdn+nLqHjiYGQ=='
+const fixtureRegistryIntegrity =
+  'sha512-c+5BB/m0ivBv5rGOZ8BwrOM4G1GdWmfbETJ3yi1t0mtW8Ekztp+sw2oeR5FaUdRXHnMSrDP1ravS55VIziF6+w=='
+const fixtureNestedIntegrity =
+  'sha512-0P6ymzNH3V2O5GUV9qjshqj0NLxp842bUunB77jHzyZKRdA9u7eNSNvhFFePVK0w0zq+RWZh5FqGLI6fHVAsBw=='
+const fixturePackageRecordIntegrity =
+  'sha512-PcFJZUtg/h5yoH+/kkKZSH926HvmMNIlF1pM7vTRFg9TMrMui4HRPMSgdO4bT/4xp14mSEtJbZrK7Z6mLjI5Qg=='
+const fixtureLeafIntegrity =
+  'sha512-7l4YxsJgDWOVNoJlPkbDTv4Y2p81Uq3obLYj4PgeA/QaxqJ2kjvNyVKRBsDruFsX6/tYWcFdPcrSGWqo11OrUw=='
+const fixtureAliasIntegrity =
+  'sha512-FV57CRDNcvEs2WubyvR820b6pbKG5T0vjmEoK9VDO8/JwdSeMSQG0vg0mRQLg3aGLMV8ez9GpTZX98fDuX4qxg=='
+const fixtureScopedIntegrity =
+  'sha512-RFd8Xwr7VWou8XIvKf5ax5oGjOnB4hBd/CuEnQA2NeBXvXDhTomt6tVAihd2a8FeFyzSuSB+Gk51ZOa7u7dW4w=='
+const fixtureOptionalIntegrity =
+  'sha512-V4KNjkUTeOVk4+3c1QCz2hr8mmADxCdCmzCdpt8O9PD8HqRfmfWJ/k09u4IoXjMgp8giL3NjA+R3YCG7wWrAow=='
+const fixtureMismatchedIntegrity =
+  'sha512-We8KeiBr0LW4GKQRzqV1UNChUP8ihrh8ktn4MRJMsy8K/4E7GpQNadwzNOmDZuu52M7FLlCjE7zyF5sh6OknQw=='
+const fixtureAttackerIntegrity =
+  'sha512-T/DnlFNOqnPK4DEDvgR9dtCHq7Y4Ta8AcybPz8jAZmRqS8evNjvqNFFwHMx2OqdhUv6QFWRQZpkkUkOPDqyFXw=='
+const fixtureOtherIntegrity =
+  'sha512-4lrDhF+MvhKAGi36WonUxV3EeQDztu3Jqe5ZDzwrkxL2ZdADnJOCi3tY8zlQvIF6CVWpxQAKjT4oBWnwh0XKaA=='
 const defaultFixtureTreeSha = '16deef5d84230c990d9d01d1427693b5fc33a43afe28c11f6f88949a9f39c903'
 const emptyRuntimeDependencyClosureSha = 'e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855'
-const fixtureRuntimeDependencyClosureSha = '0da8d4982dcbdaa13d039188413bf2dadb5bc3c1b9d6042551556675d34394fc'
+const fixtureRuntimeDependencyClosureSha = '2e121ef7ad42d31ab8c2eb094495d4615f50014d44ef22623a085b9b9c09267c'
 function fixtureRuntimeActivationEvidenceSet(
   requiredRuntimeBundles: readonly string[] = [],
 ): CuratedRuntimeActivationEvidenceSet {
@@ -158,6 +181,10 @@ const previousLockSnapshot = {
       installScripts: {},
     },
   }],
+} as const
+const emptyPreviousLockSnapshot = {
+  ...previousLockSnapshot,
+  candidates: [],
 } as const
 const previousProfileSnapshot = {
   schemaVersion: 2,
@@ -610,7 +637,7 @@ function benchmarkFixture(additionalCandidateRuns: readonly Record<string, unkno
     evidenceKind: 'observed',
     requiredCriticalTaskIds: ['a', 'b', 'c'],
     previousSnapshots: {
-      lock: snapshotEnvelope(previousLockSnapshot),
+      lock: snapshotEnvelope(emptyPreviousLockSnapshot),
       profile: snapshotEnvelope(previousProfileSnapshot),
     },
     baseline: {
@@ -781,6 +808,7 @@ function commandIssues(result: CommandResult): Array<{ code: string; target?: st
 
 async function commandsWithCatalogCandidates(
   candidates: readonly CuratedCandidate[],
+  onAssertInstalledLocks?: () => void,
 ): Promise<typeof import('../src/index.ts')> {
   vi.resetModules()
   vi.doMock('@deepseek-ai/dsh-curated-policy', async () => {
@@ -790,6 +818,12 @@ async function commandsWithCatalogCandidates(
     const source = actual.loadCuratedCatalog().source
     return {
       ...actual,
+      assertCuratedInstalledLocks: (
+        input: import('@deepseek-ai/dsh-curated-policy').CuratedInstalledLocksInput,
+      ) => {
+        onAssertInstalledLocks?.()
+        return actual.assertCuratedInstalledLocks(input)
+      },
       loadCuratedCatalog: (path?: string) => path === undefined
         ? { schemaVersion: 1, source, candidates }
         : actual.loadCuratedCatalog(path),
@@ -823,6 +857,101 @@ describe('verify-lock command', () => {
         profileRoot,
         '--json',
       ]).status).toBe(0)
+    } finally {
+      rmSync(home, { recursive: true, force: true })
+    }
+  })
+
+  it('rejects invalid zero-candidate managed locks in all observed commands', async () => {
+    const home = mkdtempSync(join(tmpdir(), 'dsh-curated-zero-candidate-invalid-locks-'))
+    const profileRoot = materializeCuratedProfile('web-curated', home)
+    try {
+      stageEmptyManagedPnpmEvidence(profileRoot)
+      for (const path of [
+        join(profileRoot, 'pnpm-lock.yaml'),
+        join(profileRoot, 'node_modules/.pnpm/lock.yaml'),
+      ]) {
+        const lock = JSON.parse(readFileSync(path, 'utf8')) as Record<string, unknown>
+        lock.lockfileVersion = '8.0'
+        writeFileSync(path, JSON.stringify(lock))
+      }
+
+      const results = [
+        runVerifyLockCommand(['--artifact-root', profileRoot, '--json']),
+        runPreflight(['--profile', 'web-curated', '--profile-root', profileRoot, '--json']),
+        await runSmokeProfile(['--profile', 'web-curated', '--profile-root', profileRoot, '--json'], {
+          profiles: { 'web-curated': CURATED_PROFILE_TEMPLATES['web-curated'] },
+          runner: async () => ({ status: 0, stdout: '', stderr: '', durationMs: 1 }),
+        }),
+      ]
+      for (const result of results) {
+        expect(result.status, result.stdout).toBe(1)
+        expect(result.stdout).toContain('root pnpm lockfile version must be 9.0')
+      }
+    } finally {
+      rmSync(home, { recursive: true, force: true })
+    }
+  })
+
+  it.each([
+    {
+      name: 'missing root importer',
+      mutate: (lock: Record<string, unknown>) => {
+        lock.importers = {}
+      },
+      message: 'root pnpm root importer must be an object',
+    },
+    {
+      name: 'package transformation',
+      mutate: (lock: Record<string, unknown>) => {
+        lock.patchedDependencies = {}
+      },
+      message: 'root pnpm lockfile must not contain patchedDependencies',
+    },
+  ])('rejects a zero-candidate $name through shared lock admission', async ({ mutate, message }) => {
+    const home = mkdtempSync(join(tmpdir(), 'dsh-curated-zero-candidate-admission-'))
+    const profileRoot = materializeCuratedProfile('web-curated', home)
+    try {
+      stageEmptyManagedPnpmEvidence(profileRoot)
+      for (const path of [
+        join(profileRoot, 'pnpm-lock.yaml'),
+        join(profileRoot, 'node_modules/.pnpm/lock.yaml'),
+      ]) {
+        const lock = JSON.parse(readFileSync(path, 'utf8')) as Record<string, unknown>
+        mutate(lock)
+        writeFileSync(path, JSON.stringify(lock))
+      }
+      let admissions = 0
+      const commands = await commandsWithCatalogCandidates([], () => { admissions++ })
+
+      const result = commands.runVerifyLock(['--artifact-root', profileRoot, '--json'])
+
+      expect(result.status).toBe(1)
+      expect(result.stdout).toContain(message)
+      expect(admissions).toBe(1)
+    } finally {
+      rmSync(home, { recursive: true, force: true })
+    }
+  })
+
+  it('rejects an active managed-profile candidate without a package identity', async () => {
+    const home = mkdtempSync(join(tmpdir(), 'dsh-curated-active-missing-package-'))
+    const profileRoot = materializeCuratedProfile('web-curated', home)
+    const missingPackage = {
+      ...loadCuratedCatalog().candidates[0],
+      id: 'missing-package',
+      expectedPackage: null,
+      targetProfiles: ['web-curated'],
+      active: true,
+      rejections: [],
+    } as CuratedCandidate
+    try {
+      stageEmptyManagedPnpmEvidence(profileRoot)
+      const commands = await commandsWithCatalogCandidates([missingPackage])
+
+      expect(() => commands.createInstalledArtifactResolver([profileRoot])).toThrow(
+        'missing-package active candidate assigned to profile web-curated must declare expectedPackage',
+      )
     } finally {
       rmSync(home, { recursive: true, force: true })
     }
@@ -1263,7 +1392,9 @@ describe('verify-lock command', () => {
         '--json',
       ]).stdout)).toMatchObject({
         ok: false,
-        issues: [{ message: 'plugin-a profile dependency must use a full Git commit SHA' }],
+        issues: [{
+          message: 'root pnpm dependency plugin-a specifier differs from the profile manifest',
+        }],
       })
       const externalArtifactRoot = join(home, 'external-artifacts')
       stageCandidatePackage(externalArtifactRoot, 'plugin-a')
@@ -1272,7 +1403,9 @@ describe('verify-lock command', () => {
         artifactRoots: [externalArtifactRoot],
       }).stdout)).toMatchObject({
         ok: false,
-        issues: [{ message: 'plugin-a profile dependency must use a full Git commit SHA' }],
+        issues: [{
+          message: 'root pnpm dependency plugin-a specifier differs from the profile manifest',
+        }],
       })
       writeFileSync(profileManifestPath, profileManifest)
 
@@ -1305,7 +1438,9 @@ describe('verify-lock command', () => {
         '--json',
       ]).stdout)).toMatchObject({
         ok: false,
-        issues: [{ message: 'plugin-a pnpm dependency specifier differs from the profile manifest' }],
+        issues: [{
+          message: 'root pnpm dependency plugin-a specifier differs from the profile manifest',
+        }],
       })
       writeFileSync(rootLockPath, rootLock)
 
@@ -1331,7 +1466,9 @@ describe('verify-lock command', () => {
         '--json',
       ]).stdout)).toMatchObject({
         ok: false,
-        issues: [{ message: 'plugin-a root and installed pnpm resolutions differ' }],
+        issues: [{
+          message: 'root plugin-a pnpm package resolution differs from its resolution repository, commit, or path',
+        }],
       })
       writeFileSync(rootLockPath, rootLock)
 
@@ -1344,7 +1481,7 @@ describe('verify-lock command', () => {
         '--json',
       ]).stdout)).toMatchObject({
         ok: false,
-        issues: [{ message: 'plugin-a pnpm lockfile version must be 9.0' }],
+        issues: [{ message: 'root pnpm lockfile version must be 9.0' }],
       })
       writeFileSync(rootLockPath, rootLock)
 
@@ -1357,7 +1494,7 @@ describe('verify-lock command', () => {
         '--json',
       ]).stdout)).toMatchObject({
         ok: false,
-        issues: [{ message: 'plugin-a pnpm package resolution must be Git' }],
+        issues: [{ message: 'root plugin-a pnpm package resolution must be Git' }],
       })
       writeFileSync(rootLockPath, rootLock)
 
@@ -1380,7 +1517,7 @@ describe('verify-lock command', () => {
       ]).stdout)).toMatchObject({
         ok: false,
         issues: [{
-          message: 'plugin-a pnpm lock resolution differs from the catalog repository, commit, or package path',
+          message: 'root plugin-a pnpm package resolution differs from its resolution repository, commit, or path',
         }],
       })
       writeFileSync(rootLockPath, rootLock)
@@ -1390,19 +1527,19 @@ describe('verify-lock command', () => {
         {
           name: 'query',
           repositoryUrl: `${repository}.git?token=plain-query-secret`,
-          message: 'Git repository must not contain credentials or query parameters',
+          message: 'Git repository must be a canonical HTTPS GitHub URL',
           secret: 'plain-query-secret',
         },
         {
           name: 'username',
           repositoryUrl: repository.replace('https://', 'https://plain-user@') + '.git',
-          message: 'Git repository must not contain credentials or query parameters',
+          message: 'Git repository must be a canonical HTTPS GitHub URL',
           secret: 'plain-user',
         },
         {
           name: 'password',
           repositoryUrl: repository.replace('https://', 'https://plain-user:plain-password@') + '.git',
-          message: 'Git repository must not contain credentials or query parameters',
+          message: 'Git repository must be a canonical HTTPS GitHub URL',
           secret: 'plain-password',
         },
         {
@@ -1525,6 +1662,8 @@ describe('verify-lock command', () => {
     const root = mkdtempSync(join(tmpdir(), 'dsh-curated-direct-git-path-'))
     const candidate = artifactCandidate({
       repositoryPath: 'packages/plugin-a',
+      runtimeDependencyClosureSha256:
+        'c3fee16bc4589b8096f834612f431d831d1f390302a6e809045696de23e6d1a5',
       targetProfiles: ['fixture-curated'],
     })
     writeFileSync(join(root, 'package.json'), JSON.stringify({
@@ -1534,12 +1673,28 @@ describe('verify-lock command', () => {
     }))
     const packageDir = stageCandidatePackage(root, 'plugin-a', undefined, {}, undefined, candidate)
     stageManagedPnpmEvidence(root, candidate)
+    const dependencySpec =
+      `git+https://github.com/example/plugin-a.git#${candidate.commit}&path:${candidate.repositoryPath}`
+    const peerVersion = `${dependencySpec}(peer-dep@1.0.0)`
+    for (const lockPath of [
+      join(root, 'pnpm-lock.yaml'),
+      join(root, 'node_modules/.pnpm/lock.yaml'),
+    ]) {
+      const lock = JSON.parse(readFileSync(lockPath, 'utf8')) as {
+        importers: { '.': { dependencies: Record<string, { version: string }> } }
+        snapshots?: Record<string, unknown>
+      }
+      lock.importers['.'].dependencies['plugin-a']!.version = peerVersion
+      lock.snapshots = { [`plugin-a@${peerVersion}`]: {} }
+      writeFileSync(lockPath, JSON.stringify(lock))
+    }
     const catalogPath = join(root, 'catalog.json')
     writeFileSync(catalogPath, artifactCatalog({
       repositoryPath: candidate.repositoryPath,
       targetProfiles: candidate.targetProfiles,
       treeSha256: fixtureTreeSha256(packageDir),
-      runtimeDependencyClosureSha256: candidate.runtimeDependencyClosureSha256,
+      runtimeDependencyClosureSha256:
+        'c3fee16bc4589b8096f834612f431d831d1f390302a6e809045696de23e6d1a5',
     }))
     try {
       const result = runVerifyLockCommand(['--fixture', catalogPath, '--json'], {
@@ -1564,6 +1719,8 @@ describe('verify-lock command', () => {
     const candidate = artifactCandidate({
       repository,
       repositoryPath,
+      runtimeDependencyClosureSha256:
+        '4b6eaa59ef34caf4f21765630a44244c7e1c024066946bfff1791f3a4c537e73',
       targetProfiles: ['fixture-curated'],
     })
     mkdirSync(profileRoot, { recursive: true })
@@ -1576,6 +1733,8 @@ describe('verify-lock command', () => {
     writeFileSync(catalogPath, artifactCatalog({
       repository,
       repositoryPath,
+      runtimeDependencyClosureSha256:
+        '4b6eaa59ef34caf4f21765630a44244c7e1c024066946bfff1791f3a4c537e73',
       targetProfiles: ['fixture-curated'],
     }))
     const packageDir = stageCandidatePackage(profileRoot, packageName, undefined, {}, undefined, candidate)
@@ -1632,6 +1791,9 @@ describe('verify-lock command', () => {
             },
             version: '1.0.0',
           },
+        },
+        snapshots: {
+          [`${packageName}@${locator}(fixture-peer@1.0.0)`]: {},
         },
       }
       const lockContent = JSON.stringify(lock)
@@ -1690,12 +1852,12 @@ describe('verify-lock command', () => {
         {
           name: 'missing gitHosted marker',
           options: { gitHosted: false },
-          message: 'pnpm package resolution must be GitHub-hosted',
+          message: 'pnpm package resolution must match the GitHub codeload URL',
         },
         {
           name: 'mismatched package tarball',
           options: { tarballHost: 'downloads.example.com' },
-          message: 'pnpm package tarball differs from its dependency version',
+          message: 'pnpm package resolution must match the GitHub codeload URL',
         },
       ] as const) {
         writeCodeloadLocks(testCase.options)
@@ -1715,11 +1877,13 @@ describe('verify-lock command', () => {
     const packageName = 'plugin-a'
     const npmVersion = '1.0.0'
     const npmIntegrity = fixtureNpmIntegrity
+    const peerVersion = `${npmVersion}(peer-package@2.0.0)`
+    const peerClosureSha = '053dd217bab729de5764e48d53bd625b9e3344182b8aced489cf87331ae0360c'
     const catalogPath = join(home, 'catalog.json')
     const candidate = artifactCandidate({
       npmVersion,
       npmIntegrity,
-      runtimeDependencyClosureSha256: emptyRuntimeDependencyClosureSha,
+      runtimeDependencyClosureSha256: peerClosureSha,
       targetProfiles: ['fixture-curated'],
     })
     mkdirSync(profileRoot, { recursive: true })
@@ -1732,7 +1896,7 @@ describe('verify-lock command', () => {
     writeFileSync(catalogPath, artifactCatalog({
       npmVersion,
       npmIntegrity,
-      runtimeDependencyClosureSha256: emptyRuntimeDependencyClosureSha,
+      runtimeDependencyClosureSha256: peerClosureSha,
       targetProfiles: ['fixture-curated'],
     }))
     const packageDir = stageCandidatePackage(profileRoot, packageName, undefined, {}, undefined, candidate)
@@ -1757,7 +1921,7 @@ describe('verify-lock command', () => {
       }
     })
     const commands = await import('../src/index.ts')
-    const writeLocks = (integrity: string, importerVersion = npmVersion): void => {
+    const writeLocks = (integrity: string, importerVersion = peerVersion): void => {
       const lock = {
         lockfileVersion: '9.0',
         importers: {
@@ -1774,6 +1938,9 @@ describe('verify-lock command', () => {
           [`${packageName}@${npmVersion}`]: {
             resolution: { integrity },
           },
+        },
+        snapshots: {
+          [`${packageName}@${peerVersion}`]: {},
         },
       }
       const lockContent = JSON.stringify(lock)
@@ -1814,7 +1981,7 @@ describe('verify-lock command', () => {
         expect(JSON.parse(result.stdout)).toMatchObject({ ok: true, observed: true, issues: [] })
       }
 
-      writeLocks(npmIntegrity, `${npmVersion}(peer-package@2.0.0)`)
+      writeLocks(npmIntegrity)
       for (const result of await runObservedCommands()) {
         expect(JSON.parse(result.stdout)).toMatchObject({ ok: true, observed: true, issues: [] })
       }
@@ -1893,7 +2060,7 @@ describe('verify-lock command', () => {
             const importers = lock.importers as { '.': { dependencies: Record<string, { specifier: string }> } }
             importers['.'].dependencies[packageName]!.specifier = '1.0.1'
           },
-          message: 'profile dependency must use exact npm version 1.0.0',
+          message: 'root pnpm dependency plugin-a specifier differs from the profile manifest',
         },
         {
           mutate: (lock: Record<string, unknown>) => {
@@ -1962,28 +2129,28 @@ describe('verify-lock command', () => {
           resolution: { integrity: npmIntegrity },
         },
         'registry-dep@2.0.0': {
-          resolution: { integrity: 'sha512-cmVnaXN0cnk=' },
+          resolution: { integrity: fixtureRegistryIntegrity },
         },
         'nested-dep@3.0.0': {
-          resolution: { integrity: 'sha512-bmVzdGVk' },
+          resolution: { integrity: fixtureNestedIntegrity },
         },
         'package-record-dep@4.0.0': {
-          resolution: { integrity: 'sha512-cGFja2FnZS1yZWNvcmQ=' },
+          resolution: { integrity: fixturePackageRecordIntegrity },
           dependencies: {
             'leaf-dep': '5.0.0',
           },
         },
         'leaf-dep@5.0.0': {
-          resolution: { integrity: 'sha512-bGVhZg==' },
+          resolution: { integrity: fixtureLeafIntegrity },
         },
         'js-yaml@4.1.0': {
-          resolution: { integrity: 'sha512-YWxpYXM=' },
+          resolution: { integrity: fixtureAliasIntegrity },
         },
         '@scope/target@2.0.0': {
-          resolution: { integrity: 'sha512-c2NvcGVk' },
+          resolution: { integrity: fixtureScopedIntegrity },
         },
         'optional-target@3.0.0': {
-          resolution: { integrity: 'sha512-b3B0aW9uYWw=' },
+          resolution: { integrity: fixtureOptionalIntegrity },
         },
         [`git-dep@${gitLocator}`]: {
           resolution: {
@@ -2046,9 +2213,10 @@ describe('verify-lock command', () => {
       change(lock)
       return lock
     }
+    const assertInstalledLocks = vi.fn()
     const commands = await commandsWithCatalogCandidates([
       loadCuratedCatalog(catalogPath).candidates[0] as CuratedCandidate,
-    ])
+    ], assertInstalledLocks)
     const runObservedCommands = async (): Promise<CommandResult[]> => [
       verify(),
       commands.runPreflight(['--profile', 'fixture-curated', '--json'], { profileRoot: root }),
@@ -2063,6 +2231,24 @@ describe('verify-lock command', () => {
       writeLocks(baseLock)
       for (const valid of await runObservedCommands()) {
         expect(valid.status, valid.stdout).toBe(0)
+      }
+      expect(assertInstalledLocks).toHaveBeenCalled()
+
+      const directPeerChanged = mutate((lock) => {
+        const oldKey = `${packageName}@${npmVersion}(peer-dep@1.0.0)`
+        const newKey = `${packageName}@${npmVersion}(peer-dep@2.0.0)`
+        lock.importers['.'].dependencies[packageName].version =
+          `${npmVersion}(peer-dep@2.0.0)`
+        const snapshots = lock.snapshots as Record<string, unknown>
+        snapshots[newKey] = snapshots[oldKey]
+        Reflect.deleteProperty(snapshots, oldKey)
+      })
+      writeLocks(directPeerChanged)
+      for (const result of await runObservedCommands()) {
+        expect(result.status, result.stdout).toBe(1)
+        expect(result.stdout).toContain(
+          'runtime dependency closure SHA-256 differs from the catalog',
+        )
       }
 
       for (const mismatch of [
@@ -2096,7 +2282,7 @@ describe('verify-lock command', () => {
       writeLocks(baseLock)
 
       const attackerControlledLocks = mutate((lock) => {
-        lock.packages['registry-dep@2.0.0'].resolution.integrity = 'sha512-YXR0YWNrZXI='
+        lock.packages['registry-dep@2.0.0'].resolution.integrity = fixtureAttackerIntegrity
       })
       writeLocks(attackerControlledLocks)
       for (const attackerControlled of await runObservedCommands()) {
@@ -2112,14 +2298,38 @@ describe('verify-lock command', () => {
           lock: mutate((lock) => {
             delete (lock.packages['registry-dep@2.0.0'].resolution as { integrity?: string }).integrity
           }),
-          message: 'registry-dep@2.0.0 registry resolution must declare exact integrity',
+          message: 'registry-dep runtime dependency registry resolution must declare exact integrity',
+        },
+        {
+          name: 'registry dependency with an unsupported integrity algorithm',
+          lock: mutate((lock) => {
+            lock.packages['registry-dep@2.0.0'].resolution.integrity =
+              `sha1-${Buffer.alloc(20, 1).toString('base64')}`
+          }),
+          message: 'registry-dep runtime dependency registry resolution must declare exact integrity',
+        },
+        {
+          name: 'registry dependency with a wrong-length integrity',
+          lock: mutate((lock) => {
+            lock.packages['registry-dep@2.0.0'].resolution.integrity =
+              `sha384-${Buffer.alloc(47, 1).toString('base64')}`
+          }),
+          message: 'registry-dep runtime dependency registry resolution must declare exact integrity',
+        },
+        {
+          name: 'registry dependency with a placeholder integrity',
+          lock: mutate((lock) => {
+            lock.packages['registry-dep@2.0.0'].resolution.integrity =
+              `sha256-${Buffer.alloc(32, 2).toString('base64')}`
+          }),
+          message: 'registry-dep runtime dependency registry resolution must declare exact integrity',
         },
         {
           name: 'floating registry dependency',
           lock: mutate((lock) => {
             lock.snapshots[`${packageName}@${npmVersion}(peer-dep@1.0.0)`].dependencies['registry-dep'] = 'latest'
             Reflect.set(lock.packages, 'registry-dep@latest', {
-              resolution: { integrity: 'sha512-cmVnaXN0cnk=' },
+              resolution: { integrity: fixtureRegistryIntegrity },
             })
           }),
           message: 'registry-dep runtime dependency must use an exact registry version',
@@ -2130,7 +2340,7 @@ describe('verify-lock command', () => {
             lock.snapshots[`${packageName}@${npmVersion}(peer-dep@1.0.0)`]
               .dependencies['registry-dep'] = '2.0.0-01'
             Reflect.set(lock.packages, 'registry-dep@2.0.0-01', {
-              resolution: { integrity: 'sha512-cmVnaXN0cnk=' },
+              resolution: { integrity: fixtureRegistryIntegrity },
             })
           }),
           message: 'registry-dep runtime dependency must use an exact registry version',
@@ -2174,12 +2384,36 @@ describe('verify-lock command', () => {
           message: 'git-tar-dep runtime Git tarball must declare an immutable commit identity',
         },
         {
+          name: 'floating Git tarball locator',
+          lock: mutate((lock) => {
+            const locator = 'https://codeload.github.com/example/git-tar-dep/tar.gz/main'
+            lock.snapshots[`${packageName}@${npmVersion}(peer-dep@1.0.0)`]
+              .dependencies['git-tar-dep'] = locator
+            Reflect.set(lock.packages, `git-tar-dep@${locator}`, {
+              resolution: { gitHosted: true, tarball: locator },
+              version: '1.0.0',
+            })
+          }),
+          message: 'git-tar-dep runtime Git tarball must declare an immutable commit identity',
+        },
+        {
           name: 'mismatched Git tarball',
           lock: mutate((lock) => {
             lock.packages[`git-tar-dep@${gitTarball}`].resolution.tarball =
               `https://codeload.github.com/example/git-tar-dep/tar.gz/${fixtureCommitC}`
           }),
           message: 'git-tar-dep runtime Git tarball must declare an immutable commit identity',
+        },
+        {
+          name: 'mismatched Git tarball package path',
+          lock: mutate((lock) => {
+            Reflect.set(
+              lock.packages[`git-tar-dep@${gitTarball}`].resolution,
+              'path',
+              'packages/attacker',
+            )
+          }),
+          message: 'git-tar-dep runtime Git dependency differs from its resolution path',
         },
         {
           name: 'missing alias target',
@@ -2194,7 +2428,7 @@ describe('verify-lock command', () => {
             lock.snapshots[`${packageName}@${npmVersion}(peer-dep@1.0.0)`]
               .dependencies['alias-js-yaml'] = 'npm:js-yaml@latest'
             Reflect.set(lock.packages, 'js-yaml@latest', {
-              resolution: { integrity: 'sha512-YWxpYXM=' },
+              resolution: { integrity: fixtureAliasIntegrity },
             })
           }),
           message: 'alias-js-yaml runtime dependency must use an exact registry version',
@@ -2204,7 +2438,7 @@ describe('verify-lock command', () => {
           lock: mutate((lock) => {
             delete (lock.packages['js-yaml@4.1.0'].resolution as { integrity?: string }).integrity
           }),
-          message: 'alias-js-yaml@4.1.0 registry resolution must declare exact integrity',
+          message: 'alias-js-yaml runtime dependency registry resolution must declare exact integrity',
         },
         {
           name: 'alias declaration retargeted with the same integrity',
@@ -2212,7 +2446,7 @@ describe('verify-lock command', () => {
             lock.snapshots[`${packageName}@${npmVersion}(peer-dep@1.0.0)`]
               .dependencies['alias-js-yaml'] = 'other-yaml@4.1.0'
             Reflect.set(lock.packages, 'other-yaml@4.1.0', {
-              resolution: { integrity: 'sha512-YWxpYXM=' },
+              resolution: { integrity: fixtureAliasIntegrity },
             })
             Reflect.set(lock.snapshots, 'other-yaml@4.1.0', {})
           }),
@@ -2231,7 +2465,23 @@ describe('verify-lock command', () => {
           name: 'root and installed alias integrity mismatch',
           lock: baseLock,
           installedLock: mutate((lock) => {
-            lock.packages['js-yaml@4.1.0'].resolution.integrity = 'sha512-bWlzbWF0Y2g='
+            lock.packages['js-yaml@4.1.0'].resolution.integrity = fixtureMismatchedIntegrity
+          }),
+          message: 'root and installed pnpm runtime dependency closures differ',
+        },
+        {
+          name: 'root and installed transitive peer mismatch',
+          lock: baseLock,
+          installedLock: mutate((lock) => {
+            const dependencies =
+              lock.snapshots[`${packageName}@${npmVersion}(peer-dep@1.0.0)`].dependencies
+            dependencies['registry-dep'] = '2.0.0(peer-dep@2.0.0)'
+            Reflect.set(
+              lock.snapshots,
+              'registry-dep@2.0.0(peer-dep@2.0.0)',
+              lock.snapshots['registry-dep@2.0.0(peer-dep@1.0.0)'],
+            )
+            Reflect.deleteProperty(lock.snapshots, 'registry-dep@2.0.0(peer-dep@1.0.0)')
           }),
           message: 'root and installed pnpm runtime dependency closures differ',
         },
@@ -2247,7 +2497,7 @@ describe('verify-lock command', () => {
         {
           name: 'root and installed closure mismatch',
           lock: mutate((lock) => {
-            lock.packages['registry-dep@2.0.0'].resolution.integrity = 'sha512-b3RoZXI='
+            lock.packages['registry-dep@2.0.0'].resolution.integrity = fixtureOtherIntegrity
           }),
           installedLock: baseLock,
           message: 'root and installed pnpm runtime dependency closures differ',
@@ -2644,6 +2894,70 @@ describe('verify-lock command', () => {
     }
   })
 
+  it('rejects an artifact entry added after directory enumeration without leaking it', async () => {
+    const root = mkdtempSync(join(tmpdir(), 'dsh-curated-late-artifact-entry-'))
+    const packageDir = stageCandidatePackage(root, 'plugin-a')
+    const catalogPath = tempFile('catalog.json', artifactCatalog({
+      treeSha256: fixtureTreeSha256(packageDir),
+    }))
+    const secret = 'sk-late-payload-secret'
+    let injected = false
+    let opens = 0
+    let closes = 0
+    vi.resetModules()
+    vi.doMock('node:fs', async () => {
+      const actual = await vi.importActual<typeof import('node:fs')>('node:fs')
+      return {
+        ...actual,
+        opendirSync: (path: string) => {
+          const directory = actual.opendirSync(path)
+          if (actual.realpathSync.native(path) !== actual.realpathSync.native(packageDir)) {
+            return directory
+          }
+          opens += 1
+          const read = directory.readSync.bind(directory)
+          const close = directory.closeSync.bind(directory)
+          vi.spyOn(directory, 'readSync').mockImplementation(() => {
+            const entry = read()
+            if (!injected && entry === null) {
+              actual.writeFileSync(
+                join(packageDir, 'late-payload.js'),
+                `export const credential = ${JSON.stringify(secret)}\n`,
+              )
+              injected = true
+            }
+            return entry
+          })
+          vi.spyOn(directory, 'closeSync').mockImplementation(() => {
+            closes += 1
+            close()
+          })
+          return directory
+        },
+      }
+    })
+    try {
+      const commands = await import('../src/index.ts')
+      const result = commands.runVerifyLock(['--fixture', catalogPath, '--json'], {
+        artifactRoots: [root],
+        artifactResolver: fixtureArtifactResolver([root]),
+      })
+
+      expect(injected).toBe(true)
+      expect(result.status).toBe(1)
+      expect(commandIssues(result)).toContainEqual(expect.objectContaining({
+        code: 'artifact-file-changed',
+        target: 'plugin-a',
+      }))
+      expect(result.stdout).not.toContain(secret)
+      expect(result.stderr).not.toContain(secret)
+      expect(closes).toBe(opens)
+    } finally {
+      cleanup(catalogPath)
+      rmSync(root, { recursive: true, force: true })
+    }
+  })
+
   it('accepts the artifact depth limit and rejects one additional directory level', () => {
     const root = mkdtempSync(join(tmpdir(), 'dsh-curated-depth-'))
     const packageDir = stageCandidatePackage(root, 'plugin-a')
@@ -2834,7 +3148,7 @@ describe('verify-lock command', () => {
       const mockedRealpath = actual.realpathSync.bind(undefined)
       mockedRealpath.native = ((path: Parameters<typeof actual.realpathSync.native>[0]) => {
         nativeCalls += 1
-        if (nativeCalls === 14) {
+        if (nativeCalls === 15) {
           throw new Error('simulated artifact reference failure')
         }
         return actual.realpathSync.native(path)
@@ -3611,7 +3925,7 @@ describe('verify-lock command', () => {
       profileManifest.dependencies[SUBDIRECTORY_FIXTURE_PACKAGE] = driftedSpec
       writeFileSync(join(profileRoot, 'package.json'), JSON.stringify(profileManifest))
       await assertObservedCommandsReject(
-        'dsh-web-search-pro profile dependency differs from the catalog repository, commit, or package path',
+        'root pnpm dependency dsh-web-search-pro specifier differs from the profile manifest',
       )
       expect(driftedSpec, name).not.toBe(exactSpec)
     }
@@ -3633,7 +3947,9 @@ describe('verify-lock command', () => {
     }
     Reflect.deleteProperty(rootLock.importers['.'].dependencies, SUBDIRECTORY_FIXTURE_PACKAGE)
     writeFileSync(rootLockPath, JSON.stringify(rootLock))
-    await assertObservedCommandsReject('dsh-web-search-pro pnpm dependency must be an object')
+    await assertObservedCommandsReject(
+      'root pnpm importer dependency names must exactly match manifest dependencies',
+    )
     writeFileSync(rootLockPath, rootLockText)
     rootLock.importers['.'].dependencies[SUBDIRECTORY_FIXTURE_PACKAGE] = {
       specifier: dependencySpec,
@@ -3642,7 +3958,9 @@ describe('verify-lock command', () => {
 
     delete rootLock.packages[`${SUBDIRECTORY_FIXTURE_PACKAGE}@${resolvedVersion as string}`]
     writeFileSync(rootLockPath, JSON.stringify(rootLock))
-    await assertObservedCommandsReject('dsh-web-search-pro pnpm package resolution must be an object')
+    await assertObservedCommandsReject(
+      'root dsh-web-search-pro pnpm package resolution must be an object',
+    )
     writeFileSync(rootLockPath, rootLockText)
 
     const versionWithoutPath = (resolvedVersion as string).replace('&path:packages/dsh-web-search-pro', '')
@@ -3664,7 +3982,9 @@ describe('verify-lock command', () => {
       if (packageRecord === undefined) throw new Error('missing fixture lock package')
       delete packageRecord.resolution.path
     })
-    await assertObservedCommandsReject('dsh-web-search-pro pnpm package resolution path differs from the profile manifest')
+    await assertObservedCommandsReject(
+      'root dsh-web-search-pro pnpm package resolution differs from its resolution repository, commit, or path',
+    )
     writeFileSync(rootLockPath, rootLockText)
     writeFileSync(installedLockPath, installedLockText)
 
@@ -3673,7 +3993,9 @@ describe('verify-lock command', () => {
       if (packageRecord === undefined) throw new Error('missing fixture lock package')
       packageRecord.resolution.path = 'packages/other'
     })
-    await assertObservedCommandsReject('dsh-web-search-pro pnpm package resolution path differs from the profile manifest')
+    await assertObservedCommandsReject(
+      'root dsh-web-search-pro pnpm package resolution differs from its resolution repository, commit, or path',
+    )
     writeFileSync(rootLockPath, rootLockText)
     writeFileSync(installedLockPath, installedLockText)
 
@@ -4837,6 +5159,260 @@ describe('verify-lock command', () => {
     }
   })
 
+  it('uses candidate-local inspection when managed profile metadata cannot bind shared locks', () => {
+    const roots = Array.from({ length: 3 }, () =>
+      mkdtempSync(join(tmpdir(), 'dsh-curated-resolver-fallback-')))
+    const candidate = artifactCandidate()
+    try {
+      const manifests = [
+        {
+          name: 'unmanaged',
+          dependencies: { 'plugin-a': '1.0.0' },
+          dsh: { profile: { bundles: ['plugin-a'] } },
+        },
+        { name: 'dsh-profile-custom', dsh: { profile: { bundles: ['plugin-a'] } } },
+        {
+          name: 'dsh-profile-custom',
+          dependencies: { 'plugin-a': 1 },
+          dsh: { profile: { bundles: ['plugin-a'] } },
+        },
+      ]
+      roots.forEach((root, index) => {
+        stageCandidatePackage(root, 'plugin-a')
+        writeFileSync(join(root, 'package.json'), JSON.stringify({
+          name: 'dsh-profile-custom',
+          dependencies: {},
+          dsh: { profile: { bundles: ['plugin-a'] } },
+        }))
+        stageManagedPnpmEvidence(root, candidate)
+        writeFileSync(join(root, 'package.json'), JSON.stringify(manifests[index]))
+      })
+
+      for (const root of roots) {
+        expect(createInstalledArtifactResolver([root]).resolve(candidate)).toBeDefined()
+      }
+      const withoutSourceDigest = { ...candidate }
+      delete (withoutSourceDigest as { sourceContentSha256?: string }).sourceContentSha256
+      expect(createInstalledArtifactResolver([roots[0] as string]).resolve(withoutSourceDigest))
+        .not.toHaveProperty('sourceContentSha256')
+
+      const npmCandidate = artifactCandidate({
+        npmVersion: '1.0.0',
+        npmIntegrity: fixtureNpmIntegrity,
+      })
+      expect(createInstalledArtifactResolver([roots[0] as string]).resolve(npmCandidate))
+        .toMatchObject({ packageVersion: '1.0.0', npmIntegrity: fixtureNpmIntegrity })
+    } finally {
+      for (const root of roots) rmSync(root, { recursive: true, force: true })
+    }
+  })
+
+  it('uses candidate-local inspection when a matching managed profile has no lockfiles', async () => {
+    const root = mkdtempSync(join(tmpdir(), 'dsh-curated-resolver-no-locks-'))
+    const candidate = artifactCandidate()
+    try {
+      writeFileSync(join(root, 'package.json'), JSON.stringify({
+        name: 'dsh-profile-web-curated',
+        dependencies: {},
+        dsh: { profile: { bundles: ['plugin-a'] } },
+      }))
+      const packageDir = stageCandidatePackage(root, 'plugin-a', undefined, {}, undefined, candidate)
+      rmSync(join(root, 'pnpm-lock.yaml'))
+      rmSync(join(root, 'node_modules/.pnpm/lock.yaml'))
+      writeFileSync(join(packageDir, 'plugin.mjs'), 'export function apply() { return "changed" }\n')
+      const commands = await commandsWithCatalogCandidates([candidate])
+
+      expect(commands.createInstalledArtifactResolver([root]).resolve(candidate)).toBeDefined()
+    } finally {
+      rmSync(root, { recursive: true, force: true })
+    }
+  })
+
+  it('validates candidate locks when a managed profile has extra dependencies', () => {
+    const root = mkdtempSync(join(tmpdir(), 'dsh-curated-resolver-extra-dependency-'))
+    const candidate = artifactCandidate({
+      npmVersion: '1.0.0',
+      npmIntegrity: fixtureNpmIntegrity,
+    })
+    try {
+      writeFileSync(join(root, 'package.json'), JSON.stringify({
+        name: 'dsh-profile-web-curated',
+        dependencies: { extra: '1.0.0' },
+        dsh: { profile: { bundles: ['plugin-a'] } },
+      }))
+      stageCandidatePackage(root, 'plugin-a', undefined, {}, undefined, candidate)
+      const installedLockPath = join(root, 'node_modules/.pnpm/lock.yaml')
+      const installedLock = JSON.parse(readFileSync(installedLockPath, 'utf8')) as {
+        packages: Record<string, { resolution: { integrity: string } }>
+      }
+      installedLock.packages['plugin-a@1.0.0']!.resolution.integrity = 'sha512-YXR0YWNrZXI='
+      writeFileSync(installedLockPath, JSON.stringify(installedLock))
+
+      expect(() => createInstalledArtifactResolver([root]).resolve(candidate)).toThrow(
+        'plugin-a pnpm package integrity differs from the catalog',
+      )
+    } finally {
+      rmSync(root, { recursive: true, force: true })
+    }
+  })
+
+  it('rejects Git provenance on an npm candidate in candidate-local lock checks', () => {
+    const root = mkdtempSync(join(tmpdir(), 'dsh-curated-resolver-npm-git-provenance-'))
+    const candidate = artifactCandidate({
+      npmVersion: '1.0.0',
+      npmIntegrity: fixtureNpmIntegrity,
+    })
+    try {
+      writeFileSync(join(root, 'package.json'), JSON.stringify({
+        name: 'dsh-profile-web-curated',
+        dependencies: { extra: '1.0.0' },
+        dsh: { profile: { bundles: ['plugin-a'] } },
+      }))
+      stageCandidatePackage(root, 'plugin-a', undefined, {}, undefined, candidate)
+      for (const path of [
+        join(root, 'pnpm-lock.yaml'),
+        join(root, 'node_modules/.pnpm/lock.yaml'),
+      ]) {
+        const lock = JSON.parse(readFileSync(path, 'utf8')) as {
+          packages: Record<string, { resolution: Record<string, unknown> }>
+        }
+        Object.assign(lock.packages['plugin-a@1.0.0']!.resolution, {
+          type: 'git',
+          repo: 'https://github.com/example/plugin-a.git',
+          commit: fixtureCommitB,
+        })
+        writeFileSync(path, JSON.stringify(lock))
+      }
+
+      expect(() => createInstalledArtifactResolver([root]).resolve(candidate)).toThrow(
+        'plugin-a pnpm package resolution must be registry',
+      )
+    } finally {
+      rmSync(root, { recursive: true, force: true })
+    }
+  })
+
+  it('rejects different direct npm peer resolutions in a managed profile with extra dependencies', () => {
+    const root = mkdtempSync(join(tmpdir(), 'dsh-curated-resolver-direct-peer-'))
+    const candidate = artifactCandidate({
+      npmVersion: '1.0.0',
+      npmIntegrity: fixtureNpmIntegrity,
+    })
+    try {
+      writeFileSync(join(root, 'package.json'), JSON.stringify({
+        name: 'dsh-profile-web-curated',
+        dependencies: { extra: '1.0.0' },
+        dsh: { profile: { bundles: ['plugin-a'] } },
+      }))
+      stageCandidatePackage(root, 'plugin-a', undefined, {}, undefined, candidate)
+      const rootLockPath = join(root, 'pnpm-lock.yaml')
+      const installedLockPath = join(root, 'node_modules/.pnpm/lock.yaml')
+      const rootLock = JSON.parse(readFileSync(rootLockPath, 'utf8')) as {
+        importers: { '.': { dependencies: Record<string, { version: string }> } }
+      }
+      const installedLock = structuredClone(rootLock)
+      rootLock.importers['.'].dependencies['plugin-a']!.version = '1.0.0(peer@1.0.0)'
+      installedLock.importers['.'].dependencies['plugin-a']!.version = '1.0.0(peer@2.0.0)'
+      writeFileSync(rootLockPath, JSON.stringify(rootLock))
+      writeFileSync(installedLockPath, JSON.stringify(installedLock))
+
+      expect(() => createInstalledArtifactResolver([root]).resolve(candidate)).toThrow(
+        'plugin-a root and installed pnpm resolutions differ',
+      )
+    } finally {
+      rmSync(root, { recursive: true, force: true })
+    }
+  })
+
+  it('requires exact peer-suffixed snapshots in candidate-local lock checks', () => {
+    const root = mkdtempSync(join(tmpdir(), 'dsh-curated-resolver-exact-peer-snapshot-'))
+    const candidate = artifactCandidate({
+      npmVersion: '1.0.0',
+      npmIntegrity: fixtureNpmIntegrity,
+    })
+    try {
+      writeFileSync(join(root, 'package.json'), JSON.stringify({
+        name: 'dsh-profile-web-curated',
+        dependencies: { extra: '1.0.0' },
+        dsh: { profile: { bundles: ['plugin-a'] } },
+      }))
+      stageCandidatePackage(root, 'plugin-a', undefined, {}, undefined, candidate)
+      for (const path of [
+        join(root, 'pnpm-lock.yaml'),
+        join(root, 'node_modules/.pnpm/lock.yaml'),
+      ]) {
+        const lock = JSON.parse(readFileSync(path, 'utf8')) as {
+          importers: { '.': { dependencies: Record<string, { version: string }> } }
+          snapshots?: Record<string, unknown>
+        }
+        lock.importers['.'].dependencies['plugin-a']!.version = '1.0.0(peer@1.0.0)'
+        lock.snapshots = { 'plugin-a@1.0.0': {} }
+        writeFileSync(path, JSON.stringify(lock))
+      }
+
+      expect(() => createInstalledArtifactResolver([root]).resolve(candidate)).toThrow(
+        'plugin-a plugin-a@1.0.0(peer@1.0.0) snapshot is missing',
+      )
+    } finally {
+      rmSync(root, { recursive: true, force: true })
+    }
+  })
+
+  it('requires exact transitive peer-suffixed snapshots in candidate-local lock checks', () => {
+    const root = mkdtempSync(join(tmpdir(), 'dsh-curated-resolver-exact-transitive-peer-'))
+    const identity =
+      `registry-dep@2.0.0(peer@1.0.0)\u0000registry\u0000${fixtureRegistryIntegrity}`
+    const identityBytes = Buffer.from(identity)
+    const closureSha256 = createHash('sha256')
+      .update(`${String(identityBytes.byteLength)}:`)
+      .update(identityBytes)
+      .digest('hex')
+    const candidate = artifactCandidate({
+      npmVersion: '1.0.0',
+      npmIntegrity: fixtureNpmIntegrity,
+      runtimeDependencyClosureSha256: closureSha256,
+    })
+    try {
+      writeFileSync(join(root, 'package.json'), JSON.stringify({
+        name: 'dsh-profile-web-curated',
+        dependencies: { extra: '1.0.0' },
+        dsh: { profile: { bundles: ['plugin-a'] } },
+      }))
+      stageCandidatePackage(root, 'plugin-a', undefined, {}, undefined, candidate)
+      Reflect.set(candidate, 'runtimeDependencyClosureSha256', closureSha256)
+      const lock = {
+        lockfileVersion: '9.0',
+        importers: {
+          '.': {
+            dependencies: {
+              'plugin-a': { specifier: '1.0.0', version: '1.0.0' },
+            },
+          },
+        },
+        packages: {
+          'plugin-a@1.0.0': {
+            resolution: { integrity: fixtureNpmIntegrity },
+            dependencies: { 'registry-dep': '2.0.0(peer@1.0.0)' },
+          },
+          'registry-dep@2.0.0': {
+            resolution: { integrity: fixtureRegistryIntegrity },
+          },
+        },
+        snapshots: {
+          'registry-dep@2.0.0': {},
+        },
+      }
+      writeFileSync(join(root, 'pnpm-lock.yaml'), JSON.stringify(lock))
+      writeFileSync(join(root, 'node_modules/.pnpm/lock.yaml'), JSON.stringify(lock))
+
+      expect(() => createInstalledArtifactResolver([root]).resolve(candidate)).toThrow(
+        'plugin-a registry-dep@2.0.0(peer@1.0.0) snapshot is missing',
+      )
+    } finally {
+      rmSync(root, { recursive: true, force: true })
+    }
+  })
+
   it('skips artifact resolution for inactive candidates', () => {
     const catalogPath = tempFile('catalog.json', artifactCatalog({
       active: false,
@@ -5058,6 +5634,21 @@ describe('preflight command', () => {
       issues: [{ code: 'preflight-profile-root-required' }],
     })
   })
+
+  it.each([['JSON', '--json'], ['text', undefined]] as const)(
+    'redacts a secret-shaped profile in %s output',
+    (_name, outputFlag) => {
+      const secret = 'sk-preflight-profile-secret'
+      const result = runPreflight([
+        '--profile',
+        secret,
+        ...outputFlag === undefined ? [] : [outputFlag],
+      ])
+
+      expect(result.stdout).toContain('[REDACTED]')
+      expect(result.stdout).not.toContain(secret)
+    },
+  )
 
   it('rejects a profile root reached through a symbolic-link ancestor', () => {
     const root = mkdtempSync(join(tmpdir(), 'dsh-curated-profile-root-symlink-'))
@@ -5314,7 +5905,9 @@ describe('preflight command', () => {
       }
       delete rootLock.importers['.'].dependencies['runtime-bundle']
       writeFileSync(rootLockPath, JSON.stringify(rootLock))
-      expect(() => resolver.resolve(provider)).toThrow('runtime-provider pnpm dependency must be an object')
+      expect(() => resolver.resolve(provider)).toThrow(
+        'root pnpm importer dependency names must exactly match manifest dependencies',
+      )
       writeFileSync(rootLockPath, rootLockContent)
 
       const installedLock = JSON.parse(installedLockContent) as {
@@ -5322,7 +5915,9 @@ describe('preflight command', () => {
       }
       delete installedLock.importers['.'].dependencies['runtime-bundle']
       writeFileSync(installedLockPath, JSON.stringify(installedLock))
-      expect(() => resolver.resolve(provider)).toThrow('runtime-provider pnpm dependency must be an object')
+      expect(() => resolver.resolve(provider)).toThrow(
+        'installed pnpm importer dependency names must exactly match manifest dependencies',
+      )
       writeFileSync(installedLockPath, installedLockContent)
 
       rmSync(join(profileRoot, 'node_modules/runtime-bundle'), { recursive: true, force: true })
@@ -6504,6 +7099,7 @@ ${config}
       name: 'dsh-profile-custom-curated',
       dsh: { profile: { bundles: ['@deepseek-ai/dsh-curated-base'] } },
     }))
+    writeFileSync(join(profileRoot, '.npmrc'), 'ignore-scripts=true\n')
     writeFileSync(join(profileRoot, 'cordis.patch.yml'), `- insert:
     - id: local-fallback
       name: ./local-fallback.mjs
@@ -6603,6 +7199,7 @@ ${config}
         name: 'dsh-profile-custom-curated',
         dsh: { profile: { bundles: ['@deepseek-ai/dsh-base'] } },
       }))
+      writeFileSync(join(profileRoot, '.npmrc'), 'ignore-scripts=true\n')
 
       const result = runPreflight(['--profile', 'custom-curated', '--json'], {
         profileRoot,
@@ -6675,6 +7272,7 @@ ${config}
           name: 'dsh-profile-custom-curated',
           dsh: { profile: { bundles: ['@deepseek-ai/dsh-base'] } },
         }))
+        writeFileSync(join(root, '.npmrc'), 'ignore-scripts=true\n')
       }
       stageCandidatePackage(shadowedRoot, '@deepseek-ai/dsh-base', `- insert:
     - id: profile-local-shadow
@@ -7716,6 +8314,7 @@ ${child}`, {}, undefined, candidate)
         name: 'dsh-profile-custom-curated',
         dsh: { profile: { bundles: ['fixture-local-bundle'] } },
       }))
+      writeFileSync(join(unresolvedRoot, '.npmrc'), 'ignore-scripts=true\n')
       expect(JSON.parse(runPreflight(['--profile', 'custom-curated', '--json'], {
         profileRoot: unresolvedRoot,
       }).stdout)).toMatchObject({
@@ -8269,31 +8868,31 @@ ${child}`, {}, undefined, candidate)
         name: 'patched lock',
         path: 'pnpm-lock.yaml',
         content: "lockfileVersion: '9.0'\npackageExtensions: {}\n",
-        code: 'preflight-profile-package-transformation',
+        code: 'preflight-input-invalid',
       },
       {
         name: 'dependency override root lock',
         path: 'pnpm-lock.yaml',
         content: "lockfileVersion: '9.0'\noverrides:\n  transitive-package: 9.9.9\n",
-        code: 'preflight-profile-package-transformation',
+        code: 'preflight-input-invalid',
       },
       {
         name: 'dependency override installed lock',
         path: 'node_modules/.pnpm/lock.yaml',
         content: "lockfileVersion: '9.0'\noverrides:\n  transitive-package: 9.9.9\n",
-        code: 'preflight-profile-package-transformation',
+        code: 'preflight-input-invalid',
       },
       {
         name: 'package extension checksum lock',
         path: 'pnpm-lock.yaml',
         content: "lockfileVersion: '9.0'\nsettings:\n  packageExtensionsChecksum: sha256-fixture\n",
-        code: 'preflight-profile-package-transformation',
+        code: 'preflight-input-invalid',
       },
       {
         name: 'pnpmfile checksum lock',
         path: 'pnpm-lock.yaml',
         content: "lockfileVersion: '9.0'\nsettings:\n  pnpmfileChecksum: sha256-fixture\n",
-        code: 'preflight-profile-package-transformation',
+        code: 'preflight-input-invalid',
       },
     ] as const
 
@@ -8331,6 +8930,74 @@ ${child}`, {}, undefined, candidate)
       } finally {
         rmSync(home, { recursive: true, force: true })
       }
+    }
+  })
+
+  it('rejects a managed custom profile without an npmrc before observed execution', async () => {
+    const profileRoot = mkdtempSync(join(tmpdir(), 'dsh-curated-managed-custom-missing-npmrc-'))
+    try {
+      writeFileSync(join(profileRoot, 'package.json'), JSON.stringify({
+        name: 'dsh-profile-custom-curated',
+        private: true,
+        dsh: { profile: { bundles: ['@deepseek-ai/dsh-base'] } },
+      }))
+      writeFileSync(join(profileRoot, 'pnpm-workspace.yaml'), 'packages:\n  - .\n')
+
+      const verify = runVerifyLockCommand(['--artifact-root', profileRoot, '--json'])
+      const preflight = runPreflight(['--profile', 'custom-curated', '--json'], { profileRoot })
+      let runnerCalls = 0
+      const smoke = await runSmokeProfile(['--profile', 'custom-curated', '--json'], {
+        profiles: { 'custom-curated': { bundles: ['@deepseek-ai/dsh-base'] } },
+        profileRoot,
+        runner: async () => {
+          runnerCalls += 1
+          return { status: 0, stdout: '', stderr: '', durationMs: 1 }
+        },
+      })
+
+      for (const result of [verify, preflight, smoke]) {
+        expect(result.status, result.stdout).toBe(1)
+        expect(result.stdout).toContain('managed profile must set ignore-scripts=true')
+      }
+      expect(runnerCalls).toBe(0)
+    } finally {
+      rmSync(profileRoot, { recursive: true, force: true })
+    }
+  })
+
+  it('rejects transformed locks when a managed profile cannot use shared catalog admission', () => {
+    const profileRoot = mkdtempSync(join(tmpdir(), 'dsh-curated-managed-custom-transformed-lock-'))
+    try {
+      writeFileSync(join(profileRoot, 'package.json'), JSON.stringify({
+        name: 'dsh-profile-custom-curated',
+        private: true,
+        dsh: { profile: { bundles: [] } },
+      }))
+      writeFileSync(join(profileRoot, '.npmrc'), 'ignore-scripts=true\n')
+      writeFileSync(join(profileRoot, 'pnpm-workspace.yaml'), 'packages:\n  - .\n')
+      const lock = JSON.stringify({
+        lockfileVersion: '9.0',
+        importers: { '.': {} },
+        patchedDependencies: {},
+      })
+      writeFileSync(join(profileRoot, 'pnpm-lock.yaml'), lock)
+      mkdirSync(join(profileRoot, 'node_modules/.pnpm'), { recursive: true })
+      writeFileSync(join(profileRoot, 'node_modules/.pnpm/lock.yaml'), lock)
+
+      const verify = runVerifyLockCommand(['--artifact-root', profileRoot, '--json'])
+      const preflight = runPreflight(
+        ['--profile', 'custom-curated', '--json'],
+        { profileRoot },
+      )
+
+      expect(verify.status, verify.stdout).toBe(1)
+      expect(verify.stdout).toContain('pnpm lockfile must not contain patchedDependencies')
+      expect(preflight.status, preflight.stdout).toBe(1)
+      expect(commandIssues(preflight)).toContainEqual(expect.objectContaining({
+        code: 'preflight-profile-package-transformation',
+      }))
+    } finally {
+      rmSync(profileRoot, { recursive: true, force: true })
     }
   })
 
@@ -9568,6 +10235,24 @@ describe('smoke-profile command', () => {
     })
   })
 
+  it.each([['JSON', '--json'], ['text', undefined]] as const)(
+    'redacts a secret-shaped profile in %s output',
+    async (_name, outputFlag) => {
+      const secret = 'sk-smoke-profile-secret'
+      const result = await runSmokeProfile([
+        '--profile',
+        secret,
+        ...outputFlag === undefined ? [] : [outputFlag],
+      ], {
+        profiles: { [secret]: { bundles: ['fixture-bundle'] } },
+        runner: async () => ({ status: 0, stdout: '', stderr: '', durationMs: 1 }),
+      })
+
+      expect(result.stdout).toContain('[REDACTED]')
+      expect(result.stdout).not.toContain(secret)
+    },
+  )
+
   it('rejects required provider evidence missing for the requested profile', async () => {
     const profileRoot = mkdtempSync(join(tmpdir(), 'dsh-curated-smoke-provider-evidence-'))
     const targetProfiles = ['fixture-curated', 'other-curated']
@@ -10054,6 +10739,38 @@ describe('smoke-profile command', () => {
       expect(result.status).toBe(1)
       expect(result.stdout).toContain('[REDACTED]')
       for (const secret of secrets) expect(result.stdout).not.toContain(secret)
+    } finally {
+      rmSync(profileRoot, { recursive: true, force: true })
+    }
+  })
+
+  it('redacts structured authorization header tuples and records from staging diagnostics', async () => {
+    const profileRoot = mkdtempSync(join(tmpdir(), 'dsh-curated-smoke-staging-headers-'))
+    const authorization = 'Basic tuple-secret'
+    const proxyAuthorization = 'CustomScheme record-secret'
+    try {
+      const diagnostic = JSON.stringify({
+        headers: [
+          ['Authorization', authorization],
+          { name: 'proxy-authorization', value: proxyAuthorization },
+        ],
+        visible: 'keep-context',
+      })
+      const result = await runSmokeProfile(['--profile', 'web-curated', '--json'], {
+        profileRoot,
+        prepare: async () => {
+          throw new Error(`staging failed: ${diagnostic}`)
+        },
+      })
+      const message = commandIssues(result)[0]?.message ?? ''
+
+      expect(result.status).toBe(1)
+      expect(message).toContain('Authorization')
+      expect(message).toContain('proxy-authorization')
+      expect(message).toContain('keep-context')
+      expect(message).toContain('[REDACTED]')
+      expect(message).not.toContain(authorization)
+      expect(message).not.toContain(proxyAuthorization)
     } finally {
       rmSync(profileRoot, { recursive: true, force: true })
     }
@@ -10636,7 +11353,15 @@ describe('smoke-profile command', () => {
   it('records non-zero child process results as stage failures', async () => {
     const result = await runSmokeProfile(['--profile', 'web-curated', '--json'], {
       runner: async (request: SmokeProfileRunnerRequest) => request.stage === 'dump-config'
-        ? { status: 2, stdout: '', stderr: 'dump failed', durationMs: 4 }
+        ? {
+          status: 2,
+          exitCode: 2,
+          signal: null,
+          timedOut: false,
+          stdout: '',
+          stderr: 'dump failed',
+          durationMs: 4,
+        }
         : { status: 0, stdout: '', stderr: '', durationMs: 4 },
     })
 
@@ -10647,6 +11372,9 @@ describe('smoke-profile command', () => {
       ok: false,
       durationMs: 4,
       status: 2,
+      exitCode: 2,
+      signal: null,
+      timedOut: false,
       error: 'dump failed',
     })
     expect(payload.issues).toContainEqual({
@@ -10752,6 +11480,7 @@ describe('smoke-profile command', () => {
       ok: false,
       durationMs: helpTimeout,
       status: 124,
+      timedOut: true,
       error: `stage timed out after ${String(helpTimeout)} ms`,
     })
     expect(payload.issues).toContainEqual({
@@ -10885,6 +11614,37 @@ describe('smoke-profile command', () => {
         message: 'smoke-profile budget exhausted during staging',
       }],
     })
+  })
+
+  it('uses the injected clock for immediately settled preparation and staging', async () => {
+    const root = mkdtempSync(join(tmpdir(), 'dsh-curated-injected-clock-'))
+    const workerPath = join(root, 'immediate-worker.mjs')
+    writeFileSync(join(root, 'package.json'), JSON.stringify({
+      name: 'dsh-profile-web-curated',
+      dsh: { profile: { bundles: ['fixture-bundle'] } },
+    }))
+    writeFileSync(workerPath, [
+      'import { parentPort } from "node:worker_threads"',
+      'parentPort.postMessage({ ok: true })',
+      '',
+    ].join('\n'))
+    const globalNow = vi.spyOn(performance, 'now').mockReturnValue(10_000)
+    try {
+      const result = await runSmokeProfile(['--profile', 'web-curated', '--json'], {
+        profiles: { 'web-curated': { bundles: ['fixture-bundle'] } },
+        profileRoot: root,
+        timeLimitMs: 1_000,
+        prepare: async () => undefined,
+        stagingWorkerEntry: workerPath,
+        now: () => 0,
+        runner: async () => ({ status: 0, stdout: '', stderr: '', durationMs: 0 }),
+      })
+
+      expect(result.status, result.stdout).toBe(0)
+    } finally {
+      globalNow.mockRestore()
+      rmSync(root, { recursive: true, force: true })
+    }
   })
 
   it.each([
@@ -11068,7 +11828,7 @@ describe('smoke-profile command', () => {
         })
         const followUp = await runSmokeProfile(['--profile', 'web-curated', '--json'], {
           profileRoot,
-          timeLimitMs: 500,
+          timeLimitMs: 2_000,
           runner: async () => ({ status: 0, stdout: '', stderr: '', durationMs: 0 }),
         })
         expect(followUp.status).toBe(1)
@@ -11390,6 +12150,54 @@ describe('smoke-profile command', () => {
     }
   })
 
+  it('preserves relative pnpm package links inside the private execution profile', async () => {
+    const home = mkdtempSync(join(tmpdir(), 'dsh-curated-relative-pnpm-link-'))
+    const profileRoot = join(home, 'profiles', 'fixture-curated')
+    const executionHome = mkdtempSync(join(tmpdir(), 'dsh-curated-relative-pnpm-target-'))
+    const candidate = artifactCandidate({
+      npmVersion: '1.0.0',
+      npmIntegrity: fixtureNpmIntegrity,
+      targetProfiles: ['fixture-curated'],
+    })
+    try {
+      mkdirSync(profileRoot, { recursive: true })
+      writeFileSync(join(profileRoot, 'package.json'), JSON.stringify({
+        name: 'dsh-profile-fixture-curated',
+        private: true,
+        dependencies: { 'plugin-a': '1.0.0' },
+        dsh: { profile: { bundles: ['plugin-a'] } },
+      }))
+      writeFileSync(join(profileRoot, '.npmrc'), 'ignore-scripts=true\n')
+      const packageDir = stageCandidatePackage(
+        profileRoot,
+        'plugin-a',
+        undefined,
+        {},
+        undefined,
+        candidate,
+      )
+      const relativeTarget = '.pnpm/plugin-a@1.0.0/node_modules/plugin-a'
+      const storePackageDir = join(profileRoot, 'node_modules', relativeTarget)
+      mkdirSync(dirname(storePackageDir), { recursive: true })
+      renameSync(packageDir, storePackageDir)
+      symlinkSync(relativeTarget, packageDir, 'dir')
+      const commands = await commandsWithCatalogCandidates([candidate])
+
+      expect(commands.inspectSmokeProfileStaging({
+        profileRoot,
+        profile: 'fixture-curated',
+        bundles: ['plugin-a'],
+        artifactRoots: [],
+        executionHome,
+      })).toEqual({ ok: true })
+      expect(readlinkSync(join(executionHome, 'profiles/fixture-curated/node_modules/plugin-a')))
+        .toBe(relativeTarget)
+    } finally {
+      rmSync(home, { recursive: true, force: true })
+      rmSync(executionHome, { recursive: true, force: true })
+    }
+  })
+
   it('returns structured artifact issues from direct staging inspection', async () => {
     const profileRoot = mkdtempSync(join(tmpdir(), 'dsh-curated-direct-staging-issue-'))
     const candidate = {
@@ -11454,13 +12262,38 @@ describe('smoke-profile command', () => {
       message: 'staging worker returned an invalid result',
     },
     {
+      name: 'empty error',
+      body: 'parentPort.postMessage({ ok: false, error: "" })',
+      message: 'staging worker returned an invalid result',
+    },
+    {
+      name: 'error and issues',
+      body: 'parentPort.postMessage({ ok: false, error: "worker rejection", issues: [{ code: "fixture", message: "worker issue" }] })',
+      message: 'staging worker returned an invalid result',
+    },
+    {
       name: 'non-array issues',
       body: 'parentPort.postMessage({ ok: false, issues: "bad" })',
       message: 'staging worker returned an invalid result',
     },
     {
+      name: 'failure without issues',
+      body: 'parentPort.postMessage({ ok: false, issues: [] })',
+      message: 'staging worker returned an invalid result',
+    },
+    {
       name: 'malformed issue',
       body: 'parentPort.postMessage({ ok: false, issues: [{ code: 1, message: 2, target: 3 }] })',
+      message: 'staging worker returned an invalid result',
+    },
+    {
+      name: 'empty issue code',
+      body: 'parentPort.postMessage({ ok: false, issues: [{ code: "", message: "worker issue" }] })',
+      message: 'staging worker returned an invalid result',
+    },
+    {
+      name: 'empty issue message',
+      body: 'parentPort.postMessage({ ok: false, issues: [{ code: "fixture", message: "" }] })',
       message: 'staging worker returned an invalid result',
     },
     {
@@ -11826,6 +12659,11 @@ describe('smoke-profile command', () => {
     const timedOut = await timeoutRunner({ stage: 'help', profile: 'web-curated', bundles, timeoutMs: 1 })
 
     expect(dumpConfig.status).toBe(0)
+    expect(dumpConfig).toMatchObject({
+      exitCode: 0,
+      signal: null,
+      timedOut: false,
+    })
     expect(dumpConfig.stdout).toContain('--dump-config')
     expect(help.status).toBe(0)
     expect(help.stdout).toContain('--profile web-curated --help')
@@ -11889,8 +12727,12 @@ describe('smoke-profile command', () => {
       timeoutMs: 5000,
     })
 
-    expect(result).toMatchObject({ status: 1 })
-    expect(result.timedOut).toBeUndefined()
+    expect(result).toMatchObject({
+      status: 1,
+      exitCode: null,
+      signal: 'SIGTERM',
+      timedOut: false,
+    })
   })
 
   it('passes integer deadlines and applies the launch allowlist to explicit overrides', async () => {
@@ -12141,7 +12983,12 @@ describe('smoke-profile command', () => {
       })
       descendantPid = Number(readFileSync(pidFile, 'utf8'))
 
-      expect(result).toMatchObject({ status: 124, timedOut: true })
+      expect(result).toMatchObject({
+        status: 124,
+        exitCode: null,
+        signal: 'SIGKILL',
+        timedOut: true,
+      })
       expect(Date.now() - startedAt).toBeLessThan(1000)
       expect(() => process.kill(descendantPid as number, 0)).toThrow()
     } finally {
@@ -12191,7 +13038,7 @@ describe('smoke-profile command', () => {
           status: 1,
           stderr: 'smoke-profile child exited while its process group still had running descendants',
         })
-        expect(result.timedOut).toBeUndefined()
+        expect(result.timedOut).toBe(false)
         expect(result.stderr).not.toContain(secret)
         expect(Buffer.byteLength(result.stderr)).toBeLessThan(256)
         expect(Date.now() - startedAt).toBeLessThan(1000)
@@ -12253,7 +13100,7 @@ describe('smoke-profile command', () => {
         const childCwd = readFileSync(cwdFile, 'utf8')
 
         expect(result).toMatchObject({ status: 1 })
-        expect(result.timedOut).toBeUndefined()
+        expect(result.timedOut).toBe(false)
         expect(result.stderr).toContain('output exceeded')
         expect(Buffer.byteLength(result.stdout) + Buffer.byteLength(result.stderr)).toBeLessThan(1_024)
         expect(() => process.kill(descendantPid as number, 0)).toThrow()
@@ -12457,7 +13304,8 @@ describe('smoke-profile command', () => {
     mkdirSync(home)
     writeFileSync(join(repositoryCwd, '.env'), 'CURATED_REPOSITORY_MARKER=repository-marker\n')
     writeFileSync(join(home, '.env'), 'CURATED_PROFILE_MARKER=profile-marker\n')
-    const tsxLoader = import.meta.resolve('tsx/esm')
+    const tsxCli = createRequire(import.meta.url).resolve('tsx/cli')
+    const repoTsconfig = fileURLToPath(new URL('../../../../tsconfig.json', import.meta.url))
     writeFileSync(script, [
       'import { statSync } from "node:fs"',
       `import { loadLayeredEnv } from ${JSON.stringify(pathToFileURL(fileURLToPath(new URL('../../../boot/app-boot/src/index.ts', import.meta.url))).href)}`,
@@ -12472,7 +13320,12 @@ describe('smoke-profile command', () => {
     ].join('\n'))
     try {
       process.chdir(repositoryCwd)
-      const runner = createSmokeProfileChildRunner(process.execPath, ['--import', tsxLoader, script], {
+      const runner = createSmokeProfileChildRunner(process.execPath, [
+        tsxCli,
+        '--tsconfig',
+        repoTsconfig,
+        script,
+      ], {
         env: { DSH_HOME: home },
       })
       const result = await runner({
@@ -12983,10 +13836,7 @@ describe('compare-benchmark command', () => {
 
   it('rejects rollback snapshots that differ from the baseline referenced artifacts', () => {
     const path = tempFile('benchmark.json', benchmarkFixture())
-    writeFileSync(join(dirname(path), 'locks/web.json'), JSON.stringify({
-      ...previousLockSnapshot,
-      candidates: [],
-    }))
+    writeFileSync(join(dirname(path), 'locks/web.json'), JSON.stringify(previousLockSnapshot))
     try {
       const result = runCompareBenchmark(['--fixture', path, '--json'])
 
@@ -13172,28 +14022,6 @@ describe('compare-benchmark command', () => {
     }
   })
 
-  it('accepts an exact npm rollback install source', () => {
-    const fixture = JSON.parse(benchmarkFixture()) as MutableBenchmarkFixture
-    fixture.previousSnapshots.lock = snapshotEnvelope({
-      ...previousLockSnapshot,
-      candidates: [{
-        ...previousLockSnapshot.candidates[0],
-        installSource: {
-          kind: 'npm',
-          npmVersion: '1.2.3-alpha.1+build.01',
-          npmIntegrity: 'sha512-wmFfSlWDE3ujFuBSY1W8s2gERSotHD4ueelg5BJ5Hd2/ssB5x24xEaQdbMzNhoAaUjpXeIwfOUdn+nLqHjiYGQ==',
-        },
-      }],
-    })
-    const path = tempFile('benchmark.json', JSON.stringify(fixture))
-    try {
-      const result = runCompareBenchmark(['--fixture', path, '--json'])
-      expect(result.status, result.stdout).toBe(0)
-    } finally {
-      cleanup(path)
-    }
-  })
-
   it('computes statistics, failure distribution, weighted score, and snapshot references', () => {
     const path = tempFile('benchmark.json', benchmarkFixture())
     try {
@@ -13204,7 +14032,7 @@ describe('compare-benchmark command', () => {
       expect(payload.ok).toBe(true)
       expect(payload.status).toBe('accepted')
       expect(payload.previousSnapshots).toEqual({
-        lock: snapshotEnvelope(previousLockSnapshot),
+        lock: snapshotEnvelope(emptyPreviousLockSnapshot),
         profile: snapshotEnvelope(previousProfileSnapshot),
       })
       expect(payload.candidate.statistics.firstTokenMs).toEqual({ mean: 20, p50: 20, p95: 30 })
@@ -13283,6 +14111,28 @@ describe('compare-benchmark command', () => {
     }
   })
 
+  it('rejects URL userinfo in benchmark failure reasons without echoing it', () => {
+    const path = tempFile('benchmark-userinfo.json', benchmarkFixture([benchmarkRun({
+      taskId: 'userinfo-bearing-failure',
+      success: false,
+      failure: 'https://benchmark-user:benchmark-password@example.invalid/failure',
+    })]))
+    try {
+      const result = runCompareBenchmark(['--fixture', path, '--json'])
+
+      expect(result.status).toBe(1)
+      expect(JSON.parse(result.stdout)).toMatchObject({
+        issues: [{ message: 'benchmark fixture must not contain secret material' }],
+      })
+      expect(result.stdout).not.toContain('benchmark-user')
+      expect(result.stdout).not.toContain('benchmark-password')
+      expect(result.stderr).not.toContain('benchmark-user')
+      expect(result.stderr).not.toContain('benchmark-password')
+    } finally {
+      cleanup(path)
+    }
+  })
+
   it('recursively rejects secret material in benchmark execution metadata', () => {
     const fixture = JSON.parse(benchmarkFixture()) as MutableBenchmarkFixture
     const secret = 'Bearer hidden-benchmark-metadata'
@@ -13296,6 +14146,76 @@ describe('compare-benchmark command', () => {
         issues: [{ message: 'benchmark fixture must not contain secret material' }],
       })
       expect(result.stdout).not.toContain(secret)
+    } finally {
+      cleanup(path)
+    }
+  })
+
+  it('rejects a Basic Authorization credential in pending campaigns without echoing it', () => {
+    const fixture = JSON.parse(benchmarkFixture()) as MutableBenchmarkFixture
+    const secret = 'Authorization: Basic cGVuZGluZy11c2VyOnBhc3N3b3Jk'
+    fixture.evidenceKind = 'planned'
+    fixture.pendingCampaigns = [secret]
+    fixture.baseline.runs = []
+    fixture.candidate.runs = []
+    Reflect.deleteProperty(fixture.baseline, 'execution')
+    Reflect.deleteProperty(fixture.candidate, 'execution')
+    const path = tempFile('benchmark-pending-authorization.json', JSON.stringify(fixture))
+    try {
+      const result = runCompareBenchmark(['--fixture', path, '--json'])
+
+      expect(JSON.parse(result.stdout)).toMatchObject({
+        issues: [{ message: 'benchmark fixture must not contain secret material' }],
+      })
+      expect(result.stdout).not.toContain(secret)
+      expect(result.stderr).not.toContain(secret)
+    } finally {
+      cleanup(path)
+    }
+  })
+
+  it('rejects a custom Authorization credential in completed execution metadata without echoing it', () => {
+    const fixture = JSON.parse(benchmarkFixture()) as MutableBenchmarkFixture
+    const secret = 'Authorization: CustomScheme completed-secret-credential'
+    fixture.baseline.execution.id = secret
+    fixture.candidate.execution.id = secret
+    const path = tempFile('benchmark-execution-authorization.json', JSON.stringify(fixture))
+    try {
+      const result = runCompareBenchmark(['--fixture', path, '--json'])
+
+      expect(result.status).toBe(1)
+      expect(JSON.parse(result.stdout)).toMatchObject({
+        issues: [{ message: 'benchmark fixture must not contain secret material' }],
+      })
+      expect(result.stdout).not.toContain(secret)
+      expect(result.stderr).not.toContain(secret)
+    } finally {
+      cleanup(path)
+    }
+  })
+
+  it.each([
+    ['tuple', [['Authorization', 'Basic tuple-secret']], 'Basic tuple-secret'],
+    [
+      'record',
+      [{ name: 'Proxy-Authorization', value: 'CustomScheme record-secret' }],
+      'CustomScheme record-secret',
+    ],
+  ] as const)('rejects a structured authorization header %s without echoing its value', (_name, headers, secret) => {
+    const fixture = JSON.parse(benchmarkFixture()) as MutableBenchmarkFixture
+    Object.assign(fixture, {
+      metadata: { headers },
+    })
+    const path = tempFile('benchmark-structured-authorization.json', JSON.stringify(fixture))
+    try {
+      const result = runCompareBenchmark(['--fixture', path, '--json'])
+
+      expect(result.status).toBe(1)
+      expect(JSON.parse(result.stdout)).toMatchObject({
+        issues: [{ message: 'benchmark fixture must not contain secret material' }],
+      })
+      expect(result.stdout).not.toContain(secret)
+      expect(result.stderr).not.toContain(secret)
     } finally {
       cleanup(path)
     }
@@ -13429,7 +14349,7 @@ describe('compare-benchmark command', () => {
       expect(payload.rollback).toEqual({
         required: true,
         previousSnapshots: {
-          lock: snapshotEnvelope(previousLockSnapshot),
+          lock: snapshotEnvelope(emptyPreviousLockSnapshot),
           profile: snapshotEnvelope(previousProfileSnapshot),
         },
         reasons: [
@@ -14013,7 +14933,9 @@ describe('compare-benchmark command', () => {
   it.each([
     {
       field: 'lockSnapshot',
-      mutate: (snapshot: Record<string, unknown>) => { snapshot.candidates = [] },
+      mutate: (snapshot: Record<string, unknown>) => {
+        snapshot.candidates = previousLockSnapshot.candidates
+      },
       message: 'previousSnapshots.lock.snapshot must equal the canonical baseline.lockSnapshot content',
     },
     {
@@ -14035,6 +14957,17 @@ describe('compare-benchmark command', () => {
     mutate(snapshot)
     writeFileSync(snapshotPath, JSON.stringify(snapshot))
     fixture.baseline[field].sha256 = createHash('sha256').update(canonicalJson(snapshot)).digest('hex')
+    if (field === 'lockSnapshot') {
+      const profilePath = join(dirname(path), fixture.baseline.profileSnapshot.path)
+      const profileSnapshot = JSON.parse(readFileSync(profilePath, 'utf8')) as {
+        bundles: string[]
+      }
+      profileSnapshot.bundles.push('plugin-a')
+      writeFileSync(profilePath, JSON.stringify(profileSnapshot))
+      fixture.baseline.profileSnapshot.sha256 = createHash('sha256')
+        .update(canonicalJson(profileSnapshot))
+        .digest('hex')
+    }
     writeFileSync(path, JSON.stringify(fixture))
     try {
       expect(JSON.parse(runCompareBenchmark(['--fixture', path, '--json']).stdout)).toMatchObject({
@@ -14060,6 +14993,66 @@ describe('compare-benchmark command', () => {
       expect(JSON.parse(runCompareBenchmark(['--fixture', path, '--json']).stdout)).toMatchObject({
         issues: [{
           message: 'candidate.profileSnapshot snapshot bundles must match the authoritative web-curated template in order',
+        }],
+      })
+    } finally {
+      cleanup(path)
+    }
+  })
+
+  it.each([
+    {
+      name: 'embedded previous',
+      mutate: (fixture: MutableBenchmarkFixture) => {
+        fixture.previousSnapshots.lock = snapshotEnvelope(previousLockSnapshot)
+      },
+      message: 'previousSnapshots lock candidates must exactly match its profile third-party bundles in order',
+    },
+    {
+      name: 'candidate',
+      mutate: (_fixture: MutableBenchmarkFixture) => {},
+      message: 'candidate lock candidates must exactly match its profile third-party bundles in order',
+    },
+  ])('rejects $name lock candidates absent from the same-side profile bundles', ({ mutate, message, name }) => {
+    const fixture = JSON.parse(benchmarkFixture()) as MutableBenchmarkFixture
+    mutate(fixture)
+    const path = tempFile(`same-side-${name.replace(' ', '-')}.json`, JSON.stringify(fixture))
+    if (name === 'candidate') {
+      const stagedFixture = JSON.parse(readFileSync(path, 'utf8')) as MutableBenchmarkFixture
+      const lockPath = join(dirname(path), stagedFixture.candidate.lockSnapshot.path)
+      writeFileSync(lockPath, JSON.stringify({
+        ...emptyPreviousLockSnapshot,
+        profile: 'web-curated',
+        candidates: previousLockSnapshot.candidates,
+      }))
+      stagedFixture.candidate.lockSnapshot.sha256 = createHash('sha256')
+        .update(canonicalJson(JSON.parse(readFileSync(lockPath, 'utf8'))))
+        .digest('hex')
+      writeFileSync(path, JSON.stringify(stagedFixture))
+    }
+    try {
+      expect(JSON.parse(runCompareBenchmark(['--fixture', path, '--json']).stdout)).toMatchObject({
+        issues: [{ message }],
+      })
+    } finally {
+      cleanup(path)
+    }
+  })
+
+  it('rejects duplicate expectedPackage values in an embedded rollback lock snapshot', () => {
+    const fixture = JSON.parse(benchmarkFixture()) as MutableBenchmarkFixture
+    fixture.previousSnapshots.lock = snapshotEnvelope({
+      ...previousLockSnapshot,
+      candidates: [
+        previousLockSnapshot.candidates[0],
+        previousLockSnapshot.candidates[0],
+      ],
+    })
+    const path = tempFile('duplicate-same-side-package.json', JSON.stringify(fixture))
+    try {
+      expect(JSON.parse(runCompareBenchmark(['--fixture', path, '--json']).stdout)).toMatchObject({
+        issues: [{
+          message: 'previousSnapshots lock candidate expectedPackage values must be unique',
         }],
       })
     } finally {

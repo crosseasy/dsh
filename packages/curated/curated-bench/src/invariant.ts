@@ -4,7 +4,7 @@
  */
 
 import { createHash } from 'node:crypto'
-import { existsSync, opendirSync, readFileSync, type Dir } from 'node:fs'
+import { existsSync, opendirSync, type Dir } from 'node:fs'
 import { isAbsolute, join, posix, win32 } from 'node:path'
 import type { Context } from '@deepseek-ai/cordis'
 import type { InvariantInstaller } from '@deepseek-ai/dsh-invariants'
@@ -16,6 +16,7 @@ import {
   assertBenchmarkSnapshotSchemaVersion,
   canonicalBenchmarkJson,
   readBoundBenchmarkSnapshotReference,
+  readContainedBenchmarkJson,
 } from './snapshot.ts'
 import {
   type CuratedBenchAssetDirs,
@@ -184,7 +185,7 @@ export const inject = ['invariants']
 
 
 /**
- * Validate the benchmark asset directories required by the curated scripts.
+ * Validate bounded plain-JSON benchmark assets and their directory sentinels.
  * @param dirs - Directory paths for each fixture class.
  * @returns invariant failure messages, empty when all required assets are valid.
  */
@@ -195,24 +196,64 @@ export function validateCuratedBenchAssets(dirs: CuratedBenchAssetDirs): readonl
     ['tasks', dirs.tasks],
     ['baselines', dirs.baselines],
   ] as const) {
-    if (!existsSync(join(dir, '.keep.json'))) messages.push(`curated benchmark ${label} directory is missing its sentinel`)
+    const sentinelLabel = `curated benchmark ${label} directory sentinel`
+    if (!existsSync(join(dir, '.keep.json'))) {
+      messages.push(`curated benchmark ${label} directory is missing its sentinel`)
+      continue
+    }
+    const sentinel = readJsonObject(dir, '.keep.json', sentinelLabel, messages)
+    if (sentinel !== undefined) {
+      validateExactKeys(sentinel, ['purpose'], sentinelLabel, messages)
+      requireNonEmptyString(sentinel.purpose, `${sentinelLabel}.purpose`, messages)
+    }
   }
   if (messages.length > 0) return messages
-  messages.push(...validateRiskGateAsset(join(dirs.tasks, 'p2-risk-gates.json')))
-  messages.push(...validateWebCdpAsset(join(dirs.baselines, 'web-cdp-regression.json')))
-  messages.push(...validateAbComparisonAsset(join(dirs.baselines, 'ab-comparisons.json')))
-  messages.push(...validateBenchmarkAsset(join(dirs.baselines, 'benchmark.json')))
+  const candidateManifestPath = join(dirs.manifests, 'curated-candidates.json')
+  const taskSetPath = join(dirs.tasks, 'curated-tasksets.json')
+  if (!existsSync(candidateManifestPath)) {
+    messages.push('curated benchmark manifests/curated-candidates.json is missing')
+  }
+  if (!existsSync(taskSetPath)) {
+    messages.push('curated benchmark tasks/curated-tasksets.json is missing')
+  } else {
+    messages.push(...validateTaskSetAsset(dirs.tasks))
+  }
+  messages.push(...validateRiskGateAsset(dirs.tasks))
+  messages.push(...validateWebCdpAsset(dirs.baselines))
+  messages.push(...validateAbComparisonAsset(dirs.baselines))
+  messages.push(...validateBenchmarkAsset(dirs.baselines))
   messages.push(...validatePublishedSnapshots(dirs.baselines))
   messages.push(...validatePlanningHistory(dirs.baselines))
-  const candidateManifestPath = join(dirs.manifests, 'curated-candidates.json')
   const candidateSnapshotPath = join(dirs.baselines, 'locks/web-curated.json')
   const candidateProfilePath = join(dirs.baselines, 'profiles/web-curated.json')
-  if (existsSync(candidateManifestPath) && existsSync(candidateSnapshotPath) && existsSync(candidateProfilePath)) {
+  const candidateSnapshotExists = existsSync(candidateSnapshotPath)
+  const candidateProfileExists = existsSync(candidateProfilePath)
+  if (!candidateSnapshotExists) {
+    messages.push('curated benchmark baselines/locks/web-curated.json lock snapshot is missing')
+  }
+  if (!candidateProfileExists) {
+    messages.push('curated benchmark baselines/profiles/web-curated.json profile snapshot is missing')
+  }
+  if (existsSync(candidateManifestPath) && candidateSnapshotExists && candidateProfileExists) {
     messages.push(...validateCurrentCandidateSnapshot(
-      candidateManifestPath,
-      candidateSnapshotPath,
-      candidateProfilePath,
+      dirs.manifests,
+      dirs.baselines,
     ))
+  }
+  return messages
+}
+
+function validateTaskSetAsset(tasks: string): string[] {
+  const messages: string[] = []
+  const asset = readJsonObject(tasks, 'curated-tasksets.json', 'curated task-set asset', messages)
+  if (asset === undefined) return messages
+  if (asset.schemaVersion !== 1) messages.push('curated task-set asset.schemaVersion must be 1')
+  if (asset.evidenceKind !== 'planned') messages.push('curated task-set asset.evidenceKind must be planned')
+  if (typeof asset.source !== 'string' || asset.source.length === 0) {
+    messages.push('curated task-set asset.source must be a non-empty string')
+  }
+  if (!Array.isArray(asset.taskSets) || asset.taskSets.length === 0) {
+    messages.push('curated task-set asset.taskSets must be a non-empty JSON array')
   }
   return messages
 }
@@ -234,7 +275,7 @@ function validatePublishedSnapshots(baselines: string): string[] {
       messages,
     )) {
       const label = `published ${snapshotKind} snapshot ${relativePath}`
-      const snapshot = readJsonObject(join(baselines, relativePath), label, messages)
+      const snapshot = readJsonObject(baselines, relativePath, label, messages)
       if (snapshot === undefined) continue
       try {
         assertBenchmarkSnapshotSchemaVersion(snapshot, label)
@@ -278,7 +319,7 @@ function validatePlanningHistory(baselines: string): string[] {
     messages,
   )) {
     const label = `curated planning history ${relativePath}`
-    const record = readJsonObject(join(baselines, relativePath), label, messages)
+    const record = readJsonObject(baselines, relativePath, label, messages)
     if (record === undefined) continue
     if (record.schemaVersion !== 1) messages.push(`${label}.schemaVersion must be 1`)
     if (record.kind !== 'curated-planning-history') {
@@ -314,20 +355,21 @@ function listPublishedJsonFiles(
     path: string
     relativePath: string
     depth: number
-  }> = [{
-    directory: opendirSync(root, { bufferSize: 1 }),
-    path: root,
-    relativePath: rootRelativePath,
-    depth: 0,
-  }]
+  }> = []
   let entryCount = 0
   try {
+    directories.push({
+      directory: opendirSync(root, { bufferSize: 1 }),
+      path: root,
+      relativePath: rootRelativePath,
+      depth: 0,
+    })
     while (directories.length > 0) {
       const directory = directories.at(-1) as (typeof directories)[number]
       const entry = directory.directory.readSync()
       if (entry === null) {
         directories.pop()
-        directory.directory.closeSync()
+        closePublishedDirectory(directory.directory)
         continue
       }
       entryCount += 1
@@ -363,8 +405,21 @@ function listPublishedJsonFiles(
       }
     }
     return files.sort()
+  } catch (error) {
+    messages.push(`${collectionLabel} cannot be traversed: ${String(error).replace(/^Error: /u, '')}`)
+    return files.sort()
   } finally {
-    while (directories.length > 0) directories.pop()?.directory.closeSync()
+    while (directories.length > 0) {
+      closePublishedDirectory((directories.pop() as (typeof directories)[number]).directory)
+    }
+  }
+}
+
+function closePublishedDirectory(directory: Dir): void {
+  try {
+    directory.closeSync()
+  } catch {
+    // A close failure cannot invalidate or replace the collected diagnostics.
   }
 }
 
@@ -467,9 +522,10 @@ function isCalendarDate(value: unknown): boolean {
     && new Date(timestamp).toISOString() === `${value}T00:00:00.000Z`
 }
 
-function validateBenchmarkAsset(path: string): string[] {
+function validateBenchmarkAsset(baselines: string): string[] {
   const messages: string[] = []
-  const asset = readJsonObject(path, 'benchmark asset', messages)
+  const path = join(baselines, 'benchmark.json')
+  const asset = readJsonObject(baselines, 'benchmark.json', 'benchmark asset', messages)
   if (asset === undefined) return messages
   if (asset.schemaVersion !== 3) messages.push('benchmark asset.schemaVersion must be 3')
   validateEvidenceKind(asset.evidenceKind, 'benchmark asset', ['observed', 'fixture', 'planned'], messages)
@@ -593,14 +649,28 @@ function validateReferencedSnapshot(
 }
 
 function validateCurrentCandidateSnapshot(
-  manifestPath: string,
-  snapshotPath: string,
-  profilePath: string,
+  manifests: string,
+  baselines: string,
 ): string[] {
   const messages: string[] = []
-  const manifest = readJsonObject(manifestPath, 'curated candidate manifest', messages)
-  const snapshot = readJsonObject(snapshotPath, 'web-curated lock snapshot', messages)
-  const profile = readJsonObject(profilePath, 'web-curated profile snapshot', messages)
+  const manifest = readJsonObject(
+    manifests,
+    'curated-candidates.json',
+    'curated candidate manifest',
+    messages,
+  )
+  const snapshot = readJsonObject(
+    baselines,
+    'locks/web-curated.json',
+    'web-curated lock snapshot',
+    messages,
+  )
+  const profile = readJsonObject(
+    baselines,
+    'profiles/web-curated.json',
+    'web-curated profile snapshot',
+    messages,
+  )
   if (manifest === undefined || snapshot === undefined || profile === undefined) return messages
   try {
     assertBenchmarkSnapshotSchemaVersion(snapshot, 'web-curated lock snapshot')
@@ -732,9 +802,9 @@ function validateRollbackCandidates(
   }
 }
 
-function validateRiskGateAsset(path: string): string[] {
+function validateRiskGateAsset(tasks: string): string[] {
   const messages: string[] = []
-  const asset = readJsonObject(path, 'p2 risk gate asset', messages)
+  const asset = readJsonObject(tasks, 'p2-risk-gates.json', 'p2 risk gate asset', messages)
   if (asset === undefined) return messages
   validateExactKeys(asset, P2_RISK_GATE_FIELDS, 'p2 risk gate asset', messages)
   if (Object.hasOwn(asset, 'schemaVersion') && asset.schemaVersion !== 1) {
@@ -841,9 +911,14 @@ function validateRiskGateAsset(path: string): string[] {
   return messages
 }
 
-function validateWebCdpAsset(path: string): string[] {
+function validateWebCdpAsset(baselines: string): string[] {
   const messages: string[] = []
-  const asset = readJsonObject(path, 'web CDP regression asset', messages)
+  const asset = readJsonObject(
+    baselines,
+    'web-cdp-regression.json',
+    'web CDP regression asset',
+    messages,
+  )
   if (asset === undefined) return messages
   validateEvidenceKind(asset.evidenceKind, 'web CDP regression asset', ['planned'], messages)
   const browser = objectField(asset, 'browser', 'web CDP regression asset', messages)
@@ -855,9 +930,14 @@ function validateWebCdpAsset(path: string): string[] {
   return messages
 }
 
-function validateAbComparisonAsset(path: string): string[] {
+function validateAbComparisonAsset(baselines: string): string[] {
   const messages: string[] = []
-  const asset = readJsonObject(path, 'A/B comparison asset', messages)
+  const asset = readJsonObject(
+    baselines,
+    'ab-comparisons.json',
+    'A/B comparison asset',
+    messages,
+  )
   if (asset === undefined) return messages
   validateExactKeys(asset, AB_COMPARISON_ASSET_FIELDS, 'A/B comparison asset', messages)
   if (asset.schemaVersion !== 1) messages.push('A/B comparison asset.schemaVersion must be 1')
@@ -1101,12 +1181,19 @@ function validateAbComparisons(
   }
 }
 
-function readJsonObject(path: string, label: string, messages: string[]): Record<string, unknown> | undefined {
+function readJsonObject(
+  root: string,
+  reference: string,
+  label: string,
+  messages: string[],
+): Record<string, unknown> | undefined {
   try {
-    const parsed = JSON.parse(readFileSync(path, 'utf8')) as unknown
+    const parsed = readContainedBenchmarkJson(root, reference, label, 'benchmark asset directory')
+    canonicalBenchmarkJson(parsed)
     if (isRecord(parsed)) return parsed
     messages.push(`${label} must be a JSON object`)
   } catch (error) {
+    /* v8 ignore next -- contained JSON reads and filesystem operations normalize failures to Error. */
     messages.push(`${label} cannot be loaded: ${error instanceof Error ? error.message : String(error)}`)
   }
   return undefined

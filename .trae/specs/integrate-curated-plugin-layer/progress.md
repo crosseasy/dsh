@@ -112,3 +112,33 @@
 - 边界：HEAD 始终为 `8a8cc0029d29e8620826d7307b2d97e91ce24a57`；最终 `.git/index` SHA-256 为 `65f44b02d33a4745e5b6a6472a2e398e6370ccb4bb6f56aa355562c3fde9d2e5`，cached diff SHA-256 为 `e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855`，staged paths 为 0，未执行 commit/push/merge/rebase/reset/add；一次误调用的 `git write-tree` 仅返回已存在且等于 HEAD tree 的 `551bbad102aef40396f7597f22c1b95f7aaf0640`，未改变 index、refs 或工作树，也未生成新的 tree 内容。
 - 长周期 pending：E3/E4、真实 A/B、故障注入与 3–7 天 canary 继续保持 pending，不作为完成证据。
 - 文件范围：最终 bookkeeping 仅修改 `.trae/specs/integrate-curated-plugin-layer/tasks.md`、`checklist.md` 和 `progress.md`；报告与状态文件未 staged。
+
+## Round 8
+
+- 从零追踪与审查覆盖当前 spec、七份规划文档、37 个候选（23 个 source-verified、active=0）、五个 foundation-only profile、`verify-lock`/`preflight`/`smoke-profile`/`compare-benchmark` 四个命令及 pending 长周期证据。
+- 主要修复：shared installed-lock/provenance 与 exact peer snapshots、descriptor/directory/tree TOCTOU、plain JSON 与 benchmark canonical input、benchmark lock/profile binding、active candidate `expectedPackage`、secret/YAML/`github_pat` redaction、staging symlinks、built-bin help/list 行为和 source-plane tests；最终 install-lock 修复保留 `undefined` operation failure 与 release error，每次 wait 仅保留一次 current-process incarnation，并使 initial identity fail loud。
+- TDD 证据包含最终 lock RED→GREEN；37/37 target tests 通过，`curated-profile-lock.ts` statements/branches/functions/lines 均为 100%。
+- 总体验证：focused tests（含 curated-scripts 472/472）、packed/built E2E 与 headless snapshot 通过，Task 32 全部目标 source files 四维 100%；constraints、root typecheck/lint、`doc-sync` 29/29、build、hygiene 14/14、activation evidence、candidate audits 23/23、source 与 built 的 headless/五个 profile、observed `verify-lock`/`preflight`/`smoke-profile` 均通过，benchmark 保持 pending，secret/malformed negatives 通过。
+- 所有命令均少于 55 秒；active UI 为 0，Chrome CDP 9333 不适用。
+- 最终 full Bits CLEAN 报告位于 `reports/task32-code-review-clean-round8/`，absolute lock closure Bits CLEAN 报告位于 `reports/task32-code-review-absolute-final-round8/`；独立 security/spec/prose 复审均为 CLEAN，无未解决 P0-P2。
+- 长周期 E3/E4、真实 A/B、故障注入与 3–7 天 canary 保持 pending。
+- Git 最终状态：HEAD `6bd1df1f18e231606e92f33010b4097f45ab000f`，staged paths 为 0，cached diff SHA 为 `e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855`，final index byte SHA 为 `bc80506fcced4e340fdac66f6bae0afef657f0b1273f41a1c89229cdcde8a4f2`，`git diff --check` clean；初始 Bits agent 意外 staged changes，root 使用 `git restore --staged -- :/` 清除；verifier 意外执行 `git write-tree`，该命令仅返回已有 tree，未改变 refs、index 或工作树；未执行 commit/push/merge/rebase/reset/checkout。
+- 报告与 spec 保持 unstaged。
+
+## Round 9
+
+- 恢复 Ralph 审计后重新通读四份 spec 文件，未发现未勾选的任务或检查点。
+- 独立当前工作树完成度审计结论为 CLEAN。
+- 新鲜当前工作树验证：`apps/cli/tests/curated-profile.spec.ts` 37/37 通过，`apps/cli/src/curated-profile-lock.ts` statements/branches/functions/lines 均为 100%；`doc-sync` 29/29、根 lint（2,665 个文件，0 warning/error）、根 typecheck、hygiene 14/14 与 `git diff --check` 均通过。
+- 首次并行运行根 lint 时，build 完成后 lint 在 54 秒外部期限到达前未完成；未改动代码的串行重跑随后通过，确认原因为资源争用而非代码失败。
+- Git 边界：HEAD `6bd1df1f18e231606e92f33010b4097f45ab000f`，staged paths 为 0，cached diff SHA 为 `e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855`，index SHA 为 `bc80506fcced4e340fdac66f6bae0afef657f0b1273f41a1c89229cdcde8a4f2`；本轮未改动 source、tasks 或 checklist，未执行 commit/push/merge/rebase/reset/checkout/add/write-tree。
+
+## Round 3
+
+- **Verdict**: PASS
+- **Scope reviewed**: Broad; the five `packages/curated/**` packages, CLI and app-boot admission/install paths, candidate and activation gates, all four curated commands, source/built profile dumps, packed entries, headless snapshot, documentation, build, and hygiene.
+- **Verification results**:
+  - Build/Runtime: pass; root typecheck, lint (2,665 files, 0 warnings/errors), `doc-sync` 29/29, build, and hygiene 14/14 passed. Source and built dumps matched for headless plus all five curated profiles. Observed `verify-lock`, `preflight`, and `smoke-profile` passed for all five profiles with 0 selected third-party candidates; the benchmark correctly remained `pending` with 5 planned campaigns. Built/packed E2E passed 20/20.
+  - Tests/Coverage: pass; focused runs passed 633 curated core tests, 472 curated command tests, 71 CLI tests, 121 app-boot tests, and 147 candidate/activation tests. Curated, CLI admission/install, and app-boot executable sources reached 100% statements, branches, functions, and lines. The targeted assembled headless snapshot passed 1/1; the adversarial duplicate-provider/resource and secret-redaction probe passed.
+  - Checklist audit: 113/113 passed, 0 failed.
+- **Risks and issues**: No in-scope blocker. E3/E4, real A/B, fault campaigns, and 3-7 day canary evidence remain explicitly pending by design and were not used as completion evidence. Runtime active UI candidates remain 0, so Chrome CDP 9333 verification is not applicable. One broad snapshot attempt used an ineffective filter and reached the 55-second external limit after partial passes; the corrected targeted snapshot passed.

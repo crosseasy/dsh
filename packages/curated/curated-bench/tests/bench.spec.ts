@@ -1573,6 +1573,68 @@ describe('curated benchmark assets', () => {
     }
   })
 
+  it('returns labelled messages for published snapshot traversal failures', async () => {
+    const root = mkdtempSync(join(tmpdir(), 'dsh-curated-bench-traversal-failure-'))
+    const manifests = join(root, 'manifests')
+    const tasks = join(root, 'tasks')
+    const baselines = join(root, 'baselines')
+    cpSync(curatedBenchManifestsDir, manifests, { recursive: true })
+    cpSync(curatedBenchTasksDir, tasks, { recursive: true })
+    cpSync(curatedBenchBaselinesDir, baselines, { recursive: true })
+    mkdirSync(join(baselines, 'locks/nested-failure'))
+    let mode: 'initial' | 'nested' | 'read' | 'close' = 'initial'
+    const closeSync = vi.fn(() => {
+      if (mode === 'read' || mode === 'close') throw new Error('close denied')
+    })
+    vi.resetModules()
+    vi.doMock('node:fs', async () => {
+      const actual = await vi.importActual<typeof import('node:fs')>('node:fs')
+      return {
+        ...actual,
+        opendirSync: (path: Parameters<typeof actual.opendirSync>[0]) => {
+          const text = String(path)
+          if (text === join(baselines, 'locks')) {
+            if (mode === 'initial') throw new Error('initial open denied')
+            if (mode === 'read' || mode === 'close') {
+              return {
+                readSync: () => {
+                  if (mode === 'read') throw new Error('read denied')
+                  return null
+                },
+                closeSync,
+              } as unknown as ReturnType<typeof actual.opendirSync>
+            }
+          }
+          if (mode === 'nested' && text === join(baselines, 'locks/nested-failure')) {
+            throw new Error('nested open denied')
+          }
+          return actual.opendirSync(path)
+        },
+      }
+    })
+    try {
+      const mockedInvariant = await import('../src/invariant.ts')
+      const validate = (): readonly string[] => mockedInvariant.validateCuratedBenchAssets({
+        manifests,
+        tasks,
+        baselines,
+      })
+
+      expect(validate()).toContain('published lock snapshots cannot be traversed: initial open denied')
+      mode = 'nested'
+      expect(validate()).toContain('published lock snapshots cannot be traversed: nested open denied')
+      mode = 'read'
+      expect(validate()).toContain('published lock snapshots cannot be traversed: read denied')
+      expect(closeSync).toHaveBeenCalled()
+      mode = 'close'
+      expect(() => validate()).not.toThrow()
+    } finally {
+      vi.doUnmock('node:fs')
+      vi.resetModules()
+      rmSync(root, { recursive: true, force: true })
+    }
+  })
+
   it('accepts the exact published snapshot directory depth limit', () => {
     const makeFixture = (suffix: string) => {
       const root = mkdtempSync(join(tmpdir(), `dsh-curated-bench-snapshot-${suffix}-`))
@@ -1741,6 +1803,28 @@ describe('curated benchmark assets', () => {
     }
   })
 
+  it.each([
+    ['locks', 'lock'],
+    ['profiles', 'profile'],
+  ] as const)('requires the canonical web-curated %s snapshot', (directory, kind) => {
+    const root = mkdtempSync(join(tmpdir(), 'dsh-curated-bench-canonical-snapshot-'))
+    const manifests = join(root, 'manifests')
+    const tasks = join(root, 'tasks')
+    const baselines = join(root, 'baselines')
+    cpSync(curatedBenchManifestsDir, manifests, { recursive: true })
+    cpSync(curatedBenchTasksDir, tasks, { recursive: true })
+    cpSync(curatedBenchBaselinesDir, baselines, { recursive: true })
+    rmSync(join(baselines, directory, 'web-curated.json'))
+
+    try {
+      expect(invariantPlugin.validateCuratedBenchAssets({ manifests, tasks, baselines })).toContain(
+        `curated benchmark baselines/${directory}/web-curated.json ${kind} snapshot is missing`,
+      )
+    } finally {
+      rmSync(root, { recursive: true, force: true })
+    }
+  })
+
   it('rejects a current rollback candidate without an exact install source', () => {
     const root = mkdtempSync(join(tmpdir(), 'dsh-curated-bench-source-'))
     const manifests = join(root, 'manifests')
@@ -1859,6 +1943,86 @@ describe('curated benchmark assets', () => {
     }
   })
 
+  it('bounds runtime asset listing by depth and total entries', () => {
+    const root = mkdtempSync(join(tmpdir(), 'dsh-curated-bench-list-bounds-'))
+    const depthRoot = join(root, 'depth')
+    const entriesRoot = join(root, 'entries')
+    mkdirSync(depthRoot)
+    mkdirSync(entriesRoot)
+    try {
+      let parent = depthRoot
+      for (let depth = 1; depth <= 64; depth += 1) {
+        parent = join(parent, `nested-${String(depth).padStart(2, '0')}`)
+        mkdirSync(parent)
+      }
+      writeFileSync(join(parent, 'limit.json'), '{}\n')
+      expect(new CuratedBench({ baselines: depthRoot }).listAssets('baselines'))
+        .toEqual([`${Array.from({ length: 64 }, (_, index) =>
+          `nested-${String(index + 1).padStart(2, '0')}`).join('/')}/limit.json`])
+
+      const tooDeep = join(parent, 'nested-65')
+      mkdirSync(tooDeep)
+      expect(() => new CuratedBench({ baselines: depthRoot }).listAssets('baselines'))
+        .toThrow('curated benchmark asset tree must contain at most 64 nested directory levels')
+
+      for (let index = 0; index < 1_025; index += 1) {
+        writeFileSync(join(entriesRoot, `${String(index).padStart(4, '0')}.json`), '{}\n')
+      }
+      expect(() => new CuratedBench({ baselines: entriesRoot }).listAssets('baselines'))
+        .toThrow('curated benchmark asset tree must contain at most 1024 entries')
+    } finally {
+      rmSync(root, { recursive: true, force: true })
+    }
+  })
+
+  it('stops incremental runtime asset listing at the first entry over the limit', async () => {
+    const root = mkdtempSync(join(tmpdir(), 'dsh-curated-bench-list-incremental-'))
+    const baselines = join(root, 'baselines')
+    mkdirSync(baselines)
+    let nextEntry = 0
+    const readSync = vi.fn(() => {
+      const name = `${String(nextEntry).padStart(4, '0')}.json`
+      nextEntry += 1
+      return {
+        name,
+        isDirectory: () => false,
+        isFile: () => true,
+      }
+    })
+    const closeSync = vi.fn(() => {
+      throw new Error('close denied')
+    })
+    vi.resetModules()
+    vi.doMock('node:fs', async () => {
+      const actual = await vi.importActual<typeof import('node:fs')>('node:fs')
+      return {
+        ...actual,
+        readdirSync: (path: Parameters<typeof actual.readdirSync>[0]) => {
+          if (String(path) === baselines) throw new Error('eager traversal used')
+          return actual.readdirSync(path)
+        },
+        opendirSync: (path: Parameters<typeof actual.opendirSync>[0]) => {
+          if (String(path) === baselines) {
+            return { readSync, closeSync } as unknown as ReturnType<typeof actual.opendirSync>
+          }
+          return actual.opendirSync(path)
+        },
+      }
+    })
+    try {
+      const { CuratedBench: MockedCuratedBench } = await import('../src/index.ts')
+
+      expect(() => new MockedCuratedBench({ baselines }).listAssets('baselines'))
+        .toThrow('curated benchmark asset tree must contain at most 1024 entries')
+      expect(readSync).toHaveBeenCalledTimes(1025)
+      expect(closeSync).toHaveBeenCalledTimes(1)
+    } finally {
+      vi.doUnmock('node:fs')
+      vi.resetModules()
+      rmSync(root, { recursive: true, force: true })
+    }
+  })
+
   it('rejects unsafe benchmark service asset paths and non-plain JSON', () => {
     const root = mkdtempSync(join(tmpdir(), 'dsh-curated-bench-service-'))
     const baselines = join(root, 'baselines')
@@ -1866,6 +2030,7 @@ describe('curated benchmark assets', () => {
     writeFileSync(join(baselines, 'undefined.json'), '{}\n')
     writeFileSync(join(baselines, 'date.json'), '{}\n')
     writeFileSync(join(baselines, 'null-prototype.json'), '{}\n')
+    writeFileSync(join(baselines, 'malformed.json'), '{]\n')
     const service = new CuratedBench({ baselines })
     const nullPrototype = Object.create(null) as Record<string, unknown>
     nullPrototype.ok = true
@@ -1880,8 +2045,27 @@ describe('curated benchmark assets', () => {
       parse.mockReturnValueOnce(nullPrototype)
       expect(service.readAsset('baselines', 'null-prototype.json')).toBe(nullPrototype)
       expect(Object.isFrozen(nullPrototype)).toBe(true)
+      expect(() => service.readAsset('baselines', 'malformed.json')).toThrow(
+        'curated benchmark asset path must contain valid JSON',
+      )
     } finally {
       parse.mockRestore()
+      rmSync(root, { recursive: true, force: true })
+    }
+  })
+
+  it('rejects a benchmark service asset symlink outside its configured directory', () => {
+    const root = mkdtempSync(join(tmpdir(), 'dsh-curated-bench-service-link-'))
+    const baselines = join(root, 'baselines')
+    const outside = join(root, 'outside.json')
+    mkdirSync(baselines, { recursive: true })
+    writeFileSync(outside, '{"outside":true}\n')
+    symlinkSync(outside, join(baselines, 'linked.json'))
+    try {
+      expect(() => new CuratedBench({ baselines }).readAsset('baselines', 'linked.json')).toThrow(
+        'curated benchmark asset path must reference a regular file',
+      )
+    } finally {
       rmSync(root, { recursive: true, force: true })
     }
   })
@@ -1896,9 +2080,80 @@ describe('curated benchmark assets', () => {
       expect(() => canonicalBenchmarkJson(undefined)).toThrow(
         'benchmark snapshots must contain plain JSON values',
       )
+      expect(() => canonicalBenchmarkJson(Number.POSITIVE_INFINITY)).toThrow(
+        'benchmark snapshots must contain finite numbers',
+      )
+      expect(() => canonicalBenchmarkJson(new Date(0))).toThrow(
+        'benchmark snapshots must contain plain JSON values',
+      )
+      const nullPrototype = Object.create(null) as Record<string, unknown>
+      nullPrototype.ok = true
+      expect(canonicalBenchmarkJson(nullPrototype)).toBe('{"ok":true}')
     } finally {
       rmSync(root, { recursive: true, force: true })
     }
+  })
+
+  it('accepts dense ordinary arrays and rejects non-plain array values', () => {
+    class ArraySubclass extends Array<unknown> {}
+    const sparseWithExtraProperty = new Array(1) as unknown[] & { extra?: boolean }
+    sparseWithExtraProperty.extra = true
+    const extraStringProperty = [null] as unknown[] & { extra?: boolean }
+    extraStringProperty.extra = true
+    const extraSymbolProperty = [null]
+    Object.defineProperty(extraSymbolProperty, Symbol('extra'), { value: true })
+
+    expect(canonicalBenchmarkJson([null, { value: true }])).toBe(
+      '[null,{"value":true}]',
+    )
+    for (const value of [
+      new Array(1),
+      sparseWithExtraProperty,
+      new ArraySubclass(null),
+      extraStringProperty,
+      extraSymbolProperty,
+    ]) {
+      expect(() => canonicalBenchmarkJson(value)).toThrow(
+        'benchmark snapshots must contain plain JSON arrays',
+      )
+    }
+  })
+
+  it.each([
+    ['symbol key', (value: Record<PropertyKey, unknown>) => {
+      value[Symbol('extra')] = true
+    }],
+    ['non-enumerable property', (value: Record<PropertyKey, unknown>) => {
+      Object.defineProperty(value, 'hidden', { value: true })
+    }],
+  ] as const)('rejects a benchmark object with a %s', (_name, mutate) => {
+    const value: Record<PropertyKey, unknown> = { visible: true }
+    mutate(value)
+
+    expect(() => canonicalBenchmarkJson(value)).toThrow(
+      'benchmark snapshots must contain plain JSON values',
+    )
+  })
+
+  it('rejects a benchmark object accessor without invoking its getter', () => {
+    let getterCalls = 0
+    const value = Object.defineProperty({}, 'accessor', {
+      enumerable: true,
+      get: () => {
+        getterCalls += 1
+        return true
+      },
+    })
+    let failure: unknown
+
+    try {
+      canonicalBenchmarkJson(value)
+    } catch (error) {
+      failure = error
+    }
+
+    expect(getterCalls).toBe(0)
+    expect(failure).toEqual(expect.any(Error))
   })
 
   it('requires one complete exact install source per rollback candidate', () => {
@@ -2051,6 +2306,11 @@ describe('curated benchmark assets', () => {
     mkdirSync(join(fixtures, 'directory.json'))
     writeFileSync(join(fixtures, 'array.json'), '[]\n')
     writeFileSync(join(fixtures, 'large.json'), ' '.repeat(1024 * 1024 + 1))
+    writeFileSync(join(fixtures, 'invalid-utf8.json'), Buffer.concat([
+      Buffer.from('{"value":"'),
+      Buffer.from([0x80]),
+      Buffer.from('"}'),
+    ]))
     symlinkSync('locks/web.json', join(fixtures, 'final-link.json'))
     const fifo = join(fixtures, 'fifo.json')
     if (process.platform !== 'win32') expect(spawnSync('mkfifo', [fifo]).status).toBe(0)
@@ -2086,6 +2346,8 @@ describe('curated benchmark assets', () => {
         .toThrow('snapshot must reference a JSON object')
       expect(() => readBenchmarkSnapshotReference(fixture, 'large.json', 'snapshot'))
         .toThrow('snapshot exceeds 1048576 bytes')
+      expect(() => readBenchmarkSnapshotReference(fixture, 'invalid-utf8.json', 'snapshot'))
+        .toThrow('snapshot must contain valid JSON')
     } finally {
       rmSync(root, { recursive: true, force: true })
     }
@@ -2341,6 +2603,8 @@ describe('curated benchmark assets', () => {
     }))
     try {
       expect(invariantPlugin.validateCuratedBenchAssets({ manifests, tasks, baselines })).toEqual([
+        'curated benchmark manifests/curated-candidates.json is missing',
+        'curated benchmark tasks/curated-tasksets.json is missing',
         riskGateExactFieldsMessage,
         'p2 risk gate asset.failureInjection must be a JSON array',
         'benchmark previous lock snapshot.sha256 does not match its embedded snapshot',
@@ -2349,6 +2613,8 @@ describe('curated benchmark assets', () => {
         'benchmark baseline profile snapshot must be a JSON object',
         'benchmark candidate lock snapshot must be a JSON object',
         'benchmark candidate profile snapshot must be a JSON object',
+        'curated benchmark baselines/locks/web-curated.json lock snapshot is missing',
+        'curated benchmark baselines/profiles/web-curated.json profile snapshot is missing',
       ])
     } finally {
       rmSync(root, { recursive: true, force: true })
@@ -2385,11 +2651,15 @@ describe('curated benchmark assets', () => {
     writeFileSync(join(baselines, 'benchmark.json'), '{"schemaVersion":3,"evidenceKind":"fixture"}\n')
     try {
       expect(invariantPlugin.validateCuratedBenchAssets({ manifests, tasks, baselines })).toEqual([
+        'curated benchmark manifests/curated-candidates.json is missing',
+        'curated benchmark tasks/curated-tasksets.json is missing',
         riskGateExactFieldsMessage,
         'p2 risk gate asset.failureInjection must be a JSON array',
         'benchmark asset.previousSnapshots must be a JSON object',
         'benchmark asset.baseline must be a JSON object',
         'benchmark asset.candidate must be a JSON object',
+        'curated benchmark baselines/locks/web-curated.json lock snapshot is missing',
+        'curated benchmark baselines/profiles/web-curated.json profile snapshot is missing',
       ])
     } finally {
       rmSync(root, { recursive: true, force: true })
@@ -2427,6 +2697,8 @@ describe('curated benchmark assets', () => {
     }))
     try {
       expect(invariantPlugin.validateCuratedBenchAssets({ manifests, tasks, baselines })).toEqual([
+        'curated benchmark manifests/curated-candidates.json is missing',
+        'curated benchmark tasks/curated-tasksets.json is missing',
         riskGateExactFieldsMessage,
         'p2 risk gate asset.failureInjection must be a JSON array',
         'p2 risk gate canary durationDays must equal the numeric array [3, 7]',
@@ -2441,6 +2713,8 @@ describe('curated benchmark assets', () => {
         'A/B comparison must include mcp-panel-vs-mcp-manager',
         'A/B comparison must include cost-meter-vs-tokenledger',
         expect.stringContaining('benchmark asset cannot be loaded:'),
+        'curated benchmark baselines/locks/web-curated.json lock snapshot is missing',
+        'curated benchmark baselines/profiles/web-curated.json profile snapshot is missing',
       ])
     } finally {
       rmSync(root, { recursive: true, force: true })
@@ -2459,10 +2733,127 @@ describe('curated benchmark assets', () => {
 
     try {
       expect(invariantPlugin.validateCuratedBenchAssets({ manifests, tasks, baselines })).toEqual([
+        'curated benchmark manifests/curated-candidates.json is missing',
+        'curated benchmark tasks/curated-tasksets.json is missing',
         expect.stringContaining('p2 risk gate asset cannot be loaded:'),
         expect.stringContaining('web CDP regression asset cannot be loaded:'),
         expect.stringContaining('A/B comparison asset cannot be loaded:'),
         expect.stringContaining('benchmark asset cannot be loaded:'),
+        'curated benchmark baselines/locks/web-curated.json lock snapshot is missing',
+        'curated benchmark baselines/profiles/web-curated.json profile snapshot is missing',
+      ])
+    } finally {
+      rmSync(root, { recursive: true, force: true })
+    }
+  })
+
+  it('requires each benchmark directory sentinel to be a contained purpose object', () => {
+    const root = mkdtempSync(join(tmpdir(), 'dsh-curated-bench-sentinel-validation-'))
+    const manifests = join(root, 'manifests')
+    const tasks = join(root, 'tasks')
+    const baselines = join(root, 'baselines')
+    cpSync(curatedBenchManifestsDir, manifests, { recursive: true })
+    cpSync(curatedBenchTasksDir, tasks, { recursive: true })
+    cpSync(curatedBenchBaselinesDir, baselines, { recursive: true })
+    writeFileSync(join(manifests, '.keep.json'), '{]\n')
+    writeFileSync(join(tasks, '.keep.json'), '[]\n')
+    writeFileSync(join(baselines, '.keep.json'), '{"purpose":""}\n')
+    try {
+      expect(invariantPlugin.validateCuratedBenchAssets({ manifests, tasks, baselines }))
+        .toEqual(expect.arrayContaining([
+          expect.stringContaining('curated benchmark manifests directory sentinel cannot be loaded:'),
+          'curated benchmark tasks directory sentinel must be a JSON object',
+          'curated benchmark baselines directory sentinel.purpose must be a non-empty string',
+        ]))
+    } finally {
+      rmSync(root, { recursive: true, force: true })
+    }
+  })
+
+  it('rejects non-finite JSON values during static asset validation', () => {
+    const root = mkdtempSync(join(tmpdir(), 'dsh-curated-bench-static-json-'))
+    const manifests = join(root, 'manifests')
+    const tasks = join(root, 'tasks')
+    const baselines = join(root, 'baselines')
+    cpSync(curatedBenchManifestsDir, manifests, { recursive: true })
+    cpSync(curatedBenchTasksDir, tasks, { recursive: true })
+    cpSync(curatedBenchBaselinesDir, baselines, { recursive: true })
+    writeFileSync(join(tasks, 'curated-tasksets.json'), '{"schemaVersion":1e400}\n')
+    try {
+      expect(invariantPlugin.validateCuratedBenchAssets({ manifests, tasks, baselines })).toContain(
+        'curated task-set asset cannot be loaded: benchmark snapshots must contain finite numbers',
+      )
+    } finally {
+      rmSync(root, { recursive: true, force: true })
+    }
+  })
+
+  it.each([
+    ['manifests', 'curated-candidates.json'],
+    ['tasks', 'curated-tasksets.json'],
+  ] as const)('requires the %s/%s benchmark asset', (directory, filename) => {
+    const root = mkdtempSync(join(tmpdir(), 'dsh-curated-bench-required-'))
+    const manifests = join(root, 'manifests')
+    const tasks = join(root, 'tasks')
+    const baselines = join(root, 'baselines')
+    cpSync(curatedBenchManifestsDir, manifests, { recursive: true })
+    cpSync(curatedBenchTasksDir, tasks, { recursive: true })
+    cpSync(curatedBenchBaselinesDir, baselines, { recursive: true })
+    rmSync(join(directory === 'manifests' ? manifests : tasks, filename))
+
+    try {
+      expect(invariantPlugin.validateCuratedBenchAssets({ manifests, tasks, baselines })).toContain(
+        `curated benchmark ${directory}/${filename} is missing`,
+      )
+    } finally {
+      rmSync(root, { recursive: true, force: true })
+    }
+  })
+
+  it('rejects a required task-set symlink outside its configured directory', () => {
+    const root = mkdtempSync(join(tmpdir(), 'dsh-curated-bench-required-link-'))
+    const manifests = join(root, 'manifests')
+    const tasks = join(root, 'tasks')
+    const baselines = join(root, 'baselines')
+    const taskSet = join(tasks, 'curated-tasksets.json')
+    const outside = join(root, 'curated-tasksets.json')
+    cpSync(curatedBenchManifestsDir, manifests, { recursive: true })
+    cpSync(curatedBenchTasksDir, tasks, { recursive: true })
+    cpSync(curatedBenchBaselinesDir, baselines, { recursive: true })
+    writeFileSync(outside, readFileSync(taskSet))
+    rmSync(taskSet)
+    symlinkSync(outside, taskSet)
+
+    try {
+      expect(invariantPlugin.validateCuratedBenchAssets({ manifests, tasks, baselines })).toContain(
+        'curated task-set asset cannot be loaded: curated task-set asset must reference a regular file',
+      )
+    } finally {
+      rmSync(root, { recursive: true, force: true })
+    }
+  })
+
+  it('reports every invalid required task-set field', () => {
+    const root = mkdtempSync(join(tmpdir(), 'dsh-curated-bench-taskset-fields-'))
+    const manifests = join(root, 'manifests')
+    const tasks = join(root, 'tasks')
+    const baselines = join(root, 'baselines')
+    cpSync(curatedBenchManifestsDir, manifests, { recursive: true })
+    cpSync(curatedBenchTasksDir, tasks, { recursive: true })
+    cpSync(curatedBenchBaselinesDir, baselines, { recursive: true })
+    writeFileSync(join(tasks, 'curated-tasksets.json'), JSON.stringify({
+      schemaVersion: 2,
+      evidenceKind: 'observed',
+      source: '',
+      taskSets: [],
+    }))
+
+    try {
+      expect(invariantPlugin.validateCuratedBenchAssets({ manifests, tasks, baselines })).toEqual([
+        'curated task-set asset.schemaVersion must be 1',
+        'curated task-set asset.evidenceKind must be planned',
+        'curated task-set asset.source must be a non-empty string',
+        'curated task-set asset.taskSets must be a non-empty JSON array',
       ])
     } finally {
       rmSync(root, { recursive: true, force: true })
@@ -2586,6 +2977,8 @@ describe('curated benchmark assets', () => {
 
     try {
       expect(invariantPlugin.validateCuratedBenchAssets({ manifests, tasks, baselines })).toEqual([
+        'curated benchmark manifests/curated-candidates.json is missing',
+        'curated benchmark tasks/curated-tasksets.json is missing',
         riskGateExactFieldsMessage,
         'p2 risk gate asset.failureInjection must be a JSON array',
         'p2 risk gate asset.canary must be a JSON object',
@@ -2595,6 +2988,8 @@ describe('curated benchmark assets', () => {
         'A/B comparison asset.source must be a non-empty string',
         'A/B comparison asset.comparisons must be a JSON array',
         expect.stringContaining('benchmark asset cannot be loaded:'),
+        'curated benchmark baselines/locks/web-curated.json lock snapshot is missing',
+        'curated benchmark baselines/profiles/web-curated.json profile snapshot is missing',
       ])
     } finally {
       rmSync(root, { recursive: true, force: true })
@@ -2616,10 +3011,14 @@ describe('curated benchmark assets', () => {
 
     try {
       expect(invariantPlugin.validateCuratedBenchAssets({ manifests, tasks, baselines })).toEqual([
+        'curated benchmark manifests/curated-candidates.json is missing',
+        'curated benchmark tasks/curated-tasksets.json is missing',
         'p2 risk gate asset must be a JSON object',
         'web CDP regression asset must be a JSON object',
         'A/B comparison asset must be a JSON object',
         expect.stringContaining('benchmark asset cannot be loaded:'),
+        'curated benchmark baselines/locks/web-curated.json lock snapshot is missing',
+        'curated benchmark baselines/profiles/web-curated.json profile snapshot is missing',
       ])
     } finally {
       rmSync(root, { recursive: true, force: true })
@@ -2642,10 +3041,12 @@ describe('curated benchmark assets', () => {
 
     try {
       expect(invariantPlugin.validateCuratedBenchAssets({ manifests, tasks, baselines })).toEqual([
-        'p2 risk gate asset cannot be loaded: raw parse failure',
-        'web CDP regression asset cannot be loaded: raw parse failure',
-        'A/B comparison asset cannot be loaded: raw parse failure',
-        expect.stringContaining('benchmark asset cannot be loaded:'),
+        'curated benchmark manifests directory sentinel cannot be loaded: '
+        + 'curated benchmark manifests directory sentinel must contain valid JSON',
+        'curated benchmark tasks directory sentinel cannot be loaded: '
+        + 'curated benchmark tasks directory sentinel must contain valid JSON',
+        'curated benchmark baselines directory sentinel cannot be loaded: '
+        + 'curated benchmark baselines directory sentinel must contain valid JSON',
       ])
     } finally {
       parse.mockRestore()

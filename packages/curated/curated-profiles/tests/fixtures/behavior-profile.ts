@@ -8,6 +8,12 @@ import {
   loadProfile,
   resolveProfileDir,
 } from '@deepseek-ai/dsh-app-boot'
+import * as CuratedBenchPlugin from '@deepseek-ai/dsh-curated-bench'
+import * as CuratedPolicyPlugin from '@deepseek-ai/dsh-curated-policy'
+import SessionStore from '@deepseek-ai/dsh-session'
+import SystemPrompt from '@deepseek-ai/dsh-system-prompt'
+import ToolRuntime from '@deepseek-ai/dsh-tools'
+import ApprovalService from '@deepseek-ai/dsh-user-approval'
 import type { Context } from '@deepseek-ai/cordis'
 
 type CuratedFixtureFault =
@@ -44,12 +50,6 @@ const repoRoot = fileURLToPath(new URL('../../../../..', import.meta.url))
 const fixturePackage = fileURLToPath(new URL('./behavior-bundle', import.meta.url))
 const packagePaths = {
   '@deepseek-ai/dsh-curated-base': join(repoRoot, 'packages/curated/curated-base'),
-  '@deepseek-ai/dsh-curated-policy': join(repoRoot, 'packages/curated/curated-policy'),
-  '@deepseek-ai/dsh-curated-bench': join(repoRoot, 'packages/curated/curated-bench'),
-  '@deepseek-ai/dsh-system-prompt': join(repoRoot, 'packages/core/system-prompt'),
-  '@deepseek-ai/dsh-session': join(repoRoot, 'packages/core/session'),
-  '@deepseek-ai/dsh-user-approval': join(repoRoot, 'packages/interaction/user-approval'),
-  '@deepseek-ai/dsh-tools': join(repoRoot, 'packages/core/tools'),
   '@deepseek-ai/dsh-curated-behavior-fixture': fixturePackage,
 } as const
 
@@ -97,11 +97,31 @@ export async function bootCuratedBehaviorProfile(): Promise<{
     ...profile.layers.map(layer => layer.patches),
     profile.patches,
   ])))
+  const sourceModules = new Map<string, unknown>([
+    ['@deepseek-ai/dsh-curated-policy', CuratedPolicyPlugin],
+    ['@deepseek-ai/dsh-curated-bench', CuratedBenchPlugin],
+    ['@deepseek-ai/dsh-system-prompt', SystemPrompt],
+    ['@deepseek-ai/dsh-session', SessionStore],
+    ['@deepseek-ai/dsh-user-approval', ApprovalService],
+    ['@deepseek-ai/dsh-tools', ToolRuntime],
+    [
+      '@deepseek-ai/dsh-curated-behavior-fixture',
+      await import(pathToFileURL(join(fixturePackage, 'plugin.mjs')).href),
+    ],
+  ])
   const ctx = await boot(
     'dsh-curated-behavior-test',
     configPath,
     undefined,
-    undefined,
+    (context) => {
+      context.loader.internal = {
+        version: 'v2',
+        async import(specifier: string) {
+          if (!sourceModules.has(specifier)) throw new Error(`unexpected Loader import: ${specifier}`)
+          return sourceModules.get(specifier)
+        },
+      } as unknown as NonNullable<typeof context.loader.internal>
+    },
     pathToFileURL(installAnchor).href,
   )
   const entry = [...ctx.loader.entries()].find(candidate => candidate.options.id === 'curated-behavior-fixture')

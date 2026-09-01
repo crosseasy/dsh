@@ -12,13 +12,15 @@
 
 ## API
 
-该包导出三个资产根目录的定位值、只读 `ctx.curatedBench` 资产服务，以及供测试和构建门禁执行静态资产检查的 `validateCuratedBenchAssets()`。由于固定 JSON 资产不存在可观测的事件流或可变数据关系，其 invariant companion 为空。消费者从这些目录读取显式 JSON 文件；该包本身不运行 benchmark。
+该包导出三个资产根目录的定位值、只读 `ctx.curatedBench` 资产服务，以及供测试和构建门禁执行静态资产检查的 `validateCuratedBenchAssets()`。Runtime 资产列表使用迭代遍历，最多允许 1,024 个总条目和 64 层嵌套目录。静态校验会把每个必需 `.keep.json` 作为目录内的有界普通文件读取，要求它只包含一个非空 `purpose` 字段，并要求每项解析后的资产都是数值有限的 plain JSON。由于固定 JSON 资产不存在可观测的事件流或可变数据关系，其 invariant companion 为空。消费者从这些目录读取显式 JSON 文件；该包本身不运行 benchmark。
 
 计划中的 P2 故障资产只包含搜索超时、模型 429、浏览器崩溃、SQLite 锁、文件权限拒绝、非法 patch、网络断开和插件初始化异常这八个场景。每个场景都保持 `pending` 且没有 runtime outcome；allowed outcome 只包含该场景真实 runtime 的 `fail-closed` 和恢复结果，不能包含 smoke success。
 
 计划中的 P2 profile 与 A/B 记录使用评测计划规定的封闭字段集和固定值。每个 A/B 条目都保持 `pending`，启用均值、P50、P95 和失败分布统计，并携带全部五项非补偿门槛。
 
 已完成的比较只有在 baseline 与 candidate 记录使用完全相同的模型、提示词、workspace、网络、种子、DSH build 与 measurement 实现，携带相同的任务和 attempt 集，包含每个必需关键任务，并且每个 profile 对每项任务至少重复 5 次时才可准入。DSH build identity 记录包版本、完整源码 revision、源码树 SHA-256、dirty 状态、可执行产物 SHA-256 和 Node 版本。Measurement identity 记录 producer、tokenizer、prompt/schema 序列化、计时、定价与评分实现。阈值决策使用报告舍入前的原始值。Benchmark fixture 使用 schema 3；没有 run 的 planned fixture 可以省略 execution identity。每个内嵌、引用或发布的 lock 或 profile snapshot 使用 snapshot schema 2。发布快照的静态校验递归枚举 `baselines/locks` 与 `baselines/profiles` 树中的全部条目，拒绝符号链接以及既非普通文件也非目录的条目，并把树中的每个 JSON 文件作为 snapshot 校验。每棵树最多包含 1024 个条目，并且从根目录向下最多 64 层，第 65 层会被拒绝。每个被校验的 JSON 文件都必须使用所在树要求的 kind，并包含合法的 profile 与 payload 字段。每个 snapshot 引用只包含相对于 benchmark fixture 目录的安全 JSON 路径与 canonical JSON SHA-256。读取器把首次 unresolved path identity 与目录内的 canonical target 和已打开 descriptor 绑定，在可用平台使用 `O_NOFOLLOW`，并在有界普通文件读取前后校验 descriptor 与路径 identity；在初始检查后替换文件、ancestor 或 final path symlink 会 fail closed。任何过期引用摘要都会被拒绝。Baseline 引用文件必须与通过 SHA-256 校验的内嵌 lock 和 profile snapshot 在 canonical JSON 上完全相等；每个引用 profile 还必须按顺序精确等于对应 shipped 或 curated 权威模板。
+
+Canonical `baselines/locks/web-curated.json` 与 `baselines/profiles/web-curated.json` snapshot 分别属于必需资产。已发布 snapshot 的目录打开与遍历错误会产生带标签的 invariant failure，目录关闭错误则不会逃逸出诊断列表 API。Snapshot 读取要求严格 UTF-8；canonical JSON 会在计算摘要前拒绝非有限数值、带非 plain prototype 的对象、稀疏或 subclassed array，以及带额外自有字符串或 symbol property 的 array。
 
 `baselines/history` 下的文件是递归校验的规划记录，明确使用 `kind: curated-planning-history`、`evidenceKind: planned`、`restorable: false`，并以 `YYYY-MM-DD` 格式记录 canonical UTC `createdAt` 日期。非法月份与日期会产生 validator issue，而不会抛出日期异常。这些记录保留过去的数量、catalog 引用、profile bundle、原记录 kind、原 operator 指令，以及从原 lock/profile 路径迁移到 history 的关系。每个 migration source 都必须是不含绝对路径语法、反斜杠或 `..` segment 的安全相对 JSON 路径；lock source 必须位于 `locks/` 下，profile source 必须位于 `profiles/` 下。它们使用 history schema 1，不是回滚 snapshot；`compare-benchmark` 只接受显式引用的 schema 2 lock 与 profile snapshot。
 

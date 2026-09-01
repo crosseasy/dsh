@@ -101,6 +101,26 @@ describe('loadOptionalPatches', () => {
       .toThrow(new RegExp(`^${NAME}: failed to parse patches `))
   })
 
+  it('redacts a secret-shaped path from malformed YAML diagnostics', () => {
+    const secret = 'github_pat_11AA22BB33CC44DD55EE66FF77GG88HH'
+    const dir = join(tmp(), secret)
+    mkdirSync(dir)
+    const file = join(dir, PROFILE_PATCH_FILENAME)
+    writeFileSync(file, 'invalid: [unclosed\n')
+
+    let failure: unknown
+    try {
+      loadOptionalPatches(NAME, file)
+    } catch (error) {
+      failure = error
+    }
+
+    expect(failure).toBeInstanceOf(Error)
+    expect((failure as Error).message).toContain('[REDACTED]')
+    expect((failure as Error).message).not.toContain(secret)
+    expect(String((failure as Error).cause)).not.toContain(secret)
+  })
+
   it('fails loud when the file is not a top-level array or an entry is not an object', () => {
     const dir = tmp()
     writeFileSync(join(dir, PROFILE_PATCH_FILENAME), 'id: not-a-list\n')
@@ -287,6 +307,51 @@ describe('Loader entry disabled interpolation', () => {
 })
 
 describe('boot with user patches', () => {
+  it('reapplies bound-root patches transactionally and drains the watcher on disposal', async () => {
+    const dir = tmp()
+    const filename = join(tmp(), PROFILE_PATCH_FILENAME)
+    const basePatches: PatchOptions[] = [{
+      insert: [{ id: 'noop', name: './noop.mjs', config: { value: 'generated' } }],
+    }]
+    const ctx = await boot(NAME, writeTree(dir), basePatches, undefined, undefined, {
+      content: '[]\n',
+      assertCurrent: () => {},
+    })
+    let refresh: (() => Promise<void> | void) | undefined
+    let watcherDisposed = false
+    let generation: PatchOptions[] = []
+    try {
+      ctx.provide('hmr', {
+        registerConfig: async (_filename: string, callback: () => Promise<void> | void) => {
+          refresh = callback
+          return async () => { watcherDisposed = true }
+        },
+      })
+      const dispose = await watchUserPatches(ctx, {
+        binName: NAME,
+        filename,
+        mode: 'compose-read',
+        compose: () => structuredClone([...basePatches, ...generation]),
+      })
+
+      generation = [{ id: 'noop', config: { value: 'live' } }]
+      await refresh?.()
+      expect(entryConfig(ctx, 'noop')).toEqual({ value: 'live' })
+
+      generation = [{ id: 'noop', config: { fail: true } }]
+      await expect(refresh?.()).rejects.toThrow('candidate config failed')
+      expect(entryConfig(ctx, 'noop')).toEqual({ value: 'live' })
+
+      generation = []
+      await refresh?.()
+      expect(entryConfig(ctx, 'noop')).toEqual({ value: 'generated' })
+      await dispose()
+      expect(watcherDisposed).toBe(true)
+    } finally {
+      await ctx.fiber.dispose()
+    }
+  })
+
   it('applies id-targeted overrides, inserts, and interpolates !!js from the environment', async () => {
     const dir = tmp()
     const userDir = tmp()

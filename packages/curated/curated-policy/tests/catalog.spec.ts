@@ -3007,6 +3007,117 @@ rules:
     expect(policy.listCandidates().map(item => item.id)).toEqual(['specific', 'shared', 'disabled'])
   })
 
+  test('normalizes candidate config values into immutable JSON snapshots', () => {
+    const originalValues = {
+      enabled: true,
+      limit: 3,
+      nested: [{ label: 'fixture' }],
+      nullable: null,
+    }
+    const policy = new CuratedPolicy(catalog([
+      candidate({
+        config: {
+          entryId: 'candidate-plugin',
+          values: originalValues,
+        },
+      }),
+    ]))
+
+    originalValues.nested[0]!.label = 'mutated'
+    const values = policy.listCandidates()[0]?.config?.values as {
+      nested: Array<{ label: string }>
+    }
+    expect(values).toEqual({
+      enabled: true,
+      limit: 3,
+      nested: [{ label: 'fixture' }],
+      nullable: null,
+    })
+    expect(Object.isFrozen(values)).toBe(true)
+    expect(Object.isFrozen(values.nested)).toBe(true)
+    expect(Object.isFrozen(values.nested[0])).toBe(true)
+  })
+
+  test.each([
+    ['Date', new Date('2026-08-30T00:00:00.000Z')],
+    ['Map', new Map([['key', 'value']])],
+    ['Set', new Set(['value'])],
+    ['typed array', new Uint8Array([1])],
+    ['sparse array', Array(1)],
+    ['array accessor', Object.defineProperty([], '0', { enumerable: true, get: () => 1 })],
+    ['non-finite number', Number.POSITIVE_INFINITY],
+    ['symbol', Symbol('value')],
+    ['custom prototype', Object.create({ inherited: true })],
+  ])('rejects %s candidate config values at the policy service boundary', (_name, invalid) => {
+    expect(() => new CuratedPolicy(catalog([
+      candidate({
+        config: {
+          entryId: 'candidate-plugin',
+          values: { invalid },
+        },
+      }),
+    ]))).toThrow('candidate candidate-a config.values must contain only finite JSON-compatible values')
+  })
+
+  test('rejects cyclic and non-data candidate config values', () => {
+    const cyclicArray: unknown[] = []
+    cyclicArray.push(cyclicArray)
+    const cyclicObject: Record<string, unknown> = {}
+    cyclicObject.self = cyclicObject
+    const hiddenProperty = { visible: true }
+    Object.defineProperty(hiddenProperty, 'hidden', { value: true })
+    const symbolProperty = { visible: true } as Record<PropertyKey, unknown>
+    symbolProperty[Symbol('hidden')] = true
+    const accessor = Object.defineProperty({}, 'value', {
+      enumerable: true,
+      get: () => true,
+    })
+
+    for (const invalid of [
+      cyclicArray,
+      cyclicObject,
+      hiddenProperty,
+      symbolProperty,
+      accessor,
+    ]) {
+      expect(() => new CuratedPolicy(catalog([
+        candidate({
+          config: {
+            entryId: 'candidate-plugin',
+            values: { invalid },
+          },
+        }),
+      ]))).toThrow('candidate candidate-a config.values must contain only finite JSON-compatible values')
+    }
+  })
+
+  test('requires candidate config values to be an object', () => {
+    expect(() => new CuratedPolicy(catalog([
+      candidate({
+        config: {
+          entryId: 'candidate-plugin',
+          values: [] as unknown as Record<string, unknown>,
+        },
+      }),
+    ]))).toThrow('candidate candidate-a config.values must contain only finite JSON-compatible values')
+  })
+
+  test('rejects YAML timestamps in candidate config values at the parser boundary', () => {
+    withTempFile(rawCatalog({
+      config: {
+        entryId: 'candidate-plugin',
+        values: { releasedAt: '2026-08-30T00:00:00.000Z' },
+      },
+    }).replace(
+      '"releasedAt":"2026-08-30T00:00:00.000Z"',
+      '"releasedAt": 2026-08-30T00:00:00.000Z',
+    ), (filePath) => {
+      expect(() => loadCuratedCatalog(filePath)).toThrow(
+        'curated catalog candidates[0].config.values must contain only finite JSON-compatible values',
+      )
+    })
+  })
+
   test('copies and freezes optional resource fields from constructor input', () => {
     const original = candidate({
       id: 'resourceful',

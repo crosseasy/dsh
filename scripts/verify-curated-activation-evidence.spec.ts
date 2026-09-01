@@ -713,6 +713,56 @@ describe('curated runtime activation evidence gate', () => {
     }
   })
 
+  it.each(['profile', 'path'] as const)(
+    'redacts a fine-grained GitHub PAT in a %s diagnostic identifier',
+    async (location) => {
+      const root = mkdtempSync(join(tmpdir(), 'dsh-curated-fine-grained-pat-'))
+      const secret = 'github_pat_11AA22BB33CC44DD55EE66FF77GG88HH'
+      try {
+        const qualified = {
+          ...qualificationCandidate(),
+          requiredRuntimeBundles: [],
+          targetProfiles: location === 'profile' ? [secret] : ['web-curated'],
+        }
+        const base = {
+          ...qualified,
+          active: true,
+          rejections: [],
+        }
+        const active = {
+          ...base,
+          runtimeActivationEvidence: Object.fromEntries(Object.entries(
+            writeEvidenceForProfiles(root, base),
+          ).map(([profile, evidence]) => [
+            profile,
+            { ...evidence, requiredRuntimeBundles: [] },
+          ])),
+        }
+        const candidate = location === 'path'
+          ? withActivationEvidenceSet(active, {
+            ...activationEvidenceSet(active),
+            install: {
+              ...activationEvidenceSet(active).install,
+              path: `${EVIDENCE_DIRECTORY}/${secret}.missing.json`,
+            },
+          })
+          : active
+
+        const diagnostics = await curatedActivationEvidenceIssues(catalogWith(candidate), {
+          repositoryRoot: root,
+          isTrackedRegularBlob: () => true,
+        })
+        const serialized = diagnostics.join('\n')
+
+        expect(diagnostics).not.toEqual([])
+        expect(serialized).toContain('[REDACTED]')
+        expect(serialized).not.toContain(secret)
+      } finally {
+        rmSync(root, { recursive: true, force: true })
+      }
+    },
+  )
+
   it('skips replay when activation evidence validation fails', async () => {
     const root = mkdtempSync(join(tmpdir(), 'dsh-curated-invalid-evidence-'))
     try {

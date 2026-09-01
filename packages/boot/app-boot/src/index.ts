@@ -11,8 +11,8 @@ import { readFileSync } from 'node:fs'
 import { parseEnv } from 'node:util'
 import { basename, dirname, isAbsolute, resolve } from 'node:path'
 import * as yaml from 'js-yaml'
-import { Context, type FiberState } from '@deepseek-ai/cordis'
-import Loader, { type Entry, type EntryOptions } from '@deepseek-ai/cordis-plugin-loader'
+import { Context, Service, type FiberState } from '@deepseek-ai/cordis'
+import Loader, { EntryGroup, EntryTree, type Entry, type EntryOptions } from '@deepseek-ai/cordis-plugin-loader'
 import Include, { applyEntryPatches, entryListSchema, type PatchOptions } from '@deepseek-ai/cordis-plugin-include'
 import Group from '@deepseek-ai/cordis-plugin-group'
 import { dshHomePath, resolveDshHome } from '@deepseek-ai/dsh-home-paths'
@@ -351,12 +351,12 @@ export function loadOverlayPatches(
 /**
  * Parse one loader patch list: a top-level YAML array of
  * `@deepseek-ai/cordis-plugin-include` `PatchOptions` (id-targeted config overrides and
- * `insert` lists, `!!js` expressions allowed). Every invalid field or value throws,
- * because a patch file that cannot be applied at all is a misconfiguration; a
- * single patch whose target row is absent stays a per-entry Loader warning, so
- * one overlay shared across surfaces does not have to match every tree.
+ * `insert` lists, `!!js` expressions allowed). Malformed YAML, a non-array top
+ * level, or a non-mapping entry throws here; schema and application validation
+ * occur downstream. A patch whose target row is absent stays a per-entry Loader
+ * warning, so one overlay shared across surfaces does not have to match every tree.
  * @param binName - the diagnostic prefix on the thrown error.
- * @param file - the source path, quoted in errors.
+ * @param file - the source path; schema and entry diagnostics may include it, while malformed YAML parser diagnostics redact it.
  * @param content - the file's text.
  * @param label - what to call this list in errors (`patches`, `overlay`).
  * @returns the parsed patch list.
@@ -368,7 +368,11 @@ function parsePatchList(
   try {
     parsed = yaml.load(content, { schema: userPatchesSchema })
   } catch (error) {
-    throw new Error(`${binName}: failed to parse ${label} ${file}: ${String(error)}`)
+    const mark = (error as yaml.YAMLException).mark
+    const location = ` at line ${String(mark.line + 1)}, column ${String(mark.column + 1)}`
+    throw new Error(
+      `${binName}: failed to parse ${label} [REDACTED]: invalid YAML near [REDACTED]${location}`,
+    )
   }
   if (!Array.isArray(parsed)) {
     throw new Error(`${binName}: ${label} ${file} must be a top-level YAML array of loader patch entries`)
@@ -417,6 +421,7 @@ export interface ConfigDumpLayer {
  * @param absoluteConfigPath - the base config file `boot()` would include.
  * @param layers - overlay layers in application order (later wins).
  * @param warn - sink for skipped-patch diagnostics; defaults to stderr.
+ * @param root - optional descriptor-bound decoded UTF-8 root text used instead of a path read.
  * @returns the composed entry list rendered as a YAML document with
  * source comment separators.
  */
@@ -425,10 +430,12 @@ export function renderConfigDump(
   absoluteConfigPath: string,
   layers: ConfigDumpLayer[],
   warn: (line: string) => void = line => void process.stderr.write(`${line}\n`),
+  root?: BoundRootConfig,
 ): string {
+  root?.assertCurrent()
   let content: string
   try {
-    content = readFileSync(absoluteConfigPath, 'utf8')
+    content = root?.content ?? readFileSync(absoluteConfigPath, 'utf8')
   } catch (error) {
     throw new Error(`${binName}: failed to read config ${absoluteConfigPath}: ${String(error)}`)
   }
@@ -482,6 +489,7 @@ export function renderConfigDump(
     previous = composed
     previousWarnings = warnings
   }
+  root?.assertCurrent()
   return groupedDump(composed, provenance)
 }
 
@@ -517,12 +525,96 @@ function groupedDump(
 }
 
 /**
+ * Caller-owned descriptor-bound root text.
+ *
+ * The separately supplied config path remains the relative-resolution and
+ * diagnostic anchor and is not read. The caller keeps the underlying binding
+ * open until the promise returned by `mountRootInclude()` or `boot()` settles.
+ */
+export interface BoundRootConfig {
+  /** Exact decoded UTF-8 root configuration text. */
+  readonly content: string
+  /** Reject when the source identity no longer matches the captured bytes. */
+  readonly assertCurrent: () => void
+}
+
+function createBoundRootInclude(
+  absoluteConfigPath: string,
+  root: BoundRootConfig,
+  bareModuleBaseUrl: string | undefined,
+) {
+  const parsed = yaml.load(root.content, { schema: entryListSchema })
+  if (!Array.isArray(parsed)) throw new TypeError('bound root config must be a top-level array')
+  const entries = parsed as EntryOptions[]
+  return class BoundRootInclude extends EntryTree {
+    static inject = ['loader']
+    static readonly [EntryGroup.key] = true
+    private applyQueue: Promise<unknown> = Promise.resolve()
+
+    constructor(ctx: Context, public config: Include.Config) {
+      super(ctx)
+      this.enableLogs = config.enableLogs ?? ctx.fiber.entry?.parent.tree.enableLogs ?? false
+      this.ctx.baseUrl = pathToFileURL(dirname(absoluteConfigPath)).href + '/'
+      ctx.on('internal/update', async (config, _, next) => {
+        const nextConfig = config as Include.Config
+        if (nextConfig.path !== this.config.path) return next()
+        await this.enqueue(async () => {
+          await this.root.update(this.applyPatches(nextConfig.patches))
+          this.config = nextConfig
+        })
+      })
+    }
+
+    private enqueue<T>(task: () => Promise<T>): Promise<T> {
+      const run = this.applyQueue.then(task, task)
+      this.applyQueue = run.then(() => {}, () => {})
+      return run
+    }
+
+    private applyPatches(patches?: PatchOptions[]): EntryOptions[] {
+      return applyEntryPatches(structuredClone(entries), patches, (message, ...args) => {
+        this.ctx.root.logger('loader').warn(message, ...args as unknown[])
+      })
+    }
+
+    async* [Service.init]() {
+      yield async () => { await this.root.stop() }
+      root.assertCurrent()
+      await this.enqueue(() => this.root.update(this.applyPatches(this.config.patches)))
+    }
+
+    override import(name: string, getOuterStack?: () => string[]): unknown {
+      const specifier = isAbsolute(name) ? pathToFileURL(name).href : name
+      if (
+        bareModuleBaseUrl === undefined
+        || name.startsWith('.')
+        || name.startsWith('cordis:')
+      ) {
+        return super.import(specifier, getOuterStack)
+      }
+      const internal = this.ctx.loader.internal
+      /* v8 ignore next -- Node supplies the internal loader; this preserves the
+         original diagnostic for hypothetical embedders without it. */
+      if (internal === undefined) return super.import(specifier, getOuterStack)
+      return internal.import(specifier, bareModuleBaseUrl, {})
+    }
+
+    write(): void {
+      this.context.emit('loader/config-update')
+    }
+  }
+}
+
+/**
  * Mount and remember the exact root Include entry used by app boot and user patch-layer HMR.
  * @param ctx - context carrying an initialized Loader service.
  * @param absoluteConfigPath - absolute YAML or JSON configuration path.
  * @param patches - initial app and user patches, applied in order.
  * @param bareModuleBaseUrl - optional installed-host base for bare package
  * names; relative names continue to resolve beside the configuration file.
+ * @param root - optional descriptor-bound decoded UTF-8 root text; the path remains the
+ * relative-resolution anchor and is not read. Its binding must remain open until
+ * the returned promise settles.
  * @returns the created root Include entry, or `undefined` when a surface
  * disposed the whole tree (taking the Loader service with it) while the
  * transactional create was still settling entry lifecycle.
@@ -532,6 +624,7 @@ export async function mountRootInclude(
   absoluteConfigPath: string,
   patches: readonly PatchOptions[] = [],
   bareModuleBaseUrl?: string,
+  root?: BoundRootConfig,
 ): Promise<Entry | undefined> {
   ctx.loader.builtins.include = bareModuleBaseUrl === undefined
     ? Include
@@ -546,6 +639,11 @@ export async function mountRootInclude(
         return internal.import(specifier, bareModuleBaseUrl, {})
       }
     }
+  const rootBuiltin = 'dsh-bound-root-include'
+  if (root !== undefined) {
+    root.assertCurrent()
+    ctx.loader.builtins[rootBuiltin] = createBoundRootInclude(absoluteConfigPath, root, bareModuleBaseUrl)
+  }
   // `cordis:group` alongside it: a group row is how a composition gives one
   // `isolate` realm to a provider and its consumers together, and an agent
   // preset living outside this workspace cannot resolve `@deepseek-ai/cordis-plugin-group`
@@ -561,10 +659,18 @@ export async function mountRootInclude(
   }
   const rootInclude: EntryOptions = {
     id: 'include',
-    name: 'cordis:include',
+    name: root === undefined ? 'cordis:include' : `cordis:${rootBuiltin}`,
     config: includeConfig,
   }
   const includeId = await ctx.loader.create(rootInclude)
+  if (root !== undefined) {
+    try {
+      root.assertCurrent()
+    } catch (error) {
+      await ctx.loader.remove(includeId)
+      throw error
+    }
+  }
   const loader = ctx.get('loader')
   if (loader === undefined) return undefined
   const entry = loader.resolve(includeId)
@@ -792,6 +898,9 @@ export async function assertEntriesActivated(ctx: Context, binName: string): Pro
  * @param bareModuleBaseUrl - optional installed-host base for bare package
  * names; use it when the host, rather than the configuration project, owns the
  * complete plugin set.
+ * @param root - optional descriptor-bound decoded UTF-8 root text that replaces the file read;
+ * its path remains the resolution anchor, and its binding must remain open until
+ * the returned promise settles.
  * @returns the root context once every entry has started, or as soon as a
  * surface disposed the tree while startup was still in flight.
  * @throws a labelled error after disposing the partial context — `host
@@ -804,6 +913,7 @@ export async function boot(
   patches?: PatchOptions[],
   prepare?: (ctx: Context) => Promise<void> | void,
   bareModuleBaseUrl?: string,
+  root?: BoundRootConfig,
 ): Promise<Context> {
   const ctx = new Context()
   // Two failure labels: `prepare` runs before any config-tree entry mounts,
@@ -815,7 +925,7 @@ export async function boot(
     await ctx.plugin(Loader)
     await prepare?.(ctx)
     stage = 'plugin tree failed to load'
-    await mountRootInclude(ctx, absoluteConfigPath, patches, bareModuleBaseUrl)
+    await mountRootInclude(ctx, absoluteConfigPath, patches, bareModuleBaseUrl, root)
     // A surface can finish and dispose the whole tree while startup is still
     // in flight, before the last entry settles. The Loader service goes with
     // it, and the activation audit describes a live tree — reading `ctx.loader`

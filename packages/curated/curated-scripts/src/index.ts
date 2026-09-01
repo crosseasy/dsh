@@ -44,17 +44,21 @@ import {
 } from '@deepseek-ai/dsh-curated-bench/snapshot'
 import { scrubbedParentEnv } from '@deepseek-ai/dsh-subprocess'
 import {
+  assertCuratedInstalledCandidateLocks,
+  assertCuratedInstalledLocks,
   classifyAdmission,
   formatYamlParseError,
   isExactNpmVersion,
   loadCapabilityConflicts,
   loadCuratedCatalog,
+  pnpmLockTransformation,
   validateCandidateLock,
   validateProfileConflicts,
   type CapabilityConflictCatalog,
   type CuratedCandidate,
   type CuratedCandidateResources,
   type CuratedCatalog,
+  type CuratedInstalledCandidateIdentity,
   type PolicyIssue,
 } from '@deepseek-ai/dsh-curated-policy'
 import {
@@ -105,15 +109,19 @@ export interface SmokeProfileRunnerRequest {
 
 /** Result returned by a profile smoke child runner. */
 export interface SmokeProfileRunnerResult {
-  /** Child exit status. */
+  /** Compatibility status: exit code, or 1/124 for signal, runner failure, or timeout. */
   readonly status: number
+  /** Child exit code, or null when no normal exit code exists. */
+  readonly exitCode?: number | null
+  /** Child termination signal, or null when no signal ended the child. */
+  readonly signal?: NodeJS.Signals | null
   /** Captured stdout text. */
   readonly stdout: string
   /** Captured stderr text. */
   readonly stderr: string
   /** Measured or supplied stage duration. */
   readonly durationMs: number
-  /** Whether the runner stopped the stage for exceeding its timeout. */
+  /** Whether timeout handling stopped the stage. */
   readonly timedOut?: boolean
 }
 
@@ -138,8 +146,14 @@ export interface SmokeProfileStageResult {
   readonly ok: boolean
   /** Monotonic stage duration in milliseconds; staging includes worker settlement and termination. */
   readonly durationMs: number
-  /** Child process exit status, for subprocess stages. */
+  /** Compatibility child status, for subprocess stages. */
   readonly status?: number
+  /** Child exit code, or null when no normal exit code exists. */
+  readonly exitCode?: number | null
+  /** Child termination signal, or null when no signal ended the child. */
+  readonly signal?: NodeJS.Signals | null
+  /** Whether timeout handling stopped the subprocess stage. */
+  readonly timedOut?: boolean
   /** Redacted stage error, when failed. */
   readonly error?: string
 }
@@ -453,10 +467,6 @@ const VERIFY_LOCK_DEFAULT_CATALOG = join(CURATED_POLICY_ROOT, 'policy/plugin-all
 const PREFLIGHT_DEFAULT_CONFLICTS = join(CURATED_POLICY_ROOT, 'policy/capability-conflicts.yaml')
 const PREFLIGHT_DEFAULT_PATCH = join(CURATED_BASE_ROOT, 'cordis.patch.yml')
 const SHA256_PATTERN = /^[0-9a-f]{64}$/u
-const SRI_PATTERN = /^sha(?:256|384|512)-[A-Za-z0-9+/]+={0,2}$/u
-const PNPM_ALIAS_TARGET_PATTERN = /^((?:@[^@/]+\/)?[^@/]+)@(.+)$/u
-const GITHUB_OWNER_PATTERN = /^[A-Za-z0-9](?:[A-Za-z0-9-]{0,37}[A-Za-z0-9])?$/u
-const GITHUB_REPOSITORY_PATTERN = /^[A-Za-z0-9._-]{1,100}$/u
 const MAX_ARTIFACT_FILE_BYTES = 16 * 1024 * 1024
 const MAX_ARTIFACT_TREE_BYTES = 64 * 1024 * 1024
 const MAX_ARTIFACT_ENTRY_COUNT = 1_000
@@ -489,6 +499,8 @@ const SMOKE_LAUNCH_ENV_PATTERN =
   /^(?:PATH|HOME|USERPROFILE|TMP|TEMP|TMPDIR|SYSTEMROOT|WINDIR|COMSPEC|PATHEXT|LANG|LANGUAGE|LC_.+)$/iu
 const URL_USERINFO_PATTERN = /\b([a-z][a-z0-9+.-]*:\/\/)([^\s/?#]+@)/giu
 const SCHEMELESS_USERINFO_PATTERN = /\b[^\s/?#:@]+:[^\s/?#@]*@/gu
+const URL_USERINFO_SECRET_PATTERN = /\b[a-z][a-z0-9+.-]*:\/\/[^\s/?#]+@/iu
+const SCHEMELESS_USERINFO_SECRET_PATTERN = /\b[^\s/?#:@]+:[^\s/?#@]*@/u
 const SECRET_VALUE_PATTERN = new RegExp(
   String.raw`(?:bearer\s+\S+|github_pat_[a-z0-9_]+|gh[pousr]_[a-z0-9_]+|sk-[a-z0-9_-]+|-----BEGIN [A-Z ]*PRIVATE KEY-----)`,
   'iu',
@@ -686,10 +698,13 @@ export function runVerifyLock(args: readonly string[], options: VerifyLockOption
     }
     const rawCatalog = loadYamlFile(path, 'curated catalog')
     const catalog = loadCuratedCatalog(path)
+    const managedArtifactResolver = artifactRoots.length === 0
+      ? undefined
+      : createInstalledArtifactResolver(artifactRoots, catalog)
     const managedCandidates = managedProfileCandidates(catalog, artifactRoots)
     const artifactResolver = managedCandidates === undefined
       ? options.artifactResolver
-      : createInstalledArtifactResolver(artifactRoots)
+      : managedArtifactResolver
     const selectedCandidates = artifactResolver === undefined
       ? []
       : managedCandidates ?? catalog.candidates.filter(candidate => candidate.active)
@@ -736,16 +751,51 @@ export function runVerifyLock(args: readonly string[], options: VerifyLockOption
 /**
  * Resolve installed candidates from managed pnpm profile state.
  * @param roots - Package-resolution roots containing a managed profile.
+ * @param catalog - Catalog that defines the selected dependency set.
  * @returns a resolver shared by lock verification, preflight, and smoke.
  */
-export function createInstalledArtifactResolver(roots: readonly string[]): CuratedArtifactResolver {
+export function createInstalledArtifactResolver(
+  roots: readonly string[],
+  catalog: CuratedCatalog = loadCuratedCatalog(),
+): CuratedArtifactResolver {
+  for (const root of roots) {
+    const managedProfile = readManagedProfileManifest(root, 'artifact')
+    if (managedProfile !== undefined && hasBindableInstalledLocks(root, managedProfile, catalog)) {
+      admittedInstalledIdentities(root, managedProfile, catalog)
+    }
+  }
   return {
     resolve(candidate) {
-      if (candidate.expectedPackage === null) return undefined
+      const expectedPackage = candidate.expectedPackage
+      if (expectedPackage === null) return undefined
       for (const root of roots) {
         const managedProfile = readManagedProfileManifest(root, candidate.id)
         if (managedProfile !== undefined) {
-          return resolvePnpmInstalledArtifact(candidate, root, managedProfile)
+          const artifact = resolveCandidateLocalInstalledArtifact(candidate, root, managedProfile)
+          if (artifact === undefined || !managedProfileSelectsCandidate(managedProfile, candidate)) {
+            return artifact
+          }
+          const locksPresent = existsSync(join(root, 'pnpm-lock.yaml'))
+            && existsSync(join(root, 'node_modules/.pnpm/lock.yaml'))
+          if (!locksPresent) {
+            if (inspectResolvedArtifact(
+              candidate,
+              { resolve: () => artifact },
+              process.versions.node,
+            ).issues.length === 0) {
+              throw new Error(`${candidate.id} requires root and installed pnpm lockfiles`)
+            }
+            return artifact
+          }
+          const identity = hasBindableInstalledLocks(root, managedProfile, catalog)
+            ? admittedInstalledIdentities(root, managedProfile, catalog)
+              .get(candidate.id) as CuratedInstalledCandidateIdentity
+            : admittedInstalledCandidateIdentity(
+              { ...candidate, expectedPackage },
+              root,
+              managedProfile,
+            )
+          return artifactWithInstalledIdentity(artifact, identity)
         }
       }
       return undefined
@@ -753,29 +803,98 @@ export function createInstalledArtifactResolver(roots: readonly string[]): Curat
   }
 }
 
-interface ExactGitDependency {
-  readonly repository: string
-  readonly commit: string
-  readonly repositoryPath: string | null
+function hasBindableInstalledLocks(
+  root: string,
+  manifest: Record<string, unknown>,
+  catalog: CuratedCatalog,
+): boolean {
+  const name = manifest.name
+  const dependencies = recordOrUndefined(manifest.dependencies)
+  if (typeof name !== 'string' || !name.startsWith('dsh-profile-') || dependencies === undefined) {
+    return false
+  }
+  const manifestDependencies = stringRecordOrUndefined(dependencies)
+  if (manifestDependencies === undefined) return false
+  const profileId = name.slice('dsh-profile-'.length)
+  const selectedPackages = catalog.candidates
+    .filter(current =>
+      current.active
+    && current.expectedPackage !== null
+    && current.targetProfiles.includes(profileId))
+    .map(current => current.expectedPackage as string)
+  return sameStrings(selectedPackages, Object.keys(manifestDependencies))
+    && existsSync(join(root, 'pnpm-lock.yaml'))
+    && existsSync(join(root, 'node_modules/.pnpm/lock.yaml'))
 }
 
-interface PnpmGitResolution extends ExactGitDependency {
-  readonly packageKey: string
-  readonly packageVersion: string
-  readonly snapshotKey: string
+function resolveCandidateLocalInstalledArtifact(
+  candidate: CuratedCandidate,
+  root: string,
+  manifest: Record<string, unknown>,
+): ResolvedCandidateArtifact | undefined {
+  const packageName = candidate.expectedPackage as string
+  const profile = requiredRecord(
+    requiredRecord(manifest.dsh, `${candidate.id} profile metadata`).profile,
+    `${candidate.id} profile metadata`,
+  )
+  const bundles = profile.bundles
+  if (!Array.isArray(bundles) || bundles.some(bundle => typeof bundle !== 'string')) {
+    throw new Error(`${candidate.id} managed profile bundles must be a string array`)
+  }
+  if (!bundles.includes(packageName)) return undefined
+  const dependencies = recordOrUndefined(manifest.dependencies)
+  if (managedProfileSelectsCandidate(manifest, candidate)) {
+    if (dependencies === undefined || !Object.hasOwn(dependencies, packageName)) {
+      throw new Error(`${candidate.id} is selected by the managed profile but absent from dependencies`)
+    }
+    requiredString(dependencies[packageName], `${candidate.id} profile dependency`)
+  }
+  const packageDir = requiredInstalledPackageRoot(root, candidate)
+  return {
+    packageDir,
+    ...candidate.npmVersion === undefined
+      ? { repository: candidate.repository, commit: candidate.commit }
+      : {
+        packageVersion: candidate.npmVersion,
+        npmIntegrity: requiredString(candidate.npmIntegrity, `${candidate.id} catalog npm integrity`),
+      },
+    ...candidate.sourceContentSha256 === undefined
+      ? {}
+      : { sourceContentSha256: candidate.sourceContentSha256 },
+    changedPaths: [],
+  }
 }
 
-type PnpmGitDependency = ExactGitDependency & (
-  | {
-    readonly kind: 'direct'
-    readonly packageVersion: string
-  }
-  | {
-    readonly kind: 'github-codeload'
-    readonly packageVersion: string
-    readonly tarball: string
-  }
-)
+function managedProfileSelectsCandidate(
+  manifest: Record<string, unknown>,
+  candidate: CuratedCandidate,
+): boolean {
+  const name = manifest.name
+  return typeof name === 'string'
+    && name.startsWith('dsh-profile-')
+    && candidate.targetProfiles.includes(name.slice('dsh-profile-'.length))
+}
+
+function admittedInstalledIdentities(
+  root: string,
+  manifest: Record<string, unknown>,
+  catalog: CuratedCatalog,
+): ReadonlyMap<string, CuratedInstalledCandidateIdentity> {
+  const canonicalRoot = realpathSync.native(root)
+  const name = manifest.name as string
+  const profilePrefix = 'dsh-profile-'
+  const manifestDependencies = manifest.dependencies as Record<string, string>
+  const profileId = name.slice(profilePrefix.length)
+  const rootLockPath = join(canonicalRoot, 'pnpm-lock.yaml')
+  const installedLockPath = join(canonicalRoot, 'node_modules/.pnpm/lock.yaml')
+  return new Map(assertCuratedInstalledLocks({
+    catalog,
+    profileId,
+    manifestDependencies,
+    rootLock: readBoundedRegularFile(rootLockPath),
+    installedLock: readBoundedRegularFile(installedLockPath),
+  }).map(identity => [identity.candidateId, identity]))
+}
 
 function readManagedProfileManifest(
   root: string,
@@ -862,108 +981,41 @@ function isCuratedProfileName(name: string): name is CuratedProfileName {
   return Object.hasOwn(CURATED_PROFILE_TEMPLATES, name)
 }
 
-function resolvePnpmInstalledArtifact(
-  candidate: CuratedCandidate,
+function admittedInstalledCandidateIdentity(
+  candidate: CuratedCandidate & { readonly expectedPackage: string },
   root: string,
   manifest: Record<string, unknown>,
-): ResolvedCandidateArtifact | undefined {
-  const profile = requiredRecord(
-    requiredRecord(manifest.dsh, `${candidate.id} profile metadata`).profile,
-    `${candidate.id} profile metadata`,
-  )
-  const bundles = profile.bundles
-  if (!Array.isArray(bundles) || bundles.some(bundle => typeof bundle !== 'string')) {
-    throw new Error(`${candidate.id} managed profile bundles must be a string array`)
-  }
-  if (!bundles.includes(candidate.expectedPackage)) return undefined
-  const dependencies = recordOrUndefined(manifest.dependencies)
-  if (dependencies === undefined || !Object.hasOwn(dependencies, candidate.expectedPackage as string)) {
-    throw new Error(`${candidate.id} is selected by the managed profile but absent from dependencies`)
-  }
-  const dependencySpec = requiredString(
-    dependencies[candidate.expectedPackage as string],
+): CuratedInstalledCandidateIdentity {
+  const dependencies = manifest.dependencies as Record<string, string>
+  const manifestSpecifier = requiredString(
+    dependencies[candidate.expectedPackage],
     `${candidate.id} profile dependency`,
   )
-  const rootLockPath = join(root, 'pnpm-lock.yaml')
-  const installedLockPath = join(root, 'node_modules/.pnpm/lock.yaml')
-  if (!existsSync(rootLockPath) || !existsSync(installedLockPath)) {
-    throw new Error(`${candidate.id} requires root and installed pnpm lockfiles`)
-  }
-  if (candidate.npmVersion !== undefined) {
-    const npmVersion = candidate.npmVersion
-    const npmIntegrity = requiredString(candidate.npmIntegrity, `${candidate.id} catalog npm integrity`)
-    const rootResolution = readPnpmRegistryResolution(
-      rootLockPath,
-      candidate.expectedPackage as string,
-      dependencySpec,
-      candidate.id,
-      npmVersion,
-      npmIntegrity,
-    )
-    const installedResolution = readPnpmRegistryResolution(
-      installedLockPath,
-      candidate.expectedPackage as string,
-      dependencySpec,
-      candidate.id,
-      npmVersion,
-      npmIntegrity,
-    )
-    assertMatchingRuntimeDependencyClosures(
-      rootLockPath,
-      installedLockPath,
-      rootResolution.packageKey,
-      rootResolution.snapshotKey,
-      installedResolution.packageKey,
-      installedResolution.snapshotKey,
-      candidate.id,
-      candidate.runtimeDependencyClosureSha256,
-    )
-    const packageDir = requiredInstalledPackageRoot(root, candidate)
-    return {
-      packageDir,
-      packageVersion: rootResolution.packageVersion,
-      npmIntegrity: rootResolution.npmIntegrity,
-      changedPaths: [],
+  const canonicalRoot = realpathSync.native(root)
+  return assertCuratedInstalledCandidateLocks({
+    candidate,
+    manifestSpecifier,
+    rootLock: readBoundedRegularFile(join(canonicalRoot, 'pnpm-lock.yaml')),
+    installedLock: readBoundedRegularFile(join(canonicalRoot, 'node_modules/.pnpm/lock.yaml')),
+  })
+}
+
+function artifactWithInstalledIdentity(
+  artifact: ResolvedCandidateArtifact,
+  identity: CuratedInstalledCandidateIdentity,
+): ResolvedCandidateArtifact {
+  return identity.source.kind === 'npm'
+    ? {
+      ...artifact,
+      packageVersion: identity.packageVersion,
+      npmIntegrity: identity.source.integrity,
     }
-  }
-  const declared = parseExactGitDependency(dependencySpec, `${candidate.id} profile dependency`)
-  assertCandidateGitIdentity(candidate, declared, 'profile dependency')
-  const rootResolution = readPnpmGitResolution(
-    rootLockPath,
-    candidate.expectedPackage as string,
-    dependencySpec,
-    declared,
-    candidate.id,
-  )
-  const installedResolution = readPnpmGitResolution(
-    installedLockPath,
-    candidate.expectedPackage as string,
-    dependencySpec,
-    declared,
-    candidate.id,
-  )
-  if (JSON.stringify(rootResolution) !== JSON.stringify(installedResolution)) {
-    throw new Error(`${candidate.id} root and installed pnpm resolutions differ`)
-  }
-  assertMatchingRuntimeDependencyClosures(
-    rootLockPath,
-    installedLockPath,
-    rootResolution.packageKey,
-    rootResolution.snapshotKey,
-    installedResolution.packageKey,
-    installedResolution.snapshotKey,
-    candidate.id,
-    candidate.runtimeDependencyClosureSha256,
-  )
-  assertCandidateGitIdentity(candidate, rootResolution, 'pnpm lock resolution')
-  const packageDir = requiredInstalledPackageRoot(root, candidate)
-  return {
-    packageDir,
-    repository: rootResolution.repository,
-    commit: rootResolution.commit,
-    packageVersion: rootResolution.packageVersion,
-    changedPaths: [],
-  }
+    : {
+      ...artifact,
+      repository: identity.source.repository,
+      commit: identity.source.commit,
+      packageVersion: identity.packageVersion,
+    }
 }
 
 function requiredInstalledPackageRoot(root: string, candidate: CuratedCandidate): string {
@@ -979,460 +1031,6 @@ function requiredInstalledPackageRoot(root: string, candidate: CuratedCandidate)
     )
   }
   return canonicalPackageDir
-}
-
-function readPnpmRootDependency(
-  lockPath: string,
-  packageName: string,
-  candidateId: string,
-): {
-  readonly dependency: Record<string, unknown>
-  readonly lock: Record<string, unknown>
-} {
-  const lock = readPnpmLock(lockPath, candidateId)
-  const importers = requiredRecord(lock.importers, `${candidateId} pnpm lockfile importers`)
-  const rootImporter = requiredRecord(importers['.'], `${candidateId} pnpm root importer`)
-  const dependencies = requiredRecord(rootImporter.dependencies, `${candidateId} pnpm root dependencies`)
-  return {
-    dependency: requiredRecord(dependencies[packageName], `${candidateId} pnpm dependency`),
-    lock,
-  }
-}
-
-function readPnpmRegistryResolution(
-  lockPath: string,
-  packageName: string,
-  dependencySpec: string,
-  candidateId: string,
-  npmVersion: string,
-  expectedIntegrity: string,
-): {
-  readonly packageKey: string
-  readonly packageVersion: string
-  readonly npmIntegrity: string
-  readonly snapshotKey: string
-} {
-  const { lock, dependency } = readPnpmRootDependency(lockPath, packageName, candidateId)
-  if (dependencySpec !== npmVersion || dependency.specifier !== npmVersion) {
-    throw new Error(`${candidateId} profile dependency must use exact npm version ${npmVersion}`)
-  }
-  const resolvedVersion = requiredString(dependency.version, `${candidateId} pnpm dependency version`)
-  const peerSuffix = resolvedVersion.indexOf('(')
-  const packageVersion = peerSuffix === -1 ? resolvedVersion : resolvedVersion.slice(0, peerSuffix)
-  if (packageVersion !== npmVersion) {
-    throw new Error(`${candidateId} pnpm dependency version differs from the catalog`)
-  }
-  const packages = requiredRecord(lock.packages, `${candidateId} pnpm lockfile packages`)
-  const packageRecord = requiredRecord(
-    packages[`${packageName}@${packageVersion}`],
-    `${candidateId} pnpm package resolution`,
-  )
-  const resolution = requiredRecord(packageRecord.resolution, `${candidateId} pnpm package resolution`)
-  const npmIntegrity = requiredString(resolution.integrity, `${candidateId} pnpm package integrity`)
-  if (npmIntegrity !== expectedIntegrity) {
-    throw new Error(`${candidateId} pnpm package integrity differs from the catalog`)
-  }
-  return {
-    packageKey: `${packageName}@${packageVersion}`,
-    packageVersion,
-    npmIntegrity,
-    snapshotKey: `${packageName}@${resolvedVersion}`,
-  }
-}
-
-function parseExactGitDependency(value: string, label: string): ExactGitDependency {
-  const match = /^git\+(.+)#([0-9a-f]{40})(?:&path:([^&]+))?$/u.exec(value)
-  if (match === null) throw new Error(`${label} must use a full Git commit SHA`)
-  return {
-    repository: normalizeGitRepository(requiredString(match[1], `${label} repository`)),
-    commit: requiredString(match[2], `${label} commit`),
-    repositoryPath: match[3] ?? null,
-  }
-}
-
-function parsePnpmGitDependency(value: string, label: string): PnpmGitDependency {
-  const direct = /^git\+(.+)#([0-9a-f]{40})(?:&path:([^&]+))?$/u.exec(value)
-  if (direct !== null) {
-    return {
-      kind: 'direct',
-      packageVersion: value,
-      repository: normalizeGitRepository(requiredString(direct[1], `${label} repository`)),
-      commit: requiredString(direct[2], `${label} commit`),
-      repositoryPath: direct[3] ?? null,
-    }
-  }
-  const codeload =
-    /^(https:\/\/codeload\.github\.com\/([^/]+)\/([^/]+)\/tar\.gz\/([0-9a-f]{40}))(?:#path:([^()]+))?(?:\(.*\))?$/u
-      .exec(value)
-  if (codeload === null) {
-    throw new Error(`${label} must use direct Git or GitHub codeload with a full commit SHA`)
-  }
-  const tarball = requiredString(codeload[1], `${label} tarball`)
-  const repositoryPath = codeload[5] ?? null
-  return {
-    kind: 'github-codeload',
-    packageVersion: `${tarball}${repositoryPath === null ? '' : `#path:${repositoryPath}`}`,
-    repository: normalizeGitRepository(
-      `https://github.com/${requiredString(codeload[2], `${label} owner`)}/${requiredString(codeload[3], `${label} repository`)}`,
-    ),
-    commit: requiredString(codeload[4], `${label} commit`),
-    repositoryPath,
-    tarball,
-  }
-}
-
-function readPnpmGitResolution(
-  lockPath: string,
-  packageName: string,
-  dependencySpec: string,
-  declared: ExactGitDependency,
-  candidateId: string,
-): PnpmGitResolution {
-  const { lock, dependency } = readPnpmRootDependency(lockPath, packageName, candidateId)
-  if (dependency.specifier !== dependencySpec) {
-    throw new Error(`${candidateId} pnpm dependency specifier differs from the profile manifest`)
-  }
-  const version = requiredString(dependency.version, `${candidateId} pnpm dependency version`)
-  const importerResolution = parsePnpmGitDependency(version, `${candidateId} pnpm dependency version`)
-  if (
-    importerResolution.repository !== declared.repository
-    || importerResolution.commit !== declared.commit
-    || importerResolution.repositoryPath !== declared.repositoryPath
-  ) {
-    throw new Error(`${candidateId} pnpm dependency version differs from the profile manifest`)
-  }
-  const packages = requiredRecord(lock.packages, `${candidateId} pnpm lockfile packages`)
-  const packageRecord = requiredRecord(
-    packages[`${packageName}@${importerResolution.packageVersion}`],
-    `${candidateId} pnpm package resolution`,
-  )
-  const resolution = requiredRecord(packageRecord.resolution, `${candidateId} pnpm package resolution`)
-  let repository: string
-  let commit: string
-  if (importerResolution.kind === 'direct') {
-    if (resolution.type !== 'git') throw new Error(`${candidateId} pnpm package resolution must be Git`)
-    repository = normalizeGitRepository(requiredString(resolution.repo, `${candidateId} pnpm repository`))
-    commit = requiredString(resolution.commit, `${candidateId} pnpm commit`)
-  } else {
-    if (resolution.gitHosted !== true) {
-      throw new Error(`${candidateId} pnpm package resolution must be GitHub-hosted`)
-    }
-    if (resolution.tarball !== importerResolution.tarball) {
-      throw new Error(`${candidateId} pnpm package tarball differs from its dependency version`)
-    }
-    repository = importerResolution.repository
-    commit = importerResolution.commit
-  }
-  const repositoryPath = resolution.path === undefined
-    ? null
-    : requiredString(resolution.path, `${candidateId} pnpm package resolution path`)
-  if (repositoryPath !== declared.repositoryPath) {
-    throw new Error(`${candidateId} pnpm package resolution path differs from the profile manifest`)
-  }
-  return {
-    repository,
-    commit,
-    repositoryPath,
-    packageKey: `${packageName}@${importerResolution.packageVersion}`,
-    packageVersion: requiredString(packageRecord.version, `${candidateId} pnpm package version`),
-    snapshotKey: `${packageName}@${version}`,
-  }
-}
-
-function assertMatchingRuntimeDependencyClosures(
-  rootLockPath: string,
-  installedLockPath: string,
-  rootPackageKey: string,
-  rootSnapshotKey: string,
-  installedPackageKey: string,
-  installedSnapshotKey: string,
-  candidateId: string,
-  expectedSha256: string | undefined,
-): void {
-  const rootClosure = readPnpmRuntimeDependencyClosure(
-    rootLockPath,
-    rootPackageKey,
-    rootSnapshotKey,
-    candidateId,
-  )
-  const installedClosure = readPnpmRuntimeDependencyClosure(
-    installedLockPath,
-    installedPackageKey,
-    installedSnapshotKey,
-    candidateId,
-  )
-  if (!sameOrderedStrings(rootClosure, installedClosure)) {
-    throw new Error(`${candidateId} root and installed pnpm runtime dependency closures differ`)
-  }
-  const rootSha256 = runtimeDependencyClosureSha256(rootClosure)
-  const installedSha256 = runtimeDependencyClosureSha256(installedClosure)
-  if (expectedSha256 !== undefined && (rootSha256 !== expectedSha256 || installedSha256 !== expectedSha256)) {
-    throw new Error(
-      `${candidateId} runtime dependency closure SHA-256 differs from the catalog `
-      + `(expected ${expectedSha256}, root ${rootSha256}, installed ${installedSha256})`,
-    )
-  }
-}
-
-function runtimeDependencyClosureSha256(identities: readonly string[]): string {
-  const digest = createHash('sha256')
-  for (const identity of [...identities].sort()) {
-    const bytes = Buffer.from(identity)
-    digest.update(`${String(bytes.byteLength)}:`)
-    digest.update(bytes)
-  }
-  return digest.digest('hex')
-}
-
-function readPnpmRuntimeDependencyClosure(
-  lockPath: string,
-  rootPackageKey: string,
-  rootSnapshotKey: string,
-  candidateId: string,
-): string[] {
-  const lock = readPnpmLock(lockPath, candidateId)
-  const packages = requiredRecord(lock.packages, `${candidateId} pnpm lockfile packages`)
-  const snapshots = recordOrUndefined(lock.snapshots) ?? {}
-  const rootRecord = requiredRecord(
-    packages[rootPackageKey],
-    `${candidateId} pnpm package resolution`,
-  )
-  const pending = runtimeDependencies(
-    recordOrUndefined(snapshots[rootSnapshotKey]) ?? rootRecord,
-    `${candidateId} ${rootSnapshotKey}`,
-  )
-  const expandedSnapshots = new Set<string>()
-  const identities = new Set<string>()
-  while (pending.length > 0) {
-    const dependency = pending.pop() as { readonly name: string; readonly locator: string }
-    const target = pnpmRuntimeDependencyTarget(dependency.name, dependency.locator)
-    const keys = pnpmPackageKeys(target.name, target.locator)
-    const packageKey = keys.find(key => Object.hasOwn(packages, key))
-    if (packageKey === undefined) {
-      const subject = target.alias
-        ? `${dependency.name} alias target ${target.name}@${stripPnpmPeerSuffix(target.locator)}`
-        : `${dependency.name}@${stripPnpmPeerSuffix(target.locator)}`
-      throw new Error(`${subject} runtime dependency is unresolved`)
-    }
-    const snapshotKey = keys.find(key => Object.hasOwn(snapshots, key)) ?? packageKey
-    const packageRecord = requiredRecord(
-      packages[packageKey],
-      `${candidateId} ${dependency.name} runtime dependency`,
-    )
-    const targetIdentity = runtimeDependencyIdentity(
-      dependency.name,
-      target.locator,
-      packageKey,
-      packageRecord,
-    )
-    identities.add(target.alias
-      ? `${dependency.name}\0alias\0${targetIdentity}`
-      : targetIdentity)
-    if (expandedSnapshots.has(snapshotKey)) continue
-    expandedSnapshots.add(snapshotKey)
-    pending.push(...runtimeDependencies(
-      recordOrUndefined(snapshots[snapshotKey]) ?? packageRecord,
-      `${candidateId} ${snapshotKey}`,
-    ))
-  }
-  return [...identities].sort()
-}
-
-function readPnpmLock(lockPath: string, candidateId: string): Record<string, unknown> {
-  const label = `${candidateId} pnpm lockfile`
-  const lock = requiredRecord(loadYamlFile(lockPath, label), label)
-  if (lock.lockfileVersion !== '9.0') throw new Error(`${candidateId} pnpm lockfile version must be 9.0`)
-  const transformation = pnpmLockTransformation(lock)
-  if (transformation !== undefined) throw new Error(`${candidateId} ${transformation}`)
-  return lock
-}
-
-function pnpmLockTransformation(value: Record<string, unknown>): string | undefined {
-  if (Object.hasOwn(value, 'overrides')) {
-    return 'pnpm lockfile must not contain overrides'
-  }
-  if (Object.hasOwn(value, 'patchedDependencies')) {
-    return 'pnpm lockfile must not contain patchedDependencies'
-  }
-  if (Object.hasOwn(value, 'packageExtensions')) {
-    return 'pnpm lockfile must not contain packageExtensions'
-  }
-  const settings = recordOrUndefined(value.settings)
-  if (settings !== undefined && Object.hasOwn(settings, 'overrides')) {
-    return 'pnpm lockfile must not contain overrides'
-  }
-  if (settings !== undefined && Object.hasOwn(settings, 'packageExtensionsChecksum')) {
-    return 'pnpm lockfile must not contain packageExtensionsChecksum'
-  }
-  if (settings !== undefined && Object.hasOwn(settings, 'pnpmfileChecksum')) {
-    return 'pnpm lockfile must not contain pnpmfileChecksum'
-  }
-  if (containsPnpmPatchHash(value)) {
-    return 'pnpm lockfile must not contain patched dependency locators'
-  }
-  return undefined
-}
-
-function containsPnpmPatchHash(value: unknown, seen = new WeakSet<object>()): boolean {
-  if (typeof value === 'string') return value.includes('(patch_hash=')
-  if (typeof value !== 'object' || value === null) return false
-  /* v8 ignore next -- YAML aliases can make lockfile objects cyclic. */
-  if (seen.has(value)) return false
-  seen.add(value)
-  if (Array.isArray(value)) return value.some(item => containsPnpmPatchHash(item, seen))
-  return Object.entries(value as Record<string, unknown>).some(([key, item]) =>
-    key.includes('(patch_hash=') || containsPnpmPatchHash(item, seen))
-}
-
-function runtimeDependencies(
-  packageRecord: Record<string, unknown>,
-  label: string,
-): Array<{ readonly name: string; readonly locator: string }> {
-  const dependencies: Array<{ readonly name: string; readonly locator: string }> = []
-  for (const field of ['dependencies', 'optionalDependencies'] as const) {
-    const values = recordOrUndefined(packageRecord[field])
-    if (values === undefined) continue
-    for (const [name, value] of Object.entries(values)) {
-      dependencies.push({
-        name,
-        locator: requiredString(value, `${label} ${field}.${name}`),
-      })
-    }
-  }
-  return dependencies
-}
-
-function pnpmPackageKeys(name: string, locator: string): string[] {
-  const exact = `${name}@${locator}`
-  const withoutPeers = `${name}@${stripPnpmPeerSuffix(locator)}`
-  return exact === withoutPeers ? [exact] : [exact, withoutPeers]
-}
-
-function pnpmRuntimeDependencyTarget(
-  declarationName: string,
-  locator: string,
-): { readonly name: string; readonly locator: string; readonly alias: boolean } {
-  const exactLocator = stripPnpmPeerSuffix(locator)
-  const peerSuffix = locator.slice(exactLocator.length)
-  const explicitAlias = exactLocator.startsWith('npm:')
-  const targetLocator = explicitAlias ? exactLocator.slice('npm:'.length) : exactLocator
-  const target = PNPM_ALIAS_TARGET_PATTERN.exec(targetLocator)
-  if (target === null || (!explicitAlias && target[1] === declarationName)) {
-    return { name: declarationName, locator, alias: false }
-  }
-  return {
-    name: target[1] as string,
-    locator: `${target[2] as string}${peerSuffix}`,
-    alias: true,
-  }
-}
-
-function stripPnpmPeerSuffix(locator: string): string {
-  const peerSuffix = locator.indexOf('(')
-  return peerSuffix === -1 ? locator : locator.slice(0, peerSuffix)
-}
-
-function runtimeDependencyIdentity(
-  name: string,
-  locator: string,
-  packageKey: string,
-  packageRecord: Record<string, unknown>,
-): string {
-  const resolution = requiredRecord(packageRecord.resolution, `${name} runtime dependency resolution`)
-  const exactLocator = stripPnpmPeerSuffix(locator)
-  if (resolution.type === 'git') {
-    if (!/^git\+.+#[0-9a-f]{40}(?:&path:[^&]+)?$/u.test(exactLocator)) {
-      throw new Error(`${name} runtime Git dependency must use an immutable commit`)
-    }
-    const commit = requiredString(resolution.commit, `${name} runtime Git resolution commit`)
-    if (!/^[0-9a-f]{40}$/u.test(commit)) {
-      throw new Error(`${name} runtime Git resolution must declare an immutable commit`)
-    }
-    const repository = normalizeGitRepository(
-      requiredString(resolution.repo, `${name} runtime Git resolution repository`),
-    )
-    const declared = parseExactGitDependency(exactLocator, `${name} runtime Git dependency`)
-    const repositoryPath = resolution.path === undefined
-      ? null
-      : requiredString(resolution.path, `${name} runtime Git resolution path`)
-    if (
-      declared.repository !== repository
-      || declared.commit !== commit
-      || declared.repositoryPath !== repositoryPath
-    ) {
-      throw new Error(`${name} runtime Git dependency differs from its resolution repository, commit, or path`)
-    }
-    return `${packageKey}\0git\0${repository}\0${commit}`
-  }
-  if (resolution.gitHosted === true) {
-    const tarball = requiredString(resolution.tarball, `${name} runtime Git tarball`)
-    if (!/[0-9a-f]{40}(?:[/?#]|$)/u.test(tarball) || !exactLocator.includes(tarball)) {
-      throw new Error(`${name} runtime Git tarball must declare an immutable commit identity`)
-    }
-    return `${packageKey}\0git-tarball\0${tarball}`
-  }
-  if (!isExactNpmVersion(exactLocator)) {
-    throw new Error(`${name} runtime dependency must use an exact registry version`)
-  }
-  const integrity = optionalString(resolution.integrity)
-  if (integrity === undefined || !SRI_PATTERN.test(integrity)) {
-    throw new Error(`${name}@${exactLocator} registry resolution must declare exact integrity`)
-  }
-  return `${packageKey}\0registry\0${integrity}`
-}
-
-function assertCandidateGitIdentity(
-  candidate: CuratedCandidate,
-  resolved: ExactGitDependency,
-  label: string,
-): void {
-  if (
-    normalizeGitRepository(candidate.repository) !== resolved.repository
-    || candidate.commit !== resolved.commit
-    || candidate.repositoryPath !== resolved.repositoryPath
-  ) {
-    throw new Error(`${candidate.id} ${label} differs from the catalog repository, commit, or package path`)
-  }
-}
-
-function normalizeGitRepository(value: string): string {
-  const source = value.replace(/^git\+/u, '')
-  let url: URL
-  try {
-    url = new URL(source)
-  } catch {
-    throw new Error('Git repository must be a canonical HTTPS GitHub URL')
-  }
-  if (url.username !== '' || url.password !== '' || url.search !== '') {
-    throw new Error('Git repository must not contain credentials or query parameters')
-  }
-  if (
-    url.protocol !== 'https:'
-    || url.hostname !== 'github.com'
-    || url.port !== ''
-    || url.hash !== ''
-    || url.pathname.includes('%')
-    || url.pathname.endsWith('/')
-  ) {
-    throw new Error('Git repository must be a canonical HTTPS GitHub URL')
-  }
-  if (/\.git$/iu.test(url.pathname) && !url.pathname.endsWith('.git')) {
-    throw new Error('Git repository must be a canonical HTTPS GitHub URL')
-  }
-  const canonicalInput = source.endsWith('.git') ? source.slice(0, -4) : source
-  const segments = url.pathname.replace(/\.git$/u, '').split('/').slice(1)
-  if (
-    segments.length !== 2
-    || !GITHUB_OWNER_PATTERN.test(segments[0] as string)
-    || !GITHUB_REPOSITORY_PATTERN.test(segments[1] as string)
-    || segments[1] === '.'
-    || segments[1] === '..'
-  ) {
-    throw new Error('Git repository must be a canonical HTTPS GitHub URL')
-  }
-  const canonical = `https://github.com/${segments.join('/')}`
-  if (canonicalInput !== canonical) throw new Error('Git repository must be a canonical HTTPS GitHub URL')
-  return canonical
 }
 
 function validateResolvedArtifacts(
@@ -1993,7 +1591,7 @@ function isNodeError(error: unknown): error is NodeJS.ErrnoException {
   return error instanceof Error && typeof (error as NodeJS.ErrnoException).code === 'string'
 }
 
-function assertRegularArtifactEntry(stat: Stats): void {
+function assertRegularArtifactEntry(stat: Pick<Stats, 'isFile'>): void {
   if (!stat.isFile()) {
     throw new ArtifactFileValidationError(
       'artifact-file-not-regular',
@@ -2002,23 +1600,54 @@ function assertRegularArtifactEntry(stat: Stats): void {
   }
 }
 
+interface ArtifactTreeDirectory {
+  readonly entries: readonly string[]
+  readonly identity: BigIntStats
+  readonly relativeDirectory: string
+}
+
+function artifactTreeEntryTypeKey(name: string, identity: BigIntStats): string {
+  return JSON.stringify([name, String(identity.mode & BigInt(constants.S_IFMT))])
+}
+
+function readArtifactDirectoryEntries(directory: string): string[] {
+  const entryTypes: string[] = []
+  const entries = opendirSync(directory)
+  try {
+    while (true) {
+      const entry = entries.readSync()
+      if (entry === null) break
+      const identity = lstatSync(join(directory, entry.name), { bigint: true })
+      entryTypes.push(artifactTreeEntryTypeKey(entry.name, identity))
+    }
+  } finally {
+    entries.closeSync()
+  }
+  return entryTypes.sort()
+}
+
 function installedArtifactTreeSha256(packageDir: string): string {
   const canonicalRoot = canonicalPackageRoot(packageDir)
+  const rootIdentity = lstatSync(canonicalRoot, { bigint: true })
   const files: Array<{ readonly relativePath: string; readonly canonicalPath: string }> = []
+  const directories: ArtifactTreeDirectory[] = []
   let totalBytes = 0
   let entryCount = 0
   const pending = [{
     directory: canonicalRoot,
+    identity: rootIdentity,
     relativeDirectory: '',
     depth: 0,
   }]
   while (pending.length > 0) {
     const current = pending.pop() as {
       readonly directory: string
+      readonly identity: BigIntStats
       readonly relativeDirectory: string
       readonly depth: number
     }
-    const { directory, relativeDirectory, depth } = current
+    const { directory, identity, relativeDirectory, depth } = current
+    const entryTypes: string[] = []
     const entries = opendirSync(directory)
     try {
       while (true) {
@@ -2035,7 +1664,8 @@ function installedArtifactTreeSha256(packageDir: string): string {
           ? entry.name
           : `${relativeDirectory}/${entry.name}`
         const unresolved = join(directory, entry.name)
-        const entryStat = lstatSync(unresolved)
+        const entryStat = lstatSync(unresolved, { bigint: true })
+        entryTypes.push(artifactTreeEntryTypeKey(entry.name, entryStat))
         if (entryStat.isDirectory()) {
           const childDepth = depth + 1
           if (childDepth > MAX_ARTIFACT_DEPTH) {
@@ -2044,7 +1674,12 @@ function installedArtifactTreeSha256(packageDir: string): string {
               `artifact tree exceeds ${String(MAX_ARTIFACT_DEPTH)} directory levels`,
             )
           }
-          pending.push({ directory: unresolved, relativeDirectory: relativePath, depth: childDepth })
+          pending.push({
+            directory: unresolved,
+            identity: entryStat,
+            relativeDirectory: relativePath,
+            depth: childDepth,
+          })
           continue
         }
         let canonicalPath = unresolved
@@ -2068,6 +1703,11 @@ function installedArtifactTreeSha256(packageDir: string): string {
     } finally {
       entries.closeSync()
     }
+    directories.push({
+      entries: entryTypes.sort(),
+      identity,
+      relativeDirectory,
+    })
   }
   files.sort((left, right) => Buffer.compare(Buffer.from(left.relativePath), Buffer.from(right.relativePath)))
   const digest = createHash('sha256')
@@ -2085,6 +1725,22 @@ function installedArtifactTreeSha256(packageDir: string): string {
     digest.update(pathBytes)
     digest.update(`${String(content.byteLength)}:`)
     digest.update(content)
+  }
+  for (const directory of directories) {
+    const path = join(canonicalRoot, directory.relativeDirectory)
+    const current = lstatSync(path, { bigint: true })
+    if (
+      current.isSymbolicLink()
+      || !current.isDirectory()
+      || !sameFileIdentity(directory.identity, current)
+      || realpathSync.native(path) !== path
+      || !sameOrderedStrings(readArtifactDirectoryEntries(path), directory.entries)
+    ) {
+      throw new ArtifactFileValidationError(
+        'artifact-file-changed',
+        'artifact tree changed while it was being read',
+      )
+    }
   }
   return digest.digest('hex')
 }
@@ -2159,6 +1815,7 @@ function compareVersion(
 export function runPreflight(args: readonly string[], options: PreflightOptions = {}): CommandResult {
   try {
     const parsed = parseArgs(args)
+    const reportProfile = redactSecretText(parsed.profile)
     const profileRoot = parsed.profileRoot
       ?? (options.profileRoot === undefined ? undefined : exactRoot(options.profileRoot, 'profileRoot'))
     if (profileRoot !== undefined) {
@@ -2173,13 +1830,13 @@ export function runPreflight(args: readonly string[], options: PreflightOptions 
         command: 'preflight',
         json: parsed.json,
         okText: '',
-        failText: `preflight: failed (profile ${parsed.profile}, ${String(issues.length)} issue)\n`,
+        failText: `preflight: failed (profile ${reportProfile}, ${String(issues.length)} issue)\n`,
         payload: {
           command: 'preflight',
           ok: false,
           observed: false,
           accepted: false,
-          profile: parsed.profile,
+          profile: reportProfile,
           entryCount: 0,
           issues,
         },
@@ -2217,14 +1874,14 @@ export function runPreflight(args: readonly string[], options: PreflightOptions 
     return formatResult({
       command: 'preflight',
       json: parsed.json,
-      okText: `preflight: ok (profile ${parsed.profile}, ${String(entries.length)} entries)\n`,
-      failText: `preflight: failed (profile ${parsed.profile}, ${String(entries.length)} entries, ${String(issues.length)} issues)\n`,
+      okText: `preflight: ok (profile ${reportProfile}, ${String(entries.length)} entries)\n`,
+      failText: `preflight: failed (profile ${reportProfile}, ${String(entries.length)} entries, ${String(issues.length)} issues)\n`,
       payload: {
         command: 'preflight',
         ok: issues.length === 0,
         observed,
         accepted: observed && issues.length === 0,
-        profile: parsed.profile,
+        profile: reportProfile,
         entryCount: entries.length,
         issues,
       },
@@ -2568,11 +2225,11 @@ function profileMetadataIssues(
     }
   }
   const npmrcPath = join(profileRoot, '.npmrc')
-  if (builtInCuratedProfile && !existsSync(npmrcPath)) {
+  if (!existsSync(npmrcPath)) {
     issues.push(issue({
       code: 'preflight-profile-scripts-enabled',
       target: '.npmrc',
-      message: 'curated profile must set ignore-scripts=true',
+      message: 'managed profile must set ignore-scripts=true',
     }))
   }
   if (existsSync(npmrcPath)) {
@@ -2592,7 +2249,7 @@ function profileMetadataIssues(
       issues.push(issue({
         code: 'preflight-profile-scripts-enabled',
         target: '.npmrc',
-        message: 'curated profile must set ignore-scripts=true',
+        message: 'managed profile must set ignore-scripts=true',
       }))
     }
     if (containsTransformation) {
@@ -2817,9 +2474,12 @@ function npmrcContainsSecret(entries: readonly NpmrcEntry[]): boolean {
  * termination time can extend total wall-clock duration. A caller requiring a
  * hard operating-system deadline must supervise the CLI process. The command
  * does not import candidate modules, initialize plugins, or start the profile
- * runtime. Production observed smoke copies the validated profile and optional
- * home patch into a private execution home before launching either child stage,
- * so later writes to the supplied profile path cannot change child inputs.
+ * runtime. Source-tree execution launches the source dsh CLI through tsx and
+ * the repository paths map; built execution launches the manifest-declared bin
+ * under plain Node. Production observed smoke copies the validated profile and
+ * optional home patch into a private execution home before launching either
+ * child stage, so later writes to the supplied profile path cannot change
+ * child inputs.
  * @param args - CLI-style arguments; supports `--profile <id>` and `--json`.
  * @param options - Optional injected templates and runner for local tests.
  * @returns captured status and output.
@@ -2851,7 +2511,7 @@ export async function runSmokeProfile(args: readonly string[], options: SmokePro
     let executionHome: string | undefined
     try {
       if (options.prepare !== undefined) {
-        const prepared = await settleBeforeDeadline(options.prepare(), deadline)
+        const prepared = await settleBeforeDeadline(options.prepare(), deadline, now)
         if (!prepared) {
           return stagingTimeoutResult(
             parsed.profile,
@@ -2901,7 +2561,7 @@ export async function runSmokeProfile(args: readonly string[], options: SmokePro
             bundles: template.bundles,
             artifactRoots,
             executionHome,
-          }, deadline, options.stagingWorkerEntry)
+          }, deadline, now, options.stagingWorkerEntry)
           if (staged === undefined) {
             rmSync(executionHome, { recursive: true, force: true })
             executionHome = undefined
@@ -3001,9 +2661,12 @@ export function createSmokeProfileChildRunner(
     if ((options.platform ?? process.platform) === 'win32') {
       return {
         status: 1,
+        exitCode: null,
+        signal: null,
         stdout: '',
         stderr: 'observed smoke is unsupported on Windows until a Job Object child runner is available',
         durationMs: Math.max(0, performance.now() - started),
+        timedOut: false,
       }
     }
     const args = request.stage === 'dump-config'
@@ -3084,12 +2747,14 @@ export function createSmokeProfileChildRunner(
             && !result.spawnFailed
             ? result.status ?? 1
             : 1,
+        exitCode: result.status,
+        signal: result.signal,
         stdout: redactedOutputExceeded ? '' : redactedStdout,
         stderr: redactedOutputExceeded
           ? stderrDiagnostic ?? redactedOutputLimitDiagnostic
           : redactedStderr,
         durationMs: Math.max(0, performance.now() - started),
-        ...timedOut ? { timedOut: true } : {},
+        timedOut,
       }
     } finally {
       rmSync(cwd, { recursive: true, force: true })
@@ -3100,6 +2765,7 @@ export function createSmokeProfileChildRunner(
 interface SmokeChildOutcome {
   readonly spawnFailed: boolean
   readonly status: number | null
+  readonly signal: NodeJS.Signals | null
 }
 
 function childOutcome(child: ChildProcess): Promise<SmokeChildOutcome> {
@@ -3108,7 +2774,7 @@ function childOutcome(child: ChildProcess): Promise<SmokeChildOutcome> {
     child.once('error', () => {
       spawnFailed = true
     })
-    child.once('close', (status) => { resolveOutcome({ spawnFailed, status }) })
+    child.once('close', (status, signal) => { resolveOutcome({ spawnFailed, status, signal }) })
   })
 }
 
@@ -3175,16 +2841,17 @@ function smokeProcessTreeAlive(child: ChildProcess): boolean {
 }
 
 function createInstalledSmokeProfileRunner(home: string, childEnv: NodeJS.ProcessEnv = {}): SmokeProfileRunner {
+  const launch = resolveDshCliLaunch()
   const child = createSmokeProfileChildRunner(
-    process.execPath,
-    [resolveDshCliEntry()],
+    launch.command,
+    launch.args,
     { env: { ...childEnv, DSH_HOME: home, DSH_TELEMETRY_DISABLED: '1' } },
   )
   return request => request.home === undefined
     ? child(request)
     : createSmokeProfileChildRunner(
-      process.execPath,
-      [resolveDshCliEntry()],
+      launch.command,
+      launch.args,
       { env: { ...childEnv, DSH_HOME: request.home, DSH_TELEMETRY_DISABLED: '1' } },
     )(request)
 }
@@ -3224,9 +2891,25 @@ function observedProfileHome(profileRoot: string, profile: string): string | und
   return dirname(profilesRoot)
 }
 
-function resolveDshCliEntry(): string {
+function resolveDshCliLaunch(): { readonly command: string; readonly args: readonly string[] } {
+  const packageRoot = dirname(DSH_INSTALL_ANCHOR)
+  /* v8 ignore else -- built-package smoke covers the emitted plain-Node branch in a child process. */
+  if (fileURLToPath(import.meta.url).endsWith(`${sep}src${sep}index.ts`)) {
+    const repositoryRoot = resolve(packageRoot, '../..')
+    return {
+      command: process.execPath,
+      args: [
+        createRequire(import.meta.url).resolve('tsx/cli'),
+        '--tsconfig',
+        join(repositoryRoot, 'tsconfig.json'),
+        join(packageRoot, 'src/bin.ts'),
+      ],
+    }
+  }
+  /* v8 ignore start -- child-process coverage cannot attribute the built-package smoke here. */
   const manifest = JSON.parse(readBoundedRegularFile(DSH_INSTALL_ANCHOR).toString('utf8')) as { bin: { dsh: string } }
-  return resolve(dirname(DSH_INSTALL_ANCHOR), manifest.bin.dsh)
+  return { command: process.execPath, args: [resolve(packageRoot, manifest.bin.dsh)] }
+  /* v8 ignore stop */
 }
 
 function validateSmokeCandidateMetadata(profile: string, packageName: string, candidate: CuratedCandidate): void {
@@ -3271,7 +2954,11 @@ function materializeSmokeExecutionHome(
   chmodSync(executionHome, 0o700)
   const executionProfileRoot = join(executionHome, 'profiles', profile)
   mkdirSync(dirname(executionProfileRoot), { recursive: true, mode: 0o700 })
-  cpSync(profileRoot, executionProfileRoot, { recursive: true, dereference: false })
+  cpSync(profileRoot, executionProfileRoot, {
+    recursive: true,
+    dereference: false,
+    verbatimSymlinks: true,
+  })
   const homePatch = join(home, 'cordis.patch.yml')
   if (existsSync(homePatch)) {
     const content = readBoundedRegularFile(homePatch)
@@ -3376,16 +3063,17 @@ function usesInjectedSmokeStaging(options: SmokeProfileOptions): boolean {
 async function runSmokeStagingWorker(
   input: SmokeProfileStagingInput,
   deadline: number,
+  now: () => number,
   entryOverride?: string | URL,
 ): Promise<SmokeProfileStagingResult | undefined> {
-  const remainingBeforeConstruction = Math.max(0, deadline - performance.now())
+  const remainingBeforeConstruction = Math.max(0, deadline - now())
   /* v8 ignore next -- the caller checks the same monotonic deadline immediately before this race guard */
   if (remainingBeforeConstruction <= 0) return undefined
   const { entry, options } = resolveSmokeStagingWorker(input, entryOverride)
   const worker = new Worker(entry, options)
   let timer: NodeJS.Timeout | undefined
   try {
-    const remaining = Math.max(0, deadline - performance.now())
+    const remaining = Math.max(0, deadline - now())
     if (remaining <= 0) return undefined
     return await new Promise<SmokeProfileStagingResult | undefined>((resolveResult, reject) => {
       let settled = false
@@ -3463,12 +3151,15 @@ function resolveSmokeStagingWorker(
 function isSmokeProfileStagingResult(value: unknown): value is SmokeProfileStagingResult {
   if (!isRecord(value) || typeof value.ok !== 'boolean') return false
   if (value.ok) return Object.keys(value).length === 1
-  if (typeof value.error === 'string') return Object.keys(value).length === 2
+  const hasError = Object.hasOwn(value, 'error')
+  const hasIssues = Object.hasOwn(value, 'issues')
+  if (hasError === hasIssues || Object.keys(value).length !== 2) return false
+  if (hasError) return typeof value.error === 'string' && value.error.length > 0
   if (!Array.isArray(value.issues)) return false
-  return value.issues.every(current =>
+  return value.issues.length > 0 && value.issues.every(current =>
     isRecord(current)
-    && typeof current.code === 'string'
-    && typeof current.message === 'string'
+    && typeof current.code === 'string' && current.code.length > 0
+    && typeof current.message === 'string' && current.message.length > 0
     && (current.target === undefined || typeof current.target === 'string'))
 }
 
@@ -3562,8 +3253,12 @@ async function createSmokeProfileReport(
   return smokeProfileReport(profile, options.timeLimitMs, stages, uniqueIssues(issues))
 }
 
-async function settleBeforeDeadline(operation: Promise<void>, deadline: number): Promise<boolean> {
-  const remaining = Math.max(0, deadline - performance.now())
+async function settleBeforeDeadline(
+  operation: Promise<void>,
+  deadline: number,
+  now: () => number,
+): Promise<boolean> {
+  const remaining = Math.max(0, deadline - now())
   if (remaining <= 0) {
     void operation.catch(() => undefined)
     return false
@@ -3704,6 +3399,9 @@ function smokeStageResult(
     ok: stageIssue === undefined,
     durationMs: result.durationMs,
     status: result.status,
+    ...result.exitCode === undefined ? {} : { exitCode: result.exitCode },
+    ...result.signal === undefined ? {} : { signal: result.signal },
+    ...result.timedOut === undefined ? {} : { timedOut: result.timedOut },
     ...stageIssue === undefined ? {} : { error },
   }
 }
@@ -3732,13 +3430,14 @@ function smokeProfileReport(
 }
 
 function formatSmokeProfileReport(report: SmokeProfileReport, json: boolean): CommandResult {
-  const status = report.ok ? 0 : 1
-  const stdout = renderSmokeProfileReport(report, json)
+  const redactedReport = { ...report, profile: redactSecretText(report.profile) }
+  const status = redactedReport.ok ? 0 : 1
+  const stdout = renderSmokeProfileReport(redactedReport, json)
   if (Buffer.byteLength(stdout) <= SMOKE_REPORT_MAX_OUTPUT_BYTES) {
     return { status, stdout, stderr: '' }
   }
   const boundedReport: SmokeProfileReport = {
-    ...report,
+    ...redactedReport,
     ok: false,
     profile: '[REDACTED]',
     stages: report.stages.map(({ error: _error, ...stage }) => stage),
@@ -3968,6 +3667,16 @@ function validateComparableProfiles(dataset: BenchmarkDataset): asserts dataset 
   }
   assertBenchmarkProfileTemplate(baseline.profile, baselineProfile, 'baseline.profileSnapshot')
   assertBenchmarkProfileTemplate(candidate.profile, candidate.profileSnapshot.snapshot, 'candidate.profileSnapshot')
+  assertBenchmarkSnapshotPair(
+    dataset.previousSnapshots.lock.snapshot,
+    dataset.previousSnapshots.profile.snapshot,
+    'previousSnapshots',
+  )
+  assertBenchmarkSnapshotPair(
+    candidate.lockSnapshot.snapshot,
+    candidate.profileSnapshot.snapshot,
+    'candidate',
+  )
   if (isPendingBenchmarkDataset(dataset) && baseline.execution === undefined && candidate.execution === undefined) return
   if (baseline.execution === undefined || candidate.execution === undefined) {
     throw new Error('benchmark runs require baseline and candidate execution provenance')
@@ -4008,6 +3717,30 @@ function validateComparableProfiles(dataset: BenchmarkDataset): asserts dataset 
   if (candidate.runs.some(run =>
     baselineCritical.get(`${run.taskId}\u0000${String(run.attempt)}`) !== run.critical)) {
     throw new Error('baseline and candidate critical flags must match exactly')
+  }
+}
+
+function assertBenchmarkSnapshotPair(
+  lock: Readonly<Record<string, unknown>>,
+  profile: Readonly<Record<string, unknown>>,
+  label: string,
+): void {
+  const candidates = lock.candidates as readonly Readonly<Record<string, unknown>>[]
+  const expectedPackages = candidates.map(candidate => candidate.expectedPackage as string)
+  if (new Set(expectedPackages).size !== expectedPackages.length) {
+    throw new Error(`${label} lock candidate expectedPackage values must be unique`)
+  }
+  const thirdPartyBundles = assertBenchmarkProfileSnapshotBundles(
+    profile,
+    `${label} profile snapshot`,
+  ).filter(bundle => !INSTALLATION_OWNED_PROFILE_BUNDLES.has(bundle))
+  if (
+    new Set(thirdPartyBundles).size !== thirdPartyBundles.length
+    || !sameOrderedStrings(expectedPackages, thirdPartyBundles)
+  ) {
+    throw new Error(
+      `${label} lock candidates must exactly match its profile third-party bundles in order`,
+    )
   }
 }
 
@@ -4316,7 +4049,8 @@ function failureDistribution(runs: readonly BenchmarkRun[]): Readonly<Record<str
   const counts = new Map<string, number>()
   for (const run of runs) {
     if (run.success || run.failure === null) continue
-    counts.set(run.failure, (counts.get(run.failure) ?? 0) + 1)
+    const failure = redactSecretText(run.failure)
+    counts.set(failure, (counts.get(failure) ?? 0) + 1)
   }
   return Object.fromEntries([...counts].sort(([left], [right]) => left.localeCompare(right)))
 }
@@ -5244,11 +4978,16 @@ function issue(input: {
 
 function redactCommandDetails(value: unknown): unknown {
   if (typeof value === 'string') return redactSecretText(value)
-  if (Array.isArray(value)) return value.map(item => redactCommandDetails(item))
+  if (Array.isArray(value)) {
+    return value.map((item, index) =>
+      index === 1 && isAuthorizationHeaderTuple(value) ? REDACTED : redactCommandDetails(item))
+  }
   if (!isRecord(value)) return value
   return Object.fromEntries(Object.entries(value).map(([key, item]) => [
     key,
-    SECRET_KEY_PATTERN.test(key) ? REDACTED : redactCommandDetails(item),
+    SECRET_KEY_PATTERN.test(key) || key === 'value' && isAuthorizationHeaderRecord(value)
+      ? REDACTED
+      : redactCommandDetails(item),
   ]))
 }
 
@@ -5352,10 +5091,36 @@ function visitDataBoundary(value: unknown, onEntry: (key: string, value: unknown
 }
 
 function containsSecretMaterial(value: unknown): boolean {
-  if (typeof value === 'string') return SECRET_VALUE_PATTERN.test(value)
-  if (Array.isArray(value)) return value.some(item => containsSecretMaterial(item))
+  if (typeof value === 'string') {
+    return redactPlainSecretAssignments(value) !== value
+      || SECRET_VALUE_PATTERN.test(value)
+      || URL_USERINFO_SECRET_PATTERN.test(value)
+      || SCHEMELESS_USERINFO_SECRET_PATTERN.test(value)
+  }
+  if (Array.isArray(value)) {
+    return isAuthorizationHeaderTuple(value)
+      || value.some(item => containsSecretMaterial(item))
+  }
   if (!isRecord(value)) return false
+  if (isAuthorizationHeaderRecord(value)) return true
   return Object.entries(value).some(([key, item]) => containsSecretMaterialForKey(key, item))
+}
+
+function isAuthorizationHeaderTuple(value: readonly unknown[]): boolean {
+  return value.length === 2
+    && isAuthorizationHeaderName(value[0])
+    && typeof value[1] === 'string'
+    && value[1].length > 0
+}
+
+function isAuthorizationHeaderRecord(value: Readonly<Record<string, unknown>>): boolean {
+  return isAuthorizationHeaderName(value.name)
+    && typeof value.value === 'string'
+    && value.value.length > 0
+}
+
+function isAuthorizationHeaderName(value: unknown): value is string {
+  return typeof value === 'string' && /^(?:proxy-)?authorization$/iu.test(value)
 }
 
 function containsSecretMaterialForKey(key: string, value: unknown): boolean {

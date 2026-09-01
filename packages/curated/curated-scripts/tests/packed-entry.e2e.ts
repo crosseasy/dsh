@@ -58,15 +58,15 @@ function stageFakeDshPackage(consumerRoot: string): void {
   }, null, 2)}\n`)
   const bin = join(packageDir, 'bin.js')
   writeFileSync(bin, [
-    "import { writeFileSync } from 'node:fs'",
-    "import { join } from 'node:path'",
+    "import { appendFileSync } from 'node:fs'",
+    "import { dirname, join } from 'node:path'",
     "import { fileURLToPath } from 'node:url'",
     'const home = process.env.DSH_HOME',
     'if (home === undefined) throw new Error(\'DSH_HOME is required\')',
-    "writeFileSync(join(home, `fake-dsh-invocation-${process.argv.at(-1) === '--help' ? 'help' : 'dump'}.json`), JSON.stringify({",
+    "appendFileSync(join(dirname(fileURLToPath(import.meta.url)), 'fake-dsh-invocations.jsonl'), JSON.stringify({",
     '  entry: fileURLToPath(import.meta.url),',
     '  argv: process.argv.slice(2),',
-    '}))',
+    "}) + '\\n')",
     'process.stdout.write(\'fake dsh ok\\n\')',
     '',
   ].join('\n'))
@@ -149,6 +149,7 @@ describe.skipIf(!existsSync(builtPackageEntry))(
             },
           },
         }, null, 2)}\n`)
+        writeFileSync(join(profileRoot, '.npmrc'), 'ignore-scripts=true\n')
         writeFileSync(join(profileRoot, 'cordis.patch.yml'), `- id: installation-base-a
   config:
     source: profile
@@ -254,7 +255,7 @@ describe.skipIf(!existsSync(builtPackageEntry))(
         expect(packedManifest.dependencies).not.toHaveProperty('tsx')
         expect(packedSource).not.toContain('apps/cli/src/bin.ts')
         expect(packedSource).not.toContain('tsx/esm')
-        expect(readFileSync(join(home, 'fake-dsh-invocations.jsonl'), 'utf8')
+        expect(readFileSync(join(realpathSync(installedDshPackage), 'fake-dsh-invocations.jsonl'), 'utf8')
           .trim()
           .split('\n')
           .map(line => JSON.parse(line) as FakeDshInvocation)).toEqual([

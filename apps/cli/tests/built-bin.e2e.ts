@@ -425,7 +425,13 @@ describe.skipIf(!existsSync(dshBin))('dsh BUILT bin (node lib/bin.js, no tsx)', 
         '#!/bin/sh',
         'printf "fake pnpm: %s\\n" "$*"',
         'printf "%s\\n" "$*" >> "$DSH_TEST_PNPM_LOG"',
-        'exit "${DSH_TEST_PNPM_STATUS:-0}"',
+        'status="${DSH_TEST_PNPM_STATUS:-0}"',
+        'if [ "$status" -eq 0 ]; then',
+        '  mkdir -p node_modules/.pnpm',
+        '  printf "%s\\n" "lockfileVersion: \'9.0\'" "" "importers:" "  .: {}" > pnpm-lock.yaml',
+        '  cp pnpm-lock.yaml node_modules/.pnpm/lock.yaml',
+        'fi',
+        'exit "$status"',
         '',
       ].join('\n'))
       chmodSync(pnpm, 0o755)
@@ -439,24 +445,37 @@ describe.skipIf(!existsSync(dshBin))('dsh BUILT bin (node lib/bin.js, no tsx)', 
       }
       try {
         expect(existsSync(join(profileDir, 'node_modules'))).toBe(false)
-        for (const [command, status] of [
-          ['--help', 0],
-          ['list', 0],
-          ['install', 0],
-          ['--help', 9],
-          ['list', 9],
-          ['install', 9],
-        ] as const) {
+        for (const status of [0, 9]) {
+          for (const command of ['--help', 'list'] as const) {
+            const logBefore = existsSync(log) ? readFileSync(log, 'utf8') : undefined
+            const result = await runBuiltBin(
+              ['plugin', '--profile', 'web-curated', command],
+              { ...env, DSH_TEST_PNPM_STATUS: String(status) },
+            )
+            expect(result.code, `${command} status ${String(status)}: ${result.stderr}`).toBe(0)
+            expect(result.stderr).toBe('')
+            if (command === '--help') {
+              expect(result.stdout).toContain('Usage: dsh plugin --profile web-curated <command>')
+              expect(result.stdout).toContain('list      print the fixed curated dependency set')
+            } else {
+              expect(result.stdout).toContain('web-curated:')
+              expect(result.stdout).toContain('(no third-party plugin dependencies)')
+            }
+            expect(existsSync(log) ? readFileSync(log, 'utf8') : undefined).toBe(logBefore)
+            expect(existsSync(profileDir)).toBe(false)
+          }
+        }
+        for (const status of [0, 9]) {
           const result = await runBuiltBin(
-            ['plugin', '--profile', 'web-curated', command],
+            ['plugin', '--profile', 'web-curated', 'install'],
             { ...env, DSH_TEST_PNPM_STATUS: String(status) },
           )
-          expect(result.code, `${command} status ${String(status)}: ${result.stderr}`).toBe(status)
+          expect(result.code, `install status ${String(status)}: ${result.stderr}`).toBe(status)
           expect(result.stdout).toContain('fake pnpm:')
           if (status === 0) expect(result.stderr).not.toContain('pnpm failed')
           else expect(result.stderr).toContain('pnpm failed')
-          expect(readCuratedProfileBytes(profileDir), `${command} status ${String(status)}`).toEqual(expectedBytes)
-          expect(existsSync(join(profileDir, 'node_modules'))).toBe(false)
+          expect(readCuratedProfileBytes(profileDir), `install status ${String(status)}`).toEqual(expectedBytes)
+          expect(existsSync(join(profileDir, 'node_modules/.pnpm/lock.yaml'))).toBe(true)
         }
         expect(existsSync(join(home, 'profiles', 'web', 'package.json'))).toBe(false)
       } finally {

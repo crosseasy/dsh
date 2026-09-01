@@ -77,5 +77,7 @@
 | `internal/plugin` | - | `loader`, [`lsp-stdio`](../packages/lsp/lsp-stdio), `webserver` |
 | `internal/service` | - | [`agent-presets`](../packages/preset/agent-presets), `gateway` |
 | `internal/status` | - | [`agent`](../packages/core/agent) |
+| `internal/update` | - | [`app-boot`](../packages/boot/app-boot) |
+| `loader/config-update` | [`app-boot`](../packages/boot/app-boot) (`emit`) | - |
 
 维护模式：生成内容。Cordis 事件声明及生产方／监听方的关系边由仓库的 TypeScript Program 解析。
