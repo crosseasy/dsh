@@ -966,15 +966,21 @@ export async function captureStableAria(page: Page, selector: string, workspaceC
  * @param goldenPath - the committed ui.expected.md path.
  * @param actual - the stable normalized snapshot.
  * @param mode - the active snapshot mode.
+ * @param refreshCommand - Command named when replay finds no committed golden.
  */
-export async function compareOrRefreshGolden(goldenPath: string, actual: string, mode: WebSnapshotMode): Promise<void> {
+export async function compareOrRefreshGolden(
+  goldenPath: string,
+  actual: string,
+  mode: WebSnapshotMode,
+  refreshCommand = 'DSH_SNAPSHOT=refresh pnpm run test:web',
+): Promise<void> {
   const payload = `${actual}\n`
   if (mode === 'refresh') {
     await writeFile(goldenPath, payload)
     return
   }
   if (!existsSync(goldenPath)) {
-    throw new Error(`missing golden ${goldenPath} — run DSH_SNAPSHOT=refresh pnpm run test:web to generate it`)
+    throw new Error(`missing golden ${goldenPath} — run ${refreshCommand} to generate it`)
   }
   expect(payload).toBe(await readFile(goldenPath, 'utf8'))
 }

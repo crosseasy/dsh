@@ -20,11 +20,14 @@
 
 > Summarize this repository and identify its main packages.
 
-Agent（智能体）可以读取和编辑工作区文件、运行命令、委派工作并维护计划。如果根据当前权限策略，某项操作需要审批，Web UI 会先询问你。
+agent（智能体）可以读取和编辑工作区文件、运行命令、委派工作并维护计划。当操作在当前权限策略下需要审批时，Web UI 会先询问你。
 
 ## 继续使用
 
+- [组装仅含 Pet 的 Fusion Web profile](./fusion-profile.zh.md)
+- [Fusion TUI 交付状态](./fusion-tui-profile.zh.md)
+- [集成桌面壳](./desktop-shell-contract.zh.md)
 - [配置模型](./providers.zh.md)
 - [使用 Python SDK](./python-sdk.zh.md)
-- [使用其他 CLI 模式](../../../apps/cli/README.zh.md)
+- [使用其他 CLI（命令行界面）模式](../../../apps/cli/README.zh.md)
 - [开发插件](../develop/basic/index.zh.md)

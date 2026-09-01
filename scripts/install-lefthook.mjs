@@ -27,6 +27,8 @@ const INSTALL_LOCK_INITIALIZATION_TIMEOUT_MS = 5_000
 const INSTALL_LOCK_POLL_MS = 50
 const ALLOW_HOOKS_PATH_OVERRIDE = 'DSH_LEFTHOOK_ALLOW_HOOKS_PATH_OVERRIDE'
 const REPOSITORY_EXTENSION_PATTERN = '^extensions\\.'
+const POSIX_SH_SHEBANG = '#!/bin/sh\n'
+const HOOK_PATH_BOOTSTRAP_SENTINEL = '# dsh hook PATH bootstrap'
 const PAIRING_MERGE_DRIVER_CONFIG = [
   ['merge.dsh-translation-pairing.name', 'DeepSeek Harness bilingual pairing records'],
   [
@@ -562,6 +564,33 @@ function runLefthook(root, lefthook) {
   if (result.status !== 0) throw commandFailure(lefthook, args, result)
 }
 
+function posixShellQuote(value) {
+  return `'${value.replaceAll('\'', '\'\\\'\'')}'`
+}
+
+function addHookPathBootstrap(hooksPath) {
+  if (process.platform === 'win32') return
+  const bootstrap = [
+    HOOK_PATH_BOOTSTRAP_SENTINEL,
+    `PATH=${posixShellQuote(dirname(process.execPath))}:$PATH`,
+    'export PATH',
+    '',
+  ].join('\n')
+  for (const name of readdirSync(hooksPath)) {
+    if (name === OWNERSHIP_MARKER) continue
+    const hookPath = join(hooksPath, name)
+    const hookStat = lstatSync(hookPath)
+    if (!hookStat.isFile() || hookStat.isSymbolicLink() || hookStat.nlink !== 1) {
+      throw new Error(
+        `refusing to rewrite non-regular or multiply linked hook entry ${JSON.stringify(hookPath)}`,
+      )
+    }
+    const hook = readFileSync(hookPath, 'utf8')
+    if (!hook.startsWith(POSIX_SH_SHEBANG) || hook.includes(`\n${HOOK_PATH_BOOTSTRAP_SENTINEL}\n`)) continue
+    writeFileSync(hookPath, `${POSIX_SH_SHEBANG}${bootstrap}${hook.slice(POSIX_SH_SHEBANG.length)}`)
+  }
+}
+
 function configSource(entry) {
   return `${entry.origin}: ${JSON.stringify(entry.value)}`
 }
@@ -791,6 +820,7 @@ async function main() {
         throw new Error('new worktree-local core.hooksPath did not become the effective direct worktree value')
       }
       runLefthook(root, lefthook)
+      addHookPathBootstrap(hooksPath)
       updateOwnershipMarker(ownedHooksDirectory.markerPath, hooksPath)
     } catch (error) {
       const rollbackErrors = []

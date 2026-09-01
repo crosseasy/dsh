@@ -3377,6 +3377,7 @@ export interface Config {
 - `@deepseek-ai/dsh-curated-base`（[`packages/curated/curated-base/src/index.ts`](../packages/curated/curated-base/src/index.ts)）
 - `@deepseek-ai/dsh-curated-profiles`（[`packages/curated/curated-profiles/src/index.ts`](../packages/curated/curated-profiles/src/index.ts)）
 - `@deepseek-ai/dsh-curated-scripts`（[`packages/curated/curated-scripts/src/index.ts`](../packages/curated/curated-scripts/src/index.ts)）
+- `@deepseek-ai/dsh-fusion`（[`packages/bundle/fusion/src/index.ts`](../packages/bundle/fusion/src/index.ts)）
 - `@deepseek-ai/dsh-home-paths`（[`packages/util/home-paths/src/index.ts`](../packages/util/home-paths/src/index.ts)）
 - `@deepseek-ai/dsh-hook-protocol`（[`packages/hooks/hook-protocol/src/index.ts`](../packages/hooks/hook-protocol/src/index.ts)）
 - `@deepseek-ai/dsh-launch-environment`（[`packages/util/launch-environment/src/index.ts`](../packages/util/launch-environment/src/index.ts)）

@@ -1,0 +1,6 @@
+# Bilingual-pair consistency record (docs/i18n/README.md): the git blob hash of each
+# side as of the last confirmed-consistent state. Both languages carry equal authority;
+# after editing either side, bring the other along and re-record with:
+#   pnpm run verify-translation-pairing --write docs/user/guide/fusion-tui-profile.md
+fusion-tui-profile.md: bc491f69b6256b022cecd9d4e1d35de770353c91
+fusion-tui-profile.zh.md: 7c20a2e9da18df9ac483ad2789667040bebffa2e

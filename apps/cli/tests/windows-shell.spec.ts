@@ -10,15 +10,22 @@
  * cold-start resolution closure for the pwsh rows' bare plugin names.
  */
 
-import { afterEach, describe, expect, it } from 'vitest'
-import { mkdtempSync, rmSync, readFileSync } from 'node:fs'
+import { afterEach, describe, expect, it, vi } from 'vitest'
+import { existsSync, mkdtempSync, readdirSync, rmSync, readFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import yaml from 'js-yaml'
+import { Context } from '@deepseek-ai/cordis'
 import { entryListSchema } from '@deepseek-ai/cordis-plugin-include'
 import { evaluate } from '@deepseek-ai/cordis-plugin-loader'
 import { composeEntries, initProfile, loadProfile, PROFILES_DIR } from '@deepseek-ai/dsh-app-boot'
+import { SandboxUnavailableError, SandboxProvider } from '@deepseek-ai/dsh-sandbox'
+import type { ConfinedArgv, SandboxPolicy } from '@deepseek-ai/dsh-sandbox'
+import SandboxPolicyService from '@deepseek-ai/dsh-sandbox-policy'
+import { SandboxBashExecutor } from '@deepseek-ai/dsh-bash-sandbox'
+import LocalSubprocessRuntime from '@deepseek-ai/dsh-subprocess-local'
+import * as ToolBash from '@deepseek-ai/dsh-tool-bash'
 
 /**
  * The effective disabled state of one row on one platform: a `!!js` expression
@@ -30,6 +37,30 @@ function disabledOn(row: { disabled?: unknown }, platform: 'win32' | 'linux'): b
     return Boolean(evaluate({ process: { platform } }, (value as { __jsExpr: string }).__jsExpr))
   }
   return value === true
+}
+
+type CompositionRow = {
+  id?: unknown
+  name?: unknown
+  config?: unknown
+  disabled?: unknown
+  isolate?: unknown
+}
+
+function isCompositionRow(entry: unknown): entry is CompositionRow {
+  return typeof entry === 'object' && entry !== null
+}
+
+/** Flatten nested Cordis groups so tests inspect the executable preset rows. */
+function flattenRows(entries: unknown[]): CompositionRow[] {
+  const rows: CompositionRow[] = []
+  for (const entry of entries) {
+    if (!isCompositionRow(entry)) continue
+    const row = entry
+    rows.push(row)
+    if (Array.isArray(row.config)) rows.push(...flattenRows(row.config))
+  }
+  return rows
 }
 
 describe('the shipped shell composition (real bundle layers)', () => {
@@ -154,5 +185,87 @@ describe('shipped agent presets gate both shell tools by platform', () => {
       expect(disabledOn(byId.get(id)!, 'linux'), `${id} on linux`).toBe(true)
     }
     expect(byId.get('terminal-pwsh')?.config).toMatchObject({ shellDialect: 'pwsh' })
+  })
+
+  it('liangshen selects one bash path per platform and ships only the sandboxed Windows chain', () => {
+    const directory = join(presetRoot, 'liangshen')
+    const compositionPath = join(presetRoot, 'liangshen', 'agent.cordis.yml')
+    expect(existsSync(compositionPath), 'liangshen must ship agent.cordis.yml').toBe(true)
+    if (!existsSync(compositionPath)) return
+    const entries: unknown = yaml.load(
+      readFileSync(compositionPath, 'utf8'),
+      { schema: entryListSchema },
+    )
+    if (!Array.isArray(entries)) throw new TypeError('liangshen preset must parse to an entry array')
+    const topLevelRows = entries.filter(isCompositionRow)
+    const rows = flattenRows(entries)
+    const byId = new Map(rows.map(row => [row.id, row]))
+    const persistent = byId.get('persistent-shell')
+    const windows = byId.get('windows-bash')
+    const bootstrap = byId.get('tool-bootstrap')
+    expect(persistent).toBeDefined()
+    expect(windows).toBeDefined()
+    expect(bootstrap?.config).toMatchObject({
+      shellTools: ['bash'],
+      commonTools: ['str_replace_editor'],
+      messageSources: ['user', 'goal'],
+    })
+
+    for (const platform of ['linux', 'win32'] as const) {
+      expect([persistent!, windows!].filter(row => !disabledOn(row, platform))).toHaveLength(1)
+    }
+    expect(disabledOn(persistent!, 'linux')).toBe(false)
+    expect(disabledOn(persistent!, 'win32')).toBe(true)
+    expect(disabledOn(windows!, 'linux')).toBe(true)
+    expect(disabledOn(windows!, 'win32')).toBe(false)
+    expect(windows?.isolate).toEqual({ shell: true, settings: true })
+    const windowsRows = Array.isArray(windows?.config) ? windows.config.filter(isCompositionRow) : []
+    expect(windowsRows.map(row => row.id)).toEqual([
+      'windows-bash-sandbox',
+      'windows-tool-bash',
+    ])
+    expect(byId.get('windows-bash-sandbox')?.name).toBe('@deepseek-ai/dsh-bash-sandbox')
+    expect(byId.get('windows-tool-bash')).toMatchObject({
+      name: '@deepseek-ai/dsh-tool-bash',
+      config: { enableRunInBackground: false },
+    })
+    expect(rows.some(row => row.id === 'tool-pwsh' || row.name === '@deepseek-ai/dsh-tool-pwsh')).toBe(false)
+    expect(rows.some(row => row.id === 'custom-bash' || row.name === './custom-bash.mjs')).toBe(false)
+    expect(existsSync(join(directory, 'custom-bash.mjs'))).toBe(false)
+    expect(readdirSync(directory).sort()).toEqual([
+      'NOTICE',
+      'agent.cordis.yml',
+      'preset.yml',
+      'tool-bootstrap.mjs',
+    ])
+
+    let definition: { name?: unknown } | undefined
+    ToolBash.apply({
+      shell: { sandboxMode: undefined },
+      systemPrompt: { section: () => {} },
+      tools: { register: (registered: { name?: unknown }) => { definition = registered } },
+      get: () => undefined,
+    } as never, { enableRunInBackground: false })
+    expect(definition?.name).toBe('bash')
+    expect(topLevelRows.filter(row => !disabledOn(row, 'win32') && row.id === 'windows-bash'))
+      .toHaveLength(1)
+  })
+
+  it('keeps the official Windows bash chain fail closed before subprocess spawn', async () => {
+    class UnavailableSandbox extends SandboxProvider {
+      confine(_argv: readonly string[], policy: SandboxPolicy): ConfinedArgv {
+        throw new SandboxUnavailableError(policy.mode)
+      }
+    }
+    const ctx = new Context()
+    await ctx.plugin(UnavailableSandbox)
+    await ctx.plugin(SandboxPolicyService, { mode: 'read-only', workspaceRoot: process.cwd() })
+    await ctx.plugin(LocalSubprocessRuntime)
+    await ctx.plugin(SandboxBashExecutor, { timeoutMs: 100 })
+    const spawn = vi.spyOn(ctx.subprocess, 'spawn')
+
+    await expect(ctx.shell.run(ctx.shell.resolve({ command: 'printf blocked' })))
+      .rejects.toBeInstanceOf(SandboxUnavailableError)
+    expect(spawn).not.toHaveBeenCalled()
   })
 })

@@ -31,11 +31,6 @@ interface GatewayErrorOptions {
   readonly field?: string
 }
 
-interface ResolvedBinding {
-  readonly binding: TypertGatewayBinding
-  readonly original: object
-}
-
 type ConnectionRpcResult = Awaited<ReturnType<ConnectionRpcHandler>>
 type ConnectionRpcError = Extract<ConnectionRpcResult, { readonly ok: false }>['error']
 const NEVER_ABORTED_SIGNAL = new AbortController().signal
@@ -105,7 +100,7 @@ export class TypertGatewayService extends Service implements TypertGateway {
       connectionCtx.connection.rpc.intercept(
         '/api',
         endpoint => this.claimsEndpoint(endpoint),
-        (endpoint, payload, signal) => this.dispatchRpc(endpoint, payload, signal),
+        (endpoint, payload, signal) => this.invokeRpc(endpoint, payload, signal),
         { authority: 'trusted-host' },
       )
     })
@@ -181,14 +176,6 @@ export class TypertGatewayService extends Service implements TypertGateway {
     // keeps its schema: there, undefined has to be a declared result.
     if (result === undefined && descriptor.result.mode !== 'strict') return result
     return decode(descriptor.result, result, 'result-invalid', endpoint, 'result')
-  }
-
-  private async dispatchRpc(
-    endpoint: string,
-    payload: unknown,
-    signal: AbortSignal,
-  ): Promise<ConnectionRpcResult> {
-    return this.invokeRpc(endpoint, payload, signal)
   }
 
   private async invokeRpc(endpoint: string, payload: unknown, signal: AbortSignal): Promise<ConnectionRpcResult> {
@@ -497,7 +484,7 @@ function validateBinding(
   serviceKey: string,
   namespace: string,
   endpoint: string,
-): ResolvedBinding {
+): void {
   const original = originalOf(receiver)
   const value = Reflect.get(original, 'typertRemote') as unknown
   if (value === undefined) {
@@ -507,10 +494,7 @@ function validateBinding(
       `Service ${JSON.stringify(serviceKey)} has no visible typertRemote binding`,
     )
   }
-  return {
-    binding: readBinding(value, original, serviceKey, endpoint, namespace),
-    original,
-  }
+  readBinding(value, original, serviceKey, endpoint, namespace)
 }
 
 function readBinding(

@@ -43,6 +43,12 @@ export {
   shellProcessOutcome,
 } from './render.ts'
 export type { ParsedExitStatus, RenderableShellResult, ShellForegroundResult } from './render.ts'
+export {
+  classifySandboxDenial,
+  classifySandboxRunnerFailure,
+  isSandboxRunnerSpawnFailure,
+  matchesSandboxSignature,
+} from './sandbox.ts'
 
 declare module '@deepseek-ai/cordis' {
   interface Context {

@@ -20,8 +20,15 @@ import { isCordisGroupEntry, isJsExpr, loadCordisYaml } from './cordis-yaml.ts'
 export interface PackageManifest {
   name?: string
   dependencies?: Record<string, string>
+  devDependencies?: Record<string, string>
+  peerDependencies?: Record<string, string>
   optionalDependencies?: Record<string, string>
-  dsh?: { bundle?: { patch?: string } }
+  dsh?: {
+    bundle?: {
+      patch?: string
+      profileDependencies?: unknown
+    }
+  }
 }
 
 export interface PluginReference {
@@ -55,6 +62,19 @@ const CHOOSER_BACKEND_PACKAGES = [
   '@deepseek-ai/dsh-client-ui-directory-picker-browse',
   '@deepseek-ai/dsh-client-ui-directory-picker-native',
 ]
+const dependencySections = [
+  'dependencies',
+  'devDependencies',
+  'peerDependencies',
+  'optionalDependencies',
+] as const
+const numericIdentifier = '(?:0|[1-9]\\d*)'
+const prereleaseIdentifier = `(?:${numericIdentifier}|\\d*[A-Za-z-][0-9A-Za-z-]*)`
+const exactVersionPattern = new RegExp(
+  `^${numericIdentifier}\\.${numericIdentifier}\\.${numericIdentifier}`
+  + `(?:-${prereleaseIdentifier}(?:\\.${prereleaseIdentifier})*)?`
+  + '(?:\\+[0-9A-Za-z-]+(?:\\.[0-9A-Za-z-]+)*)?$',
+)
 const errors: string[] = []
 const pluginReferences: PluginReference[] = []
 
@@ -273,7 +293,7 @@ function validateAppResolution(): string[] {
     if (typeof patch !== 'string') continue
     const patchFile = relative(root, resolve(root, bundleDir, patch)).replaceAll('\\', '/')
     const references = pluginReferences.filter(reference => reference.file === patchFile)
-    violations.push(...bundlePluginDependencyErrors(manifestPath, manifest, references))
+    violations.push(...bundleManifestDependencyErrors(manifest, references, manifestPath))
   }
   return violations
 }
@@ -302,12 +322,89 @@ export function bundlePluginDependencyErrors(
   manifest: PackageManifest,
   references: readonly PluginReference[],
 ): string[] {
-  return missingPluginDependencies(
-    // A Bundle may mount its own package (for example, its provider or runtime row).
-    references.filter(reference => packageNameFromSpecifier(reference.name) !== manifest.name),
-    manifest.dependencies ?? {},
-    manifestPath,
+  return bundleManifestDependencyErrors(manifest, references, manifestPath)
+}
+
+/**
+ * Validate one Bundle's direct bare rows against package-owned dependencies
+ * or exact profile-owned version metadata.
+ * @param manifest - The Bundle's private package manifest data.
+ * @param references - Plugin rows read from this Bundle's patch.
+ * @param manifestPath - Repository-relative package manifest path.
+ * @returns One diagnostic per missing, stale, duplicated, or invalid declaration.
+ */
+export function bundleManifestDependencyErrors(
+  manifest: PackageManifest,
+  references: readonly PluginReference[],
+  manifestPath: string,
+): string[] {
+  const problems: string[] = []
+  const dependencies = manifest.dependencies ?? {}
+  const directPackages = new Map<string, Set<string>>()
+  for (const reference of references) {
+    const packageName = packageNameFromSpecifier(reference.name)
+    if (packageName === undefined || packageName === manifest.name) continue
+    const locations = directPackages.get(packageName) ?? new Set<string>()
+    locations.add(reference.file)
+    directPackages.set(packageName, locations)
+  }
+
+  const rawProfileDependencies = manifest.dsh?.bundle?.profileDependencies
+  let profileDependencies: Record<string, unknown> = {}
+  if (rawProfileDependencies !== undefined) {
+    if (!isRecord(rawProfileDependencies) || Array.isArray(rawProfileDependencies)) {
+      problems.push(`${manifestPath}: dsh.bundle.profileDependencies must be an object`)
+    } else {
+      profileDependencies = rawProfileDependencies
+    }
+  }
+
+  const profileOwnedPackages = new Set(
+    [...directPackages.keys()].filter(packageName => !(packageName in dependencies)),
   )
+  for (const packageName of profileOwnedPackages) {
+    if (Object.hasOwn(profileDependencies, packageName)) continue
+    const locations = directPackages.get(packageName)
+    if (locations === undefined) continue
+    problems.push(
+      `${[...locations].join(', ')}: ${packageName} must be declared in ${manifestPath} dependencies `
+      + 'or dsh.bundle.profileDependencies',
+    )
+  }
+
+  for (const [packageName, version] of Object.entries(profileDependencies)) {
+    if (typeof version !== 'string' || !exactVersionPattern.test(version)) {
+      problems.push(
+        `${manifestPath}: dsh.bundle.profileDependencies[${JSON.stringify(packageName)}] `
+        + `must be an exact npm version, got ${JSON.stringify(version)}`,
+      )
+    }
+    for (const section of dependencySections) {
+      if (packageName in (manifest[section] ?? {})) {
+        problems.push(
+          `${manifestPath}: ${packageName} must not appear in ${section}; `
+          + 'dsh.bundle.profileDependencies are installed by the profile',
+        )
+      }
+    }
+    if (!profileOwnedPackages.has(packageName)) {
+      problems.push(
+        `${manifestPath}: dsh.bundle.profileDependencies declares ${packageName}, `
+        + 'but the bundle patch has no profile-owned bare row for it',
+      )
+    }
+  }
+
+  if (directPackages.has(CHOOSER_PACKAGE)) {
+    const locations = directPackages.get(CHOOSER_PACKAGE)
+    if (locations !== undefined) {
+      for (const backend of CHOOSER_BACKEND_PACKAGES) {
+        if (backend in dependencies) continue
+        problems.push(`${[...locations].join(', ')}: ${backend} must be declared in ${manifestPath} dependencies`)
+      }
+    }
+  }
+  return problems
 }
 
 /**

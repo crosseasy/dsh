@@ -1,0 +1,3 @@
+name: 梁神模式
+description: 完整保留标准模式能力，首阶段仅呈现 bash 与 str_replace_editor，稳定后切换至 PTC 模式，并在压缩后重新锚定。
+order: 5

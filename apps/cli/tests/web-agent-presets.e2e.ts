@@ -43,7 +43,7 @@ const MINIMAL_BASH_DESCRIPTION = `Run commands in a bash shell
 /**
  * Boot the shipped Web composition, minus the rows that would bind a port,
  * touch the network, or write outside the test. Everything that decides an
- * agent's capabilities is the real thing, including both shipped presets.
+ * agent's capabilities is the real thing, including every shipped preset.
  */
 async function bootWeb(
   settingsFile: string,
@@ -216,10 +216,10 @@ describe('the shipped Web composition', () => {
     }
   })
 
-  it('supplies both shipped presets, and only those, from the system root', async () => {
+  it('supplies every shipped preset, and only those, from the system root', async () => {
     const listed = await ctx.agentPresets.list()
 
-    expect(listed.map(preset => preset.id).sort()).toEqual(['code', 'cordis', 'minimal', 'standard'])
+    expect(listed.map(preset => preset.id).sort()).toEqual(['code', 'cordis', 'liangshen', 'minimal', 'standard'])
     expect(listed.every(preset => preset.trust === 'system')).toBe(true)
     expect(ctx.agentPresets.defaultId).toBe('standard')
   })
