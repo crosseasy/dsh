@@ -36,7 +36,7 @@
 - 命令证据：`/tmp/dsh-plugin-usage-evidence/verification-core-context.md` 中的 C0、C2；C0 确认 CLI 支持 `--profile` 和 `--dump-default-config`，C1/C2 使用 `pnpm dsh --profile ... --dump-default-config` 观察默认组合。
 - Package README：[`packages/context/file-reference-local/README.md`](../../../../packages/context/file-reference-local/README.md)。
 - 配置 catalog：[`docs/config-catalog.md`](../../../config-catalog.md#deepseek-aidsh-file-reference-local)。
-- 源码测试路径：`packages/context/file-reference-local/tests/service.spec.ts`、`packages/context/file-reference-local/tests/search.spec.ts`、`packages/context/file-reference-local/tests/invariant.spec.ts`。
+- 源码测试路径：`packages/context/file-reference-local/tests/service.spec.ts`、`packages/context/file-reference-local/tests/search.spec.ts`。
 
 ## 限制与故障排查
 

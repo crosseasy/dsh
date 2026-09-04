@@ -93,7 +93,7 @@ export function apply(ctx, config = {}) {
       return {
         result,
         order: [...order],
-        events: session.events.map(event => event.type),
+        events: session.snapshotEvents().map(event => event.type),
       }
     },
   }

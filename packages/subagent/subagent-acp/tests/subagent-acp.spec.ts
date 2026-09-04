@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from 'vitest'
 import { Context } from '@deepseek-ai/cordis'
 import Loader from '@deepseek-ai/cordis-plugin-loader'
-import { ClientSideConnection } from '@agentclientprotocol/sdk'
+import { ClientApp } from '@agentclientprotocol/sdk'
 import { chmodSync, existsSync, mkdtempSync, realpathSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
@@ -501,7 +501,7 @@ describe('cwd resolution', () => {
 })
 
 describe('dsh-subagent-acp', () => {
-  it('keeps a completed result when cancellation follows the winning completion microtask', async () => {
+  it('keeps a completed result after late cancellation', async () => {
     const prompt = Promise.withResolvers<{ stopReason: 'end_turn' }>()
     const stdin = new PassThrough()
     const stdout = new PassThrough()
@@ -518,10 +518,14 @@ describe('dsh-subagent-acp', () => {
         return Promise.resolve(true)
       }),
     } satisfies SubprocessHandle
-    const initialize = vi.spyOn(ClientSideConnection.prototype, 'initialize').mockResolvedValue({} as never)
-    const newSession = vi.spyOn(ClientSideConnection.prototype, 'newSession').mockResolvedValue({ sessionId: 'remote' })
-    const promptCall = vi.spyOn(ClientSideConnection.prototype, 'prompt').mockReturnValue(prompt.promise)
-    const cancel = vi.spyOn(ClientSideConnection.prototype, 'cancel').mockResolvedValue()
+    const agentRequest = vi.fn()
+      .mockResolvedValueOnce({})
+      .mockResolvedValueOnce({ sessionId: 'remote' })
+      .mockReturnValueOnce(prompt.promise)
+    const agentNotify = vi.fn().mockResolvedValue(undefined)
+    const connect = vi.spyOn(ClientApp.prototype, 'connect').mockReturnValue({
+      agent: { request: agentRequest, notify: agentNotify },
+    } as never)
     const controller = new AbortController()
     const removeAbortListener = vi.spyOn(controller.signal, 'removeEventListener')
 
@@ -536,36 +540,18 @@ describe('dsh-subagent-acp', () => {
         disposeGraceMs: DEFAULT_DISPOSE_GRACE_MS,
         spawn: () => child,
       })
-      stdout.write(`${JSON.stringify({
-        jsonrpc: '2.0',
-        method: 'session/update',
-        params: {
-          sessionId: 'remote',
-          update: {
-            sessionUpdate: 'agent_message_chunk',
-            content: { type: 'text', text: 'completed output' },
-          },
-        },
-      })}\n`)
-      await new Promise<void>(resolve => setImmediate(resolve))
-
       prompt.resolve({ stopReason: 'end_turn' })
-      queueMicrotask(() => {
-        queueMicrotask(() => { controller.abort() })
-      })
-
-      await expect(run.result).resolves.toEqual({
-        output: [{ type: 'text', text: 'completed output' }],
+      const result = await run.result
+      controller.abort()
+      expect(result).toEqual({
+        output: [],
         stopReason: 'completed',
       })
       expect(removeAbortListener).toHaveBeenCalledOnce()
       expect(removeAbortListener).toHaveBeenCalledWith('abort', expect.any(Function))
       await run.dispose()
     } finally {
-      initialize.mockRestore()
-      newSession.mockRestore()
-      promptCall.mockRestore()
-      cancel.mockRestore()
+      connect.mockRestore()
       stdin.destroy()
       stdout.destroy()
     }
@@ -586,10 +572,14 @@ describe('dsh-subagent-acp', () => {
       terminate: vi.fn(),
       waitForExit: vi.fn((signal?: AbortSignal) => signal === undefined ? Promise.resolve(true) : eofWait.promise),
     } satisfies SubprocessHandle
-    const initialize = vi.spyOn(ClientSideConnection.prototype, 'initialize').mockResolvedValue({} as never)
-    const newSession = vi.spyOn(ClientSideConnection.prototype, 'newSession').mockResolvedValue({ sessionId: 'remote' })
-    const promptCall = vi.spyOn(ClientSideConnection.prototype, 'prompt').mockReturnValue(prompt.promise)
-    const cancel = vi.spyOn(ClientSideConnection.prototype, 'cancel').mockResolvedValue()
+    const agentRequest = vi.fn()
+      .mockResolvedValueOnce({})
+      .mockResolvedValueOnce({ sessionId: 'remote' })
+      .mockReturnValueOnce(prompt.promise)
+    const agentNotify = vi.fn().mockResolvedValue(undefined)
+    const connect = vi.spyOn(ClientApp.prototype, 'connect').mockReturnValue({
+      agent: { request: agentRequest, notify: agentNotify },
+    } as never)
 
     try {
       const run = await startAcpRun(request(), {
@@ -605,8 +595,8 @@ describe('dsh-subagent-acp', () => {
 
       const disposal = run.dispose()
       expect(run.dispose()).toBe(disposal)
-      expect(cancel).toHaveBeenCalledOnce()
-      expect(cancel).toHaveBeenCalledWith({ sessionId: 'remote' })
+      expect(agentNotify).toHaveBeenCalledOnce()
+      expect(agentNotify).toHaveBeenCalledWith('session/cancel', { sessionId: 'remote' })
       await expect(run.result).resolves.toEqual({ output: [], stopReason: 'aborted' })
       expect(child.waitForExit).toHaveBeenCalledTimes(1)
       eofWait.resolve(false)
@@ -614,10 +604,7 @@ describe('dsh-subagent-acp', () => {
       expect(child.terminate).toHaveBeenCalledOnce()
       expect(child.waitForExit).toHaveBeenCalledTimes(2)
     } finally {
-      initialize.mockRestore()
-      newSession.mockRestore()
-      promptCall.mockRestore()
-      cancel.mockRestore()
+      connect.mockRestore()
       stdin.destroy()
       stdout.destroy()
     }

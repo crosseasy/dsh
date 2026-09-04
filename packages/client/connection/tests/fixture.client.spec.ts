@@ -91,19 +91,23 @@ const sharedProjectionEvents = [
   },
   { type: 'step/start', data: { turn: 1, step: 1 } },
   {
-    type: 'assistant/chunk',
+    type: 'assistant/attempt',
     data: {
       turn: 1,
       step: 1,
-      chunk: {
-        type: 'usage',
-        usage: {
-          inputTokens: 40,
-          outputTokens: 6,
-          cacheReadTokens: 8,
-          cacheWriteTokens: 2,
+      stream: [{
+        type: 'chunk',
+        time: 1_006,
+        chunk: {
+          type: 'usage',
+          usage: {
+            inputTokens: 40,
+            outputTokens: 6,
+            cacheReadTokens: 8,
+            cacheWriteTokens: 2,
+          },
         },
-      },
+      }],
     },
   },
   { type: 'step/end', data: { turn: 1, step: 1 } },
@@ -857,13 +861,13 @@ describe('createFixtureApi', () => {
     )
   })
 
-  it('serves product projection folds for fixture history', async () => {
+  it('serves product projection folds in the control baseline', async () => {
     const api = createFixtureApi()
     const history = await api.sessions.history(req({ sessionId: sid('fx-alpha'), maxMessages: 1000 }))
     if (!history.result.ok) throw new Error('history failed')
-    const page = history.result.value as FixturePage
+    const page = history.result.value
     const log = historyEvents(page.records)
-    const projections = page.projections
+    const projections = (await readControlBaseline(api.sessionRemote)).value.projections['fx-alpha']
     if (projections === undefined) throw new Error('projections missing')
     const values = projections.values
 

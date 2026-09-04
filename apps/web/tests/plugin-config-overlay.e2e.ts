@@ -50,7 +50,7 @@ describe('web e2e: overlay plugin configuration', () => {
     expect(await card.textContent()).toBe('Overlay settings')
 
     const wire = await page.evaluate(async () => {
-      const rpcId = crypto.randomUUID()
+      const rpcId = 'plugin-config-overlay-test'
       const response = await fetch('/api/settings.describe', {
         method: 'POST',
         headers: { 'content-type': 'application/json' },

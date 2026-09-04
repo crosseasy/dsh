@@ -627,7 +627,7 @@ describe('curated profile launcher bridge', () => {
       const fs = await vi.importActual<typeof import('node:fs')>('node:fs')
       return {
         ...actual,
-        healProfilesModuleFallback: (...args: Parameters<typeof actual.healProfilesModuleFallback>) => {
+        loadProfile: (...args: Parameters<typeof actual.loadProfile>) => {
           if (!replaced) {
             replaced = true
             fs.renameSync(profilesDir, `${profilesDir}.original`)
@@ -637,7 +637,7 @@ describe('curated profile launcher bridge', () => {
               process.platform === 'win32' ? 'junction' : 'dir',
             )
           }
-          actual.healProfilesModuleFallback(...args)
+          return actual.loadProfile(...args)
         },
       }
     })
@@ -837,13 +837,13 @@ describe('curated profile launcher bridge', () => {
       const fs = await vi.importActual<typeof import('node:fs')>('node:fs')
       return {
         ...actual,
-        healProfilesModuleFallback: (...args: Parameters<typeof actual.healProfilesModuleFallback>) => {
-          actual.healProfilesModuleFallback(...args)
+        loadProfile: (...args: Parameters<typeof actual.loadProfile>) => {
           if (!raced) {
             raced = true
             fs.renameSync(manifestPath, `${manifestPath}.original`)
             fs.symlinkSync(externalManifest, manifestPath, 'file')
           }
+          return actual.loadProfile(...args)
         },
       }
     })

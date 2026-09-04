@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, it } from 'vitest'
 import { Context } from '@deepseek-ai/cordis'
 import { ToolCallId } from '@deepseek-ai/dsh-llm'
-import { Session, SessionId } from '@deepseek-ai/dsh-session'
+import { SESSION_FORMAT_VERSION, Session, SessionId } from '@deepseek-ai/dsh-session'
 import AgentRegistry, { Inbox } from '@deepseek-ai/dsh-agent'
 import type { Agent } from '@deepseek-ai/dsh-agent'
 import TerminalSessionService from '@deepseek-ai/dsh-terminal'
@@ -36,10 +36,11 @@ function agent(ctx: Context, suffix: string): { owner: Agent; dispose: () => Pro
   const id = SessionId(`persistent-runtime-owner-${suffix}-${++callNumber}`)
   const scope = ctx.plugin(() => {})
   const session = Session.create(id, [], {
-    version: 0,
+    version: SESSION_FORMAT_VERSION,
     id,
     createdAt: 0,
     cwd: `/workspace/${suffix}`,
+    isSeeded: false,
   })
   const owner: Agent = {
     id,

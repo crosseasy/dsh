@@ -4,6 +4,7 @@
  * @module @deepseek-ai/dsh-session-stats/projection-fold
  */
 
+import { expandAssistantStream, type AssistantStreamRecord } from '@deepseek-ai/dsh-llm/assistant-stream'
 import type { StreamChunk } from '@deepseek-ai/dsh-llm/types'
 import type { SessionEvent } from '@deepseek-ai/dsh-session'
 import type { SessionStatsProjection } from './types.ts'
@@ -59,6 +60,11 @@ function isTokenDelta(chunk: StreamChunk): boolean {
   }
 }
 
+/** First non-empty token timestamp in one durable Assistant stream. */
+function firstTokenTime(stream: readonly AssistantStreamRecord[]): number | null {
+  return expandAssistantStream(stream).find(member => isTokenDelta(member.chunk))?.time ?? null
+}
+
 /**
  * Provider-reported completion tokens, guarded the way the window fold guards
  * node usage.
@@ -84,26 +90,28 @@ export function applySessionStatsProjectionEvent(state: SessionStatsState, event
         ...state,
         openStep: { turn: event.data.turn, step: event.data.step, startTime: event.time, firstTokenTime: null },
       }
-    case 'assistant/chunk': {
+    case 'assistant/attempt': {
       const open = state.openStep
       if (open === null || open.turn !== event.data.turn || open.step !== event.data.step) return state
-      if (open.firstTokenTime !== null || !isTokenDelta(event.data.chunk)) return state
-      return { ...state, openStep: { ...open, firstTokenTime: event.time } }
+      const first = firstTokenTime(event.data.stream)
+      if (open.firstTokenTime !== null || first === null) return state
+      return { ...state, openStep: { ...open, firstTokenTime: first } }
     }
     case 'assistant/message': {
       const open = state.openStep
       if (open === null || open.turn !== event.data.turn || open.step !== event.data.step) return state
+      const firstToken = open.firstTokenTime ?? firstTokenTime(event.data.stream)
       const next: SessionStatsState = {
         ...state,
         llmMs: state.llmMs + Math.max(0, event.time - open.startTime),
         openStep: null,
       }
-      if (open.firstTokenTime !== null) {
-        next.ttftMs += Math.max(0, open.firstTokenTime - open.startTime)
+      if (firstToken !== null) {
+        next.ttftMs += Math.max(0, firstToken - open.startTime)
         next.ttftSteps += 1
         const outputTokens = usageOutputTokens(event.data.usage)
         if (outputTokens !== null) {
-          next.decodeMs += Math.max(0, event.time - open.firstTokenTime)
+          next.decodeMs += Math.max(0, event.time - firstToken)
           next.decodeTokens += outputTokens
         }
       }

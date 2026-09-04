@@ -66,7 +66,7 @@ function namespaceView(descriptor: WireSettingsDescriptor): SettingsNamespaceVie
     ...descriptor.base === undefined ? {} : { base: descriptor.base as JsonValue },
     ...descriptor.user === undefined ? {} : { user: descriptor.user as JsonValue },
     applies: descriptor.applies,
-    secrets: (descriptor.secrets ?? []).map(secret => ({ path: [...secret.path], set: secret.set })),
+    secrets: descriptor.secrets.map(secret => ({ path: [...secret.path], set: secret.set })),
     revision: descriptor.revision,
   }
 }

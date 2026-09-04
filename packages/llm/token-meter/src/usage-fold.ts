@@ -4,7 +4,8 @@
  * @module @deepseek-ai/dsh-token-meter/usage-fold
  */
 
-import type { TokenUsage } from '@deepseek-ai/dsh-llm'
+import { expandAssistantStream } from '@deepseek-ai/dsh-llm/assistant-stream'
+import type { TokenUsage } from '@deepseek-ai/dsh-llm/types'
 import type { SessionEvent } from '@deepseek-ai/dsh-session'
 import type { ContextPressureProjection, TokenUsageProjection } from './projection.ts'
 import { foldSurfaceProjection, type ShadowPriceClaim } from './surface-projection.ts'
@@ -82,13 +83,14 @@ export function initialContextPressureState(): ContextPressureState {
 const pressureFrom = (usage: TokenUsage): number =>
   usage.inputTokens + (usage.cacheReadTokens ?? 0) + (usage.cacheWriteTokens ?? 0)
 
-/** The usage a chunk or finalized message reports for its step, if any. */
+/** The usage one durable Assistant settlement reports for its attempt, if any. */
 function usageOf(event: SessionEvent): TokenUsage | undefined {
-  return event.type === 'assistant/chunk' && event.data.chunk.type === 'usage'
-    ? event.data.chunk.usage
-    : event.type === 'assistant/message'
-      ? event.data.usage
-      : undefined
+  if (event.type === 'assistant/message' && event.data.usage !== undefined) return event.data.usage
+  if (event.type !== 'assistant/message' && event.type !== 'assistant/attempt') return undefined
+  for (const member of expandAssistantStream(event.data.stream).toReversed()) {
+    if (member.chunk.type === 'usage') return member.chunk.usage
+  }
+  return undefined
 }
 
 /**
@@ -103,17 +105,12 @@ export function applyTokenUsageProjectionEvent(state: TokenUsageState, event: Se
       ? { ...state, last: null }
       : state
   }
-  let turn: number
-  let step: number
-  let usage: TokenUsage
-  if (event.type === 'assistant/chunk' && event.data.chunk.type === 'usage') {
-    ;({ turn, step } = event.data)
-    usage = event.data.chunk.usage
-  } else if (event.type === 'assistant/message' && event.data.usage !== undefined) {
-    ;({ turn, step, usage } = event.data)
-  } else {
+  if (event.type !== 'assistant/message' && event.type !== 'assistant/attempt') {
     return state
   }
+  const usage = usageOf(event)
+  if (usage === undefined) return state
+  const { turn, step } = event.data
 
   const buckets = bucketsFrom(usage)
   const previous = state.last !== null

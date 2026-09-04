@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from 'vitest'
 import { Context } from '@deepseek-ai/cordis'
 import z from '@deepseek-ai/schemastery'
-import type { SettingsDescriptor } from '@deepseek-ai/dsh-settings'
+import type { SettingsNamespace, WireSettingsDescriptor } from '@deepseek-ai/dsh-settings'
 import { RemoteError, remoteErrorOf, remoteMethods } from '@deepseek-ai/dsh-typert-protocol'
 import SettingsController from '../src/index.ts'
 import { MemorySettings } from '../../../settings/settings/tests/memory.ts'
@@ -22,25 +22,10 @@ class DocumentSettings extends MemorySettings {
 
 /** A provider whose read forgets the namespace its write just committed. */
 class VanishingSettings extends MemorySettings {
-  override describe(): SettingsDescriptor[] {
-    return []
-  }
-}
-
-/**
- * A provider whose descriptor omits the secret-slot list. `secrets` is optional
- * on the descriptor, so a foreign provider may leave it out even under
- * `redactSecrets`, and the view still has to declare an empty list.
- */
-class SlotlessSettings extends MemorySettings {
-  override describe(): SettingsDescriptor[] {
-    return [{
-      ns: NS,
-      schema: Profile.toJSON(),
-      value: { preference: 'light' },
-      applies: 'live',
-      revision: 0,
-    } as unknown as SettingsDescriptor]
+  override describeForWire(): WireSettingsDescriptor[]
+  override describeForWire(_ns: SettingsNamespace): WireSettingsDescriptor | undefined
+  override describeForWire(ns?: SettingsNamespace): WireSettingsDescriptor[] | WireSettingsDescriptor | undefined {
+    return ns === undefined ? [] : undefined
   }
 }
 
@@ -144,12 +129,6 @@ describe('the settings Remote namespace a configuration page calls', () => {
     // neither optional layer appears at all.
     expect(view && 'base' in view).toBe(false)
     expect(view && 'user' in view).toBe(false)
-  })
-
-  it('declares an empty slot list when the provider names no secrets', async () => {
-    const { controller } = await boot(SlotlessSettings)
-    const [view] = controller.describe().namespaces
-    expect(view?.secrets).toEqual([])
   })
 
   it('carries the composition base layer when the registrant declared one', async () => {
