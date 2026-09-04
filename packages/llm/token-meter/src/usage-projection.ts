@@ -4,6 +4,7 @@
 
 import { z } from 'zod'
 import type {} from '@deepseek-ai/dsh-llm-retry/types'
+import { SessionSeq } from '@deepseek-ai/dsh-session/types'
 import type { ProjectionDefinition } from '@deepseek-ai/dsh-session-projection'
 import type { ContextPressureProjection } from './projection.ts'
 import {
@@ -64,8 +65,8 @@ const contextPressureStateSchema = z.object({
   surfaceTokens: z.number().int().nonnegative(),
   sampledSurfaceTokens: z.number().int().nonnegative().optional(),
   claim: z.object({
-    start: z.number().int().nonnegative(),
-    end: z.number().int().nonnegative(),
+    start: z.number().int().nonnegative().max(Number.MAX_SAFE_INTEGER).transform(SessionSeq),
+    end: z.number().int().nonnegative().max(Number.MAX_SAFE_INTEGER).transform(SessionSeq),
     tokens: z.number().int().nonnegative(),
   }).optional(),
 }).strict()
@@ -73,12 +74,9 @@ const contextPressureStateSchema = z.object({
 /**
  * Token-meter's session projection unit.
  *
- * Usage chunks provide an early sample that survives a later request failure;
- * an assistant message provides the final sample for the same attempt. A
- * repeated sample replaces that attempt's earlier value instead of double
- * counting it, while `llm/retry-started` closes the replacement slot so the
- * retried attempt adds to the total. The single `last` slot relies on the
- * session-log invariant that usage reports for one attempt are adjacent.
+ * Each v2 Assistant settlement contributes the last usage sample embedded in
+ * its stream. `llm/retry-started` closes the replacement slot so the retried
+ * attempt adds to the total.
  */
 export const tokenUsageProjectionDefinition = {
   key: 'tokenUsage',

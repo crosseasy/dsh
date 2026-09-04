@@ -9,6 +9,7 @@ import {
 } from '@deepseek-ai/dsh-compaction'
 import type { CompactionResult, CompactionTrigger } from '@deepseek-ai/dsh-compaction'
 import { Session, SessionId } from '@deepseek-ai/dsh-session'
+import type { SessionSeq } from '@deepseek-ai/dsh-session'
 import type { CompactionAgentContext } from '@deepseek-ai/dsh-compaction'
 import type { ManualCompactAgentContext } from '@deepseek-ai/dsh-compaction'
 
@@ -40,8 +41,8 @@ class StubCompactionEngine extends CompactionEngine {
   }
 
   override async compactRegion(
-    start: number,
-    end: number,
+    start: SessionSeq,
+    end: SessionSeq,
     agent: CompactionAgentContext,
     signal?: AbortSignal,
   ): Promise<CompactionResult> {
@@ -72,9 +73,13 @@ class StubCompactionEngine extends CompactionEngine {
       surfaceOp: { op: 'replace', start, end },
       sourceEventSeqs: [startEvent.seq, summaryEvent.seq, ...shadowedSeqs],
     })
-    session.append('compaction/end', { compactionId, turn: 0 })
+    const endEvent = session.append('compaction/end', { compactionId, turn: 0 })
     return {
+      compactionId,
+      startSeq: startEvent.seq,
       summarySeq: summaryEvent.seq,
+      endSeq: endEvent.seq,
+      summary,
       shadowedRange: { start, end },
       shadowedSeqs,
       shadowedTokenCount: 0,
@@ -126,35 +131,24 @@ describe('CompactionEngine seam', () => {
 
     const result = await svc.compactRegion(original.seq, original.seq, stubAgent(session, 'm'))
 
-    const startEvent = session.events.find(e => e.type === 'compaction/start')
+    const startEvent = session.snapshotEvents().find(e => e.type === 'compaction/start')
     expect(startEvent).toBeDefined()
     // Log-only: the compiler rejects surfaceOp on compaction/* (not a SurfaceEventType);
     // verify the runtime value is absent.
     const raw = startEvent as unknown as { surfaceOp?: unknown }
     expect(raw.surfaceOp).toBeUndefined()
-    const summaryEvent = session.events.find(e => e.type === 'compaction/summary')
-    const endEvent = session.events.find(e => e.type === 'compaction/end')
-    expect(summaryEvent?.type === 'compaction/summary' && summaryEvent.data.summary)
-      .toEqual([{ type: 'text', text: 'stub' }])
-    const { summarySeq } = result
-    expect(summarySeq).toBe(summaryEvent?.seq)
-    expect(endEvent?.seq).toBeGreaterThan(summarySeq)
+    expect(result.summary).toEqual([{ type: 'text', text: 'stub' }])
+    expect(result.summarySeq).toBeGreaterThan(result.startSeq)
+    expect(result.endSeq).toBeGreaterThan(result.summarySeq)
     expect(result.shadowedRange).toEqual({ start: original.seq, end: original.seq })
     expect(result.shadowedSeqs).toEqual([original.seq])
-    expect(result).not.toHaveProperty('compactionId')
-    expect(result).not.toHaveProperty('sourceCommandId')
-    expect(result).not.toHaveProperty('startSeq')
-    expect(result).not.toHaveProperty('endSeq')
-    expect(result).not.toHaveProperty('summary')
-    const checkpoint = session.events.find(event => event.type === 'user/message'
+    const checkpoint = session.snapshotEvents().find(event => event.type === 'user/message'
       && isCompactCheckpointSource(event.data.source))
     expect(checkpoint?.type === 'user/message' && checkpoint.data.source)
-      .toEqual(summaryEvent?.type === 'compaction/summary'
-        ? compactCheckpointSource(summaryEvent.data.compactionId)
-        : undefined)
+      .toEqual(compactCheckpointSource(result.compactionId))
     expect(isCompactCheckpointSource({ kind: 'plugin', plugin: 'other' })).toBe(false)
     expect(isCompactCheckpointSource({ kind: 'user' })).toBe(false)
-    expect(session.events.filter(e => e.type.startsWith('compaction/')).map(e => e.type))
+    expect(session.snapshotEvents().filter(e => e.type.startsWith('compaction/')).map(e => e.type))
       .toEqual(['compaction/start', 'compaction/summary', 'compaction/end'])
   })
 

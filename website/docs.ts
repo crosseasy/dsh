@@ -131,12 +131,20 @@ const homeAndGuide = pairedPages([
     order: 2,
   },
   {
+    source: 'docs/user/guide/network-proxy.md',
+    route: 'guide/network-proxy.md',
+    label: { root: '网络代理', en: 'Network proxy' },
+    sidebar: { root: 'zh-guide', en: 'en-guide' },
+    section: { root: '入门', en: 'Guide' },
+    order: 3,
+  },
+  {
     source: 'docs/user/guide/curated-profiles.md',
     route: 'guide/curated-profiles.md',
     label: { root: '使用精选 profile', en: 'Use curated profiles' },
     sidebar: { root: 'zh-guide', en: 'en-guide' },
     section: { root: '入门', en: 'Guide' },
-    order: 3,
+    order: 4,
   },
   {
     source: 'docs/user/guide/fusion-profile.md',
@@ -144,7 +152,7 @@ const homeAndGuide = pairedPages([
     label: { root: '组装 Fusion Web profile', en: 'Assemble the Fusion Web profile' },
     sidebar: { root: 'zh-guide', en: 'en-guide' },
     section: { root: '入门', en: 'Guide' },
-    order: 4,
+    order: 5,
   },
   {
     source: 'docs/user/guide/fusion-tui-profile.md',
@@ -152,7 +160,7 @@ const homeAndGuide = pairedPages([
     label: { root: 'Fusion TUI 交付状态', en: 'Fusion TUI delivery status' },
     sidebar: { root: 'zh-guide', en: 'en-guide' },
     section: { root: '入门', en: 'Guide' },
-    order: 5,
+    order: 6,
   },
   {
     source: 'docs/user/guide/desktop-shell-contract.md',
@@ -160,7 +168,7 @@ const homeAndGuide = pairedPages([
     label: { root: '桌面壳集成', en: 'Desktop shell integration' },
     sidebar: { root: 'zh-guide', en: 'en-guide' },
     section: { root: '入门', en: 'Guide' },
-    order: 6,
+    order: 7,
   },
   {
     source: 'docs/user/guide/python-sdk.md',
